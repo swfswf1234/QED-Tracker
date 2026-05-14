@@ -56,7 +56,15 @@ Agent 在执行任务前必须遵守以下优先级：
 | **`docs/worklogs/`** | 文件名必须为 `YYYY-MM-DD.md`。记录每一轮操作的内容、关键文件和验证结果。 |
 | **`docs/knowledge_base/`** | 记录数字化进度。包含 `inventory.md` (书目状态) 和 `dependency_graph.md` (知识依赖)。 |
 
-## 5. GIT 管理与提交规范
+## 5. 运行环境
+
+* **Conda 环境**：`QED_env`
+* **Python 版本**：3.12
+* **依赖安装**：`pip install -r requirements.txt`
+* **代理配置**：`setting.ini` 的 `[Proxy]` 段落配置 HTTP 代理 (Clash 默认 7890)
+* **Agent 行为**：所有 Python 操作必须在此 Conda 环境下执行，不可使用 Base 或其他环境。
+
+## 6. GIT 管理与提交规范
 
 * **分支管理**：`main` 保持稳定，`dev` 用于日常开发，大型重构使用 `feat/` 前缀。
 * **Commit Message**：必须包含前缀：`feat:`, `fix:`, `docs:`, `refactor:`。

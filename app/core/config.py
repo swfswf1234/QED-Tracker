@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8001)
 
+    # === 代理配置 ===
+    http_proxy: str = Field(default="")
+
     # === 日志配置 ===
     log_level: str = Field(default="INFO")
 
@@ -100,6 +103,9 @@ def load_settings_from_ini() -> Settings:
         domain_str = sec.get("arxiv_math_domains", "")
         if domain_str:
             kwargs["arxiv_math_domains"] = [d.strip() for d in domain_str.split(",") if d.strip()]
+
+    if config.has_section("Proxy") and config["Proxy"].get("http"):
+        kwargs["http_proxy"] = config["Proxy"]["http"]
 
     if config.has_section("GitHub") and config["GitHub"].get("token"):
         kwargs["github_token"] = config["GitHub"]["token"]

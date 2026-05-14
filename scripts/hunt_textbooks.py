@@ -67,7 +67,7 @@ def parse_args(argv=None):
 def main():
     args = parse_args()
 
-    hunter = TextbookHunter()
+    hunter = TextbookHunter(proxy=settings.http_proxy)
     all_results = []
 
     if args.course:
@@ -82,22 +82,33 @@ def main():
 
     for course in courses:
         targets = TEXTBOOK_TARGETS.get(course, {})
-        en_q = targets.get("en", "").split(";")[0].strip() if targets.get("en") else ""
         zh_q = targets.get("zh", "")
+        en_q = targets.get("en", "").split(";")[0].strip() if targets.get("en") else ""
+        zh_ex = targets.get("zh_exercise", "")
 
+        # 1. 搜索中文教材
         if zh_q:
             print(f"\n{'='*60}")
-            print(f"课程: {course} (中文: {zh_q})")
+            print(f"课程: {course} (中文教材: {zh_q})")
             print(f"{'='*60}")
             all_results.extend(hunter.interactive_search(course, zh_q))
 
+        # 2. 搜索英文教材
         if en_q:
             print(f"\n{'='*60}")
-            print(f"课程: {course} (英文: {en_q})")
+            print(f"课程: {course} (英文教材: {en_q})")
             print(f"{'='*60}")
             all_results.extend(hunter.interactive_search(course, en_q))
 
-    hunter.hunter.close()
+        # 3. 搜索习题集
+        if zh_ex:
+            print(f"\n{'='*60}")
+            print(f"课程: {course} (习题集: {zh_ex})")
+            print(f"{'='*60}")
+            all_results.extend(hunter.interactive_search(course, zh_ex))
+
+    hunter.libgen.close()
+    hunter.anna.close()
 
     print(f"\n{'='*60}")
     print(f"总计下载: {len(all_results)} 个文件")

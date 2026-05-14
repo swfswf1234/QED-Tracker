@@ -17,7 +17,7 @@
 ```bash
 # 1. 复制配置模板
 cp setting.example.ini setting.ini
-# 编辑 setting.ini: 填写 PostgreSQL 密码
+# 编辑 setting.ini: 填写 PostgreSQL 密码、代理地址（如需要）
 
 # 2. 安装依赖
 pip install -r requirements.txt
@@ -28,8 +28,10 @@ python scripts/init_db.py --create-db
 # 4. 扫描已有文件入库
 python scripts/scan_dataset.py
 
-# 5. 检索教材
+# 5. 检索教材 (交互式下载 LibGen)
 python scripts/hunt_textbooks.py
+# 指定单门课程: python scripts/hunt_textbooks.py --course 03
+# 跳过数据库:   python scripts/hunt_textbooks.py --no-db
 
 # 6. 检索论文
 python scripts/hunt_papers.py --domain math.CA --max 10
@@ -37,6 +39,8 @@ python scripts/hunt_papers.py --domain math.CA --max 10
 # 7. 爬取官方文档
 python scripts/hunt_docs.py --name pytorch
 ```
+
+> **代理配置**：如果无法直连 LibGen，在 `setting.ini` 的 `[Proxy]` 段落配置 HTTP 代理池地址（如 Clash/V2Ray 默认端口 7890）。
 
 ## 项目结构
 
