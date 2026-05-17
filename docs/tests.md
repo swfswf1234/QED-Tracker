@@ -1,4 +1,4 @@
-# QED-Tracker v0.1 测试指南
+# QED-Tracker v0.2 测试指南
 
 ## 概览
 
@@ -36,7 +36,7 @@ python -m pytest tests/test_models.py::TestPaper -v
 python -m pytest tests/ --cov=app/
 ```
 
-## 测试结果（v0.1）
+## 测试结果（v0.2）
 
 ```
 34 passed, 5 skipped, 0 failed
@@ -44,6 +44,7 @@ python -m pytest tests/ --cov=app/
 
 - **5 skipped** = PostgreSQL 未运行时的 `test_repository.py`（标记为 `@pytest.mark.skipif(not check_db(), ...)`）
 - 其余 **34 tests** 不依赖任何外部服务，使用 mock 和 SQLite in-memory
+- 测试覆盖配置加载、ORM 模型、仓储 CRUD、采集器逻辑和 CLI 参数解析
 
 ## 测试覆盖范围
 

@@ -1,4 +1,4 @@
-"""Test: CLI argument parsing"""
+"""测试：CLI 参数解析"""
 
 import sys
 from pathlib import Path

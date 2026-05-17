@@ -1,15 +1,65 @@
-# 数据库设计
+# 数据库设计 v0.2
 
-## 4 表概述
+> 多数据库抽象层：MySQL (本机主力) + PostgreSQL 双适配器
 
-| 表 | 主键 | 关键字段 | 本地文件 |
-|----|------|---------|---------|
-| `textbooks` | UUID | course, title, author, language, local_pdf_path, local_solution_path | `dataset/textbooks/` |
-| `papers` | UUID | arxiv_id (UNIQUE), title, authors, categories, local_path | `dataset/papers/` |
-| `official_docs` | UUID | name, version, source_url, local_path | `dataset/official_docs/` |
-| `resources` | UUID | resource_type, title, url, course_tags, platform | 无 |
+## 架构
 
-## 表结构
+```mermaid
+graph TB
+    subgraph "应用层"
+        REPO[repository/*.py]
+    end
+
+    subgraph "DB 抽象层"
+        BASE[db/base.py: 抽象接口]
+        BASE --> MYSQL[db/mysql.py]
+        BASE --> PG[db/postgresql.py]
+    end
+
+    subgraph "物理引擎"
+        MYSQL --> M[(MySQL)]
+        PG --> P[(PostgreSQL)]
+    end
+
+    REPO --> BASE
+```
+
+## 抽象接口 (db/base.py)
+
+```python
+class DatabaseEngine(ABC):
+    @abstractmethod
+    def connect(self) -> None: ...
+
+    @abstractmethod
+    def disconnect(self) -> None: ...
+
+    @abstractmethod
+    def execute(self, sql: str, params: dict = None) -> list[dict]: ...
+
+    @abstractmethod
+    def get_session(self): ...
+
+    @abstractmethod
+    def init_tables(self) -> int: ...
+
+    @abstractmethod
+    def check_connection(self) -> bool: ...
+```
+
+## 配置方式
+
+```ini
+[Database]
+engine = mysql              # mysql / postgresql / sqlite
+host = localhost
+port = 3306
+database = qed_tracker
+user = root
+password =
+```
+
+## 4 张核心表
 
 ### textbooks
 
@@ -39,12 +89,12 @@ CREATE TABLE papers (
     arxiv_id VARCHAR(50) UNIQUE NOT NULL,
     title TEXT NOT NULL,
     title_cn TEXT,
-    authors JSONB DEFAULT '[]',
-    categories JSONB DEFAULT '[]',
+    authors JSON DEFAULT '[]',
+    categories JSON DEFAULT '[]',
     published_date DATE,
     source_url TEXT,
     local_path TEXT,
-    course_tags JSONB DEFAULT '[]',
+    course_tags JSON DEFAULT '[]',
     notes TEXT,
     created_at TIMESTAMP DEFAULT NOW()
 );
@@ -76,7 +126,7 @@ CREATE TABLE resources (
     title TEXT NOT NULL,
     url TEXT NOT NULL,
     description TEXT,
-    course_tags JSONB DEFAULT '[]',
+    course_tags JSON DEFAULT '[]',
     author VARCHAR(200),
     platform VARCHAR(100),
     is_favorite BOOLEAN DEFAULT FALSE,
@@ -85,6 +135,8 @@ CREATE TABLE resources (
 );
 CREATE INDEX idx_resources_type ON resources(resource_type);
 ```
+
+> **注**: MySQL 使用 `JSON` 类型替代 PostgreSQL 的 `JSONB`，功能等价。
 
 ## 仓储层
 
@@ -98,6 +150,28 @@ BaseRepository[T] → CRUD (get/list/create/update/delete/count/exists)
 
 ## 连接池
 
+- **MySQL**: `pool_size=5, max_overflow=10, pool_pre_ping=True`
+- **PostgreSQL**: 同配置，使用 `QueuePool`
+- **SQLite** (测试): `:memory:`
+
+## 引擎选择逻辑
+
+```python
+def create_engine_from_config(cfg: dict) -> DatabaseEngine:
+    engine_type = cfg.get("engine", "mysql")
+    if engine_type == "mysql":
+        return MySQLEngine(cfg)
+    elif engine_type == "postgresql":
+        return PostgreSQLEngine(cfg)
+    else:
+        raise ValueError(f"Unsupported engine: {engine_type}")
 ```
-pool_size=5, max_overflow=10, pool_pre_ping=True, pool_recycle=3600
-```
+
+## 当前状态
+
+| 引擎 | 适配器 | 测试覆盖 | 生产使用 |
+|------|--------|---------|---------|
+| MySQL | `db/mysql.py` | ✅ 计划 | ✅ 本机主力 |
+| PostgreSQL | `db/postgresql.py` | ✅ 已有 (从 v0.1 迁移) | ⬜ 可选 |
+| SQLite | conftest.py | ✅ 测试用 | ❌ 仅测试 |
+| Hive | — | ❌ 未实现 | 📌 预留 |

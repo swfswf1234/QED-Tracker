@@ -1,13 +1,12 @@
-"""PaperCollector — arXiv 论文检索
+"""PaperCollector — arXiv paper search orchestration
 
-用法:
+Usage:
     from app.collectors.paper_collector import PaperCollector
     collector = PaperCollector()
     papers = collector.search_by_domain("math.CA", max_results=10)
 """
 
 import re
-import time
 import httpx
 from pathlib import Path
 from datetime import date
@@ -15,8 +14,8 @@ from typing import Optional
 
 from loguru import logger
 
-from app.collectors import BaseCollector, ResourceInfo
-from app.services.arxiv_client import search_papers as arxiv_search
+from app.collectors import BaseCollector
+from app.tools.arxiv_fetcher import search_papers as arxiv_search
 from app.core.config import settings
 
 
@@ -56,7 +55,7 @@ class PaperCollector(BaseCollector):
             logger.error(f"下载失败 {arxiv_id}: {e}")
             return None
 
-    def interactive_search(self, domain: str, max_results: int = 20):
+    def interactive_search(self, domain: str, max_results: int = 20) -> list[dict]:
         papers = self.search_by_domain(domain, max_results)
         if not papers:
             print(f"  [无结果] {domain}")

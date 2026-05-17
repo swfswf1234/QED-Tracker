@@ -1,11 +1,6 @@
-from sqlalchemy import Column, String, Text, Boolean, DateTime, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, String, Text, Boolean, DateTime, JSON, func
 from app.core.database import Base
-import uuid
-
-
-def uuid_str():
-    return str(uuid.uuid4())
+from app.core.utils import uuid_str
 
 
 class Resource(Base):
@@ -16,7 +11,7 @@ class Resource(Base):
     title = Column(Text, nullable=False)
     url = Column(Text, nullable=False)
     description = Column(Text)
-    course_tags = Column(JSONB, default=list)
+    course_tags = Column(JSON, default=list)
     author = Column(String(200))
     platform = Column(String(100))
     is_favorite = Column(Boolean, default=False)

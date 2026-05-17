@@ -1,11 +1,6 @@
-from sqlalchemy import Column, String, Text, Date, DateTime, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, String, Text, Date, DateTime, JSON, func
 from app.core.database import Base
-import uuid
-
-
-def uuid_str():
-    return str(uuid.uuid4())
+from app.core.utils import uuid_str
 
 
 class Paper(Base):
@@ -15,11 +10,11 @@ class Paper(Base):
     arxiv_id = Column(String(50), unique=True, nullable=False)
     title = Column(Text, nullable=False)
     title_cn = Column(Text)
-    authors = Column(JSONB, default=list)
-    categories = Column(JSONB, default=list)
+    authors = Column(JSON, default=list)
+    categories = Column(JSON, default=list)
     published_date = Column(Date)
     source_url = Column(Text)
     local_path = Column(Text)
-    course_tags = Column(JSONB, default=list)
+    course_tags = Column(JSON, default=list)
     notes = Column(Text)
     created_at = Column(DateTime, default=func.now())

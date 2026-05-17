@@ -1,574 +1,233 @@
-"""TextbookHunter — 教材 PDF 检索
+"""TextbookHunter — textbook collection orchestration layer
 
-用法:
+Responsibilities:
+  1. Read curriculum (curricula/) to get target textbooks
+  2. Call tools layer to search → match confidence → interactive/auto select → download
+  3. Write to PostgreSQL/MySQL
+
+Usage:
     from app.collectors.textbook_hunter import TextbookHunter
     hunter = TextbookHunter()
-    hunter.interactive_search("Munkres Topology")  # 交互式搜索
+    hunter.interactive_all()  # iterate all courses, interactive
 """
 
 import re
-import time
-import ssl as ssl_mod
-import httpx
 from pathlib import Path
 from typing import Optional
-from urllib.parse import quote
 
-from bs4 import BeautifulSoup
 from loguru import logger
 
-from app.collectors import BaseCollector, ResourceInfo
+from app.collectors import BaseCollector
 from app.core.config import settings
+from app.curricula.base import Confidence
+from app.tools.libgen_downloader import LibGenDownloader
+from app.tools.annas_downloader import AnnaDownloader
 
 
-TEXTBOOK_TARGETS = {
-    "03_topology":           {"en": "Munkres Topology",                           "zh": "点集拓扑 熊金城",              "zh_exercise": "点集拓扑习题集"},
-    "04_real_analysis":      {"en": "Stein Real Analysis; Folland Real Analysis", "zh": "实变函数论 周民强",            "zh_exercise": "实变函数解题指南 周民强"},
-    "05_complex_analysis":   {"en": "Stein Complex Analysis; Ahlfors Complex Analysis", "zh": "复分析 Ahlfors",     "zh_exercise": "复变函数习题集 方企勤"},
-    "06_functional_analysis":{"en": "Stein Functional Analysis; Lax Functional Analysis", "zh": "泛函分析 张恭庆",  "zh_exercise": "泛函分析学习指导"},
-    "07_ode":                {"en": "Tenenbaum Ordinary Differential Equations",  "zh": "常微分方程 丁同仁",            "zh_exercise": "常微分方程习题解"},
-    "08_pde":                {"en": "Evans Partial Differential Equations",        "zh": "偏微分方程 Evans",            "zh_exercise": ""},
-    "09_abstract_algebra":   {"en": "Dummit Abstract Algebra; Aluffi Algebra Chapter 0", "zh": "抽象代数 冯克勤",  "zh_exercise": ""},
-    "10_qe_prep":            {"en": "Berkeley Problems in Mathematics",            "zh": "伯克利数学问题集",            "zh_exercise": ""},
-}
+def _fuzzy_match(text: str, target: str) -> float:
+    """Title similarity: exact substring first, token coverage second, Chinese single-character fallback"""
+    text_lower = text.lower()
+    target_lower = target.lower()
+
+    # Exact substring match → full score
+    if target_lower in text_lower or text_lower in target_lower:
+        return 1.0
+
+    # Token coverage (split by spaces/punctuation)
+    tokens = re.split(r'[\s,;:()（）、，。；：\-\u2014\u2013]+', target_lower)
+    tokens = [t for t in tokens if len(t) > 1]
+    if tokens:
+        matched = sum(1 for t in tokens if t in text_lower)
+        score = matched / len(tokens)
+        if score > 0:
+            return min(score + 0.1, 1.0)  # small bonus
+
+    # Chinese single-character coverage fallback
+    zh_chars = [c for c in target if '\u4e00' <= c <= '\u9fff']
+    if zh_chars:
+        matched_zh = sum(1 for c in zh_chars if c in text)
+        return matched_zh / len(zh_chars) * 0.6  # Chinese single-character lower weight
+
+    return 0.0
 
 
-def _make_ssl_context():
-    """创建禁用证书验证和吊销检查的 SSL 上下文 (windows schannel 兼容)"""
-    ctx = ssl_mod.SSLContext(ssl_mod.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl_mod.CERT_NONE
-    return ctx
+def _match_confidence(result: dict, target) -> Optional[str]:
+    """Returns 'A' / 'B' / 'C' / None"""
+    title_sim = _fuzzy_match(result.get("title", ""), target.title)
+    author_sim = _fuzzy_match(result.get("author", ""), target.author) if target.author else 0.0
+    lang = (result.get("language", "") or "").lower()
+
+    if title_sim > 0.8 and (not target.author or author_sim > 0.7):
+        if target.lang == "zh" and lang in ("zh", "chinese"):
+            return "A"
+        if target.lang == "en" and lang in ("en", "english", ""):
+            return "B"
+        return "C"
+    if title_sim > 0.5:
+        return "C"
+    return None
 
 
-def _make_client(timeout: float = 30.0, proxy: str = "") -> httpx.Client:
-    kwargs = {"timeout": timeout, "follow_redirects": True, "verify": _make_ssl_context()}
-    if proxy:
-        kwargs["proxy"] = proxy
-    return httpx.Client(**kwargs)
+def _size_bytes(s: str) -> int:
+    """Convert size string (e.g. '10MB') to bytes"""
+    if not s:
+        return 0
+    s = s.strip().upper()
+    try:
+        if "MB" in s:
+            return int(float(s.replace("MB", "").strip()) * 1024 * 1024)
+        if "KB" in s:
+            return int(float(s.replace("KB", "").strip()) * 1024)
+        if "GB" in s:
+            return int(float(s.replace("GB", "").strip()) * 1024 * 1024 * 1024)
+        return int(s)
+    except ValueError:
+        return 0
 
-
-# ============================================================
-# Phase 1: LibGenHunter — 镜像 + 直连 IP 多路搜索
-# ============================================================
-
-class LibGenHunter:
-    """Library Genesis 搜索器 (支持多镜像 + 直连 IP)"""
-
-    MIRRORS = [
-        "https://libgen.li",
-        "https://libgen.vg",
-        "https://libgen.la",
-        "https://libgen.bz",
-        "https://libgen.gl",
-        "https://libgen.gs",
-        "https://libgen.lc",
-    ]
-    BASE_URL = MIRRORS[0]
-
-    def __init__(self, timeout: float = 30.0, proxy: str = ""):
-        self.timeout = timeout
-        self.proxy = proxy
-        self.client = _make_client(timeout, proxy)
-        self._total_size = 0
-
-    def search(self, query: str, max_results: int = 10) -> list[dict]:
-        errors = []
-        for mirror in self.MIRRORS:
-            url = f"{mirror}/index.php"
-            params = {
-                "req": query,
-                "topics[]": "l",
-                "columns[]": ["t", "a"],
-                "objects[]": "f",
-                "res": max_results,
-            }
-            try:
-                resp = self.client.get(url, params=params)
-                if resp.status_code == 404:
-                    errors.append(f"{mirror}: 404 (wrong endpoint)")
-                    continue
-                resp.raise_for_status()
-                results = self._parse_results(resp.text)
-                if results:
-                    self.BASE_URL = mirror
-                    return results
-            except Exception as e:
-                errors.append(f"{mirror}: {e}")
-                continue
-        logger.warning(f"LibGen 搜索失败 '{query}': {'; '.join(errors)}")
-        return []
-
-    def _parse_results(self, html: str) -> list[dict]:
-        soup = BeautifulSoup(html, "html.parser")
-        table = soup.find("table", class_="c") or soup.find("table", id="tablelibgen")
-        if not table:
-            return []
-
-        results = []
-        tbody = table.find("tbody") or table
-        rows = tbody.find_all("tr")
-        for row in rows:
-            cols = row.find_all("td")
-            if len(cols) < 9:
-                continue
-            try:
-                n = len(cols)  # 9 (libgen.li) or 10 (original libgen.is)
-                if n == 9:
-                    # libgen.li format: 0=ID+Title, 1=Author, 2=Pub, 3=Year, 4=Lang, 5=Pages, 6=Size, 7=Ext, 8=Mirrors
-                    title_cell = cols[0]
-                    title_link = title_cell.find("a")
-                    title = title_link.get_text(strip=True) if title_link else title_cell.get_text(strip=True)
-                    author = cols[1].get_text(strip=True)
-                    year = cols[3].get_text(strip=True)
-                    lang = cols[4].get_text(strip=True)
-                    size = cols[6].get_text(strip=True)
-                    ext = cols[7].get_text(strip=True)
-                    dl_links = cols[6].find_all("a")
-                    download_url = ""
-                    for a in dl_links:
-                        href = a.get("href", "")
-                        if href and "file.php" in href:
-                            download_url = f"{self.BASE_URL}{href}" if href.startswith("/") else href
-                            break
-                    if not download_url:
-                        for a in cols[8].find_all("a"):
-                            href = a.get("href", "")
-                            if href and href.startswith("http"):
-                                download_url = href
-                                break
-                else:
-                    # Original libgen.is format: 0=ID, 1=Author, 2=Title, 3=Pub, 4=Year, 5=Pages, 6=Lang, 7=Size, 8=Ext, 9=DL
-                    title_cell = cols[2]
-                    title_link = title_cell.find("a")
-                    title = title_link.get_text(strip=True) if title_link else title_cell.get_text(strip=True)
-                    author = cols[1].get_text(strip=True)
-                    year = cols[4].get_text(strip=True)
-                    lang = cols[6].get_text(strip=True)
-                    size = cols[7].get_text(strip=True)
-                    ext = cols[8].get_text(strip=True)
-                    dl_links = cols[9].find_all("a")
-                    download_url = ""
-                    for a in dl_links:
-                        href = a.get("href", "")
-                        if href.startswith("http"):
-                            download_url = href
-                            break
-                    if not download_url and dl_links:
-                        download_url = dl_links[0].get("href", "")
-
-                if ext.lower() != "pdf":
-                    continue
-
-                results.append({
-                    "title": title,
-                    "author": author,
-                    "year": year,
-                    "language": lang,
-                    "size": size,
-                    "download_url": download_url,
-                })
-            except Exception:
-                continue
-
-        return results
-
-    @staticmethod
-    def _to_abs(href: str, base: str) -> str:
-        if href.startswith("http"):
-            return href
-        sep = "/" if not href.startswith("/") and not base.endswith("/") else ""
-        return f"{base}{sep}{href}"
-
-    def _resolve_get_url(self, url: str) -> str | None:
-        """将 file.php 或 ads.php URL 解析为最终的 get.php?md5=...&key=..."""
-        try:
-            resp = self.client.get(url, follow_redirects=True, timeout=30.0)
-            resp.raise_for_status()
-            html = resp.text
-        except Exception:
-            return None
-
-        soup = BeautifulSoup(html, "html.parser")
-        # Try direct get.php link first
-        for a in soup.find_all("a", href=True):
-            h = a["href"]
-            if "get.php" in h and "md5=" in h:
-                return self._to_abs(h, self.BASE_URL)
-        # Fall through: follow ads.php -> get.php
-        for a in soup.find_all("a", href=True):
-            h = a["href"]
-            if "ads.php" in h and "md5=" in h:
-                ads_url = self._to_abs(h, self.BASE_URL)
-                return self._resolve_get_url(ads_url)
-        return None
-
-    def _fresh_client(self) -> httpx.Client:
-        return _make_client(self.timeout, self.proxy)
-
-    def _do_get(self, url: str, headers: dict | None = None, timeout: float = 120.0) -> httpx.Response | None:
-        """用全新客户端 GET，失败返回 None"""
-        for attempt in range(3):
-            try:
-                with self._fresh_client() as c:
-                    return c.get(url, headers=headers or {},
-                                 follow_redirects=True, timeout=timeout)
-            except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout, httpx.TimeoutException) as e:
-                if attempt < 2:
-                    time.sleep(5 * (attempt + 1))
-                else:
-                    logger.warning(f"GET 失败 ({url[:60]}): {e}")
-                    return None
-        return None
-
-    def _download_file(self, url: str, save_path: Path) -> bool:
-        """分块下载：先试完整 GET，不完整则用 Range 块续传"""
-        CHUNK = 3 * 1024 * 1024  # 3MB per chunk (Clash proxy cuts ~5-7MB)
-
-        # Step 1: Full GET
-        resp = self._do_get(url, timeout=300.0)
-        if resp and resp.content[:5] == b"%PDF-":
-            total = int(resp.headers.get("content-length", 0)) or len(resp.content)
-            if len(resp.content) >= total:
-                save_path.parent.mkdir(parents=True, exist_ok=True)
-                save_path.write_bytes(resp.content)
-                return True
-            # Partial — start from where we got
-            logger.info(f"部分下载 {len(resp.content)}/{total}, 续传中...")
-            buf = bytearray(resp.content)
-            pos = len(resp.content)
-        else:
-            # Try Range from the start to get total_size
-            resp2 = self._do_get(url, headers={"Range": "bytes=0-0"})
-            if resp2 and resp2.status_code == 206:
-                cr = resp2.headers.get("content-range", "")
-                total = int(cr.split("/")[1]) if "/" in cr else 0
-            else:
-                # Fresh ads -> key approach
-                resolved = self._resolve_get_url(url)
-                if not resolved or resolved == url:
-                    return False
-                return self._download_file(resolved, save_path)
-            if total <= 0:
-                return False
-            buf = bytearray()
-            pos = 0
-            if resp2 and resp2.content[:5] == b"%PDF-":
-                buf = bytearray(resp2.content)
-                pos = len(resp2.content)
-
-        # Step 2: Range chunks
-        stall = 0
-        while pos < total:
-            end = min(pos + CHUNK, total) - 1
-            if pos >= end:
-                break
-            hdrs = {"Range": f"bytes={pos}-{end}"}
-            resp = self._do_get(url, headers=hdrs, timeout=120.0)
-            if resp is None:
-                stall += 1
-                if stall > 3:
-                    break
-                time.sleep(10)
-                continue
-            chunk = resp.content
-            if not chunk or resp.status_code not in (206, 200):
-                stall += 1
-                if stall > 3:
-                    break
-                time.sleep(10)
-                continue
-            buf.extend(chunk)
-            pos += len(chunk)
-            stall = 0
-            pct = pos / total * 100
-            logger.info(f"下载进度: {pos}/{total} ({pct:.0f}%)")
-            if pct < 100:
-                time.sleep(3)  # Pacing to avoid rate limit
-
-        if pos >= total:
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            save_path.write_bytes(bytes(buf))
-            return True
-
-        # Save partial if useful
-        if len(buf) > 10000 and buf[:5] == b"%PDF-":
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            save_path.write_bytes(bytes(buf))
-            logger.warning(f"保存部分 PDF ({pos}/{total})")
-            return True
-
-        return False
-
-    def download(self, url: str, save_path: Path) -> bool:
-        resolved = url
-        try:
-            # Step 1: if this is a file.php URL, resolve to get.php
-            if "file.php" in url or "ads.php" in url:
-                resolved = self._resolve_get_url(url)
-            if not resolved:
-                logger.error(f"无法解析下载链接: {url}")
-                return False
-
-            # Step 2: try full download, fallback to Range chunked
-            return self._download_file(resolved, save_path)
-        except Exception as e:
-            logger.error(f"下载失败: {e}")
-            return False
-
-    def close(self):
-        self.client.close()
-
-
-# ============================================================
-# Phase 2: AnnaArchiveHunter — Anna's Archive 备用源
-# ============================================================
-
-class AnnaArchiveHunter:
-    """Anna's Archive 搜索器 (LibGen 无结果时的 fallback)"""
-
-    BASE = "https://annas-archive.gl"
-
-    def __init__(self, timeout: float = 30.0, proxy: str = ""):
-        self.client = _make_client(timeout, proxy)
-
-    def search(self, query: str, max_results: int = 8) -> list[dict]:
-        try:
-            resp = self.client.get(
-                f"{self.BASE}/search",
-                params={"q": query},
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-            )
-            resp.raise_for_status()
-            return self._parse_results(resp.text, max_results)
-        except Exception as e:
-            logger.warning(f"Anna's Archive 搜索失败 '{query}': {e}")
-            return []
-
-    def _parse_results(self, html: str, max_results: int) -> list[dict]:
-        soup = BeautifulSoup(html, "html.parser")
-        results = []
-        for item in soup.select("[class*='result'], [class*='item'], h2, h3"):
-            parent = item.find_parent(["li", "div", "tr"]) or item
-            links = parent.find_all("a", href=True)
-            if not links:
-                continue
-            text = parent.get_text(" ", strip=True)
-            title_link = parent.find("a", href=lambda h: h and "/md5/" in h)
-            if not title_link:
-                title_link = links[0]
-            title = title_link.get_text(strip=True) or links[0].get_text(strip=True)
-            if not title or len(title) < 5 or title in [r.get("title", "") for r in results]:
-                continue
-            detail_url = title_link["href"]
-            if not detail_url.startswith("http"):
-                detail_url = f"{self.BASE}{detail_url}"
-            results.append({
-                "title": title[:120],
-                "author": self._extract_author(text, title),
-                "year": "",
-                "language": "",
-                "size": "",
-                "download_url": detail_url,
-                "_source": "annas-archive",
-            })
-            if len(results) >= max_results:
-                break
-        return results
-
-    @staticmethod
-    def _extract_author(text: str, title: str) -> str:
-        text = text.replace(title, "", 1).strip()
-        # Try common separator patterns
-        for sep in ["by ", " — ", " – ", " | "]:
-            if sep in text:
-                parts = text.split(sep, 1)
-                return parts[1].split(",")[0].split("|")[0].strip()[:50]
-        return ""
-
-    def download(self, url: str, save_path: Path) -> bool:
-        """通过 Anna's Archive 详情页查找并下载 PDF"""
-        try:
-            resp = self.client.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30.0)
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "html.parser")
-            # Find download links (typically LibGen redirects)
-            for a in soup.find_all("a", href=True):
-                href = a["href"]
-                if "libgen" in href.lower() or href.endswith(".pdf"):
-                    dl_resp = self.client.get(href, follow_redirects=True, timeout=120.0)
-                    if dl_resp.status_code == 200 and b"%PDF" in dl_resp.content[:100]:
-                        save_path.parent.mkdir(parents=True, exist_ok=True)
-                        save_path.write_bytes(dl_resp.content)
-                        return True
-            return False
-        except Exception as e:
-            logger.error(f"Anna's Archive 下载失败: {e}")
-            return False
-
-    def close(self):
-        self.client.close()
-
-
-# ============================================================
-# TextbookHunter — 优先 LibGen, fallback 到 Anna's Archive
-# ============================================================
 
 class TextbookHunter(BaseCollector):
     source = "textbook"
 
     def __init__(self, proxy: str = ""):
         self.proxy = proxy
-        self.libgen = LibGenHunter(proxy=proxy)
-        self.anna = AnnaArchiveHunter(proxy=proxy)
+        self.libgen = LibGenDownloader(proxy=proxy)
+        self.anna = AnnaDownloader(proxy=proxy)
 
-    def search_course(self, course: str, query: str, source_hint: str = "") -> list[dict]:
-        print(f"\n检索: {course} -> {query}")
+    def search_course(self, query: str) -> list[dict]:
+        """Search single keyword, LibGen first → Anna's Archive fallback"""
         results = self.libgen.search(query, max_results=8)
         if not results:
-            print("  LibGen 无结果, 尝试 Anna's Archive...")
+            logger.info(f"LibGen 无结果, 尝试 Anna's Archive...")
             results = self.anna.search(query, max_results=8)
-        if not results:
-            print("  全部源无结果")
         return results
 
-    def interactive_search(self, course: str, query: str):
-        results = self.search_course(course, query)
-        save_dir = settings.dataset_path / "textbooks" / course
-        downloaded = []
+    def _show_results_with_confidence(self, results: list[dict], targets: list) -> list[dict]:
+        """Tag confidence and display"""
+        tagged = []
+        for r in results:
+            best_conf = None
+            for t in targets:
+                conf = _match_confidence(r, t)
+                if conf == "A":
+                    best_conf = "A"
+                    break
+                elif conf == "B" and best_conf != "A":
+                    best_conf = "B"
+                elif conf == "C" and best_conf is None:
+                    best_conf = "C"
+            r["_confidence"] = best_conf
+            tagged.append(r)
 
-        if not results:
-            print("  [无结果]")
-            return downloaded
-
-        print(f"  找到 {len(results)} 个结果:")
-        for i, r in enumerate(results, 1):
-            source_tag = " [Anna's Archive]" if r.get("_source") == "annas-archive" else ""
-            print(f"  [{i}]{source_tag} {r['title'][:70]}")
+        for i, r in enumerate(tagged, 1):
+            conf_tag = f"[{r.get('_confidence', '?')}]" if r.get('_confidence') else "[?]"
+            src_tag = " [Anna]" if r.get("_source") == "annas-archive" else ""
+            print(f"  {conf_tag} [{i}]{src_tag} {r['title'][:70]}")
             print(f"      作者: {r['author']} | {r.get('year', '')} | {r.get('size', '')} | {r.get('language', '')}")
+        return tagged
 
-        while True:
-            try:
-                choice = input("  选择下载 [1-{0}/skip]: ".format(len(results))).strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                choice = "skip"
-            if choice == "skip":
-                break
-            if choice.isdigit() and 1 <= int(choice) <= len(results):
-                idx = int(choice) - 1
-                r = results[idx]
-                safe_title = re.sub(r'[<>:"/\\|?*]', "", r["title"]).strip()[:80]
-                safe_title = re.sub(r'\s+', "_", safe_title)
-                filename = f"{safe_title}.pdf"
-                filepath = save_dir / filename
-
-                print(f"    下载中...")
-                hunter = self.anna if r.get("_source") == "annas-archive" else self.libgen
-                ok = hunter.download(r["download_url"], filepath)
-                if ok:
-                    rel = filepath.relative_to(settings.dataset_path)
-                    print(f"    ✓ 已保存: {rel}")
-                    downloaded.append({**r, "local_path": str(rel.as_posix()), "course": course})
-                else:
-                    print(f"    ✗ 下载失败")
-                break
-
-        return downloaded
-
-    def auto_search(self, course: str, query: str):
-        """自动模式：搜索并自动选择第一个合适的 PDF 下载"""
-        results = self.search_course(course, query)
-        save_dir = settings.dataset_path / "textbooks" / course
-        downloaded = []
-
-        if not results:
-            print("  [无结果]")
-            return downloaded
-
-        # Filter: skip annas-archive garbage (no valid title/author)
-        valid = [r for r in results if r.get("_source") != "annas-archive"
-                 and r.get("title") and len(r["title"]) > 5]
-        # Prefer larger files
-        def _size_bytes(s: str) -> int:
-            if not s:
-                return 0
-            s = s.strip().upper()
-            try:
-                if "MB" in s:
-                    return int(float(s.replace("MB", "").strip()) * 1024 * 1024)
-                if "KB" in s:
-                    return int(float(s.replace("KB", "").strip()) * 1024)
-                if "GB" in s:
-                    return int(float(s.replace("GB", "").strip()) * 1024 * 1024 * 1024)
-                return int(s)
-            except ValueError:
-                return 0
-
-        valid.sort(key=lambda r: _size_bytes(r.get("size", "")), reverse=True)
-
-        if not valid:
-            print("  无有效 PDF 结果 (跳过 Anna's Archive 垃圾结果)")
-            return downloaded
-
-        pick = valid[0]
-        print(f"  自动选择: [{pick['title'][:60]} | {pick.get('size', '')}]")
-
-        safe_title = re.sub(r'[<>:"/\\|?*]', "", pick["title"]).strip()[:80]
+    def download_single(self, result: dict, course_id: str) -> Optional[dict]:
+        """Download single result to course directory"""
+        save_dir = settings.dataset_path / "textbooks" / course_id
+        safe_title = re.sub(r'[<>:"/\\|?*]', "", result["title"]).strip()[:80]
         safe_title = re.sub(r'\s+', "_", safe_title)
         filename = f"{safe_title}.pdf"
         filepath = save_dir / filename
 
         if filepath.exists():
-            print(f"    已存在，跳过: {filename}")
-            return downloaded
+            logger.info(f"已存在: {filename}")
+            rel = filepath.relative_to(settings.dataset_path)
+            return {**result, "local_path": str(rel.as_posix()), "course": course_id}
 
-        print(f"    下载中... ({pick.get('size', '?')})")
-        ok = self.libgen.download(pick["download_url"], filepath)
+        logger.info(f"下载: {filename}")
+        hunter = self.anna if result.get("_source") == "annas-archive" else self.libgen
+        ok = hunter.download(result["download_url"], filepath)
         if ok:
             rel = filepath.relative_to(settings.dataset_path)
-            print(f"    ✓ 已保存: {rel}")
-            downloaded.append({**pick, "local_path": str(rel.as_posix()), "course": course})
+            print(f"    [OK] 已保存: {rel}")
+            return {**result, "local_path": str(rel.as_posix()), "course": course_id}
         else:
-            print(f"    ✗ 下载失败")
+            print(f"    [FAIL] 下载失败")
+            return None
+
+    def interactive_select(self, results: list[dict], course_id: str) -> list[dict]:
+        """Interactive select and download"""
+        downloaded = []
+        while True:
+            try:
+                choice = input(f"  选择下载 [1-{len(results)}/skip]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                choice = "skip"
+            if choice == "skip":
+                break
+            if choice.isdigit() and 1 <= int(choice) <= len(results):
+                r = results[int(choice) - 1]
+                d = self.download_single(r, course_id)
+                if d:
+                    downloaded.append(d)
+                break
         return downloaded
 
-    def interactive_all(self):
-        for course, targets in TEXTBOOK_TARGETS.items():
-            zh_query = targets.get("zh", "")
-            en_query = targets.get("en", "")
-            zh_ex = targets.get("zh_exercise", "")
-            all_downloaded = []
-            has_target = False
+    def auto_select(self, results: list[dict], course_id: str) -> list[dict]:
+        """Auto mode: confidence first, same confidence sorted by size"""
+        valid = [r for r in results if r.get("_source") != "annas-archive"
+                 and r.get("title") and len(r["title"]) > 5]
 
-            if zh_query:
-                has_target = True
-                print(f"\n{'='*60}")
-                print(f"课程: {course} (中文教材)")
-                print(f"{'='*60}")
-                all_downloaded.extend(self.interactive_search(course, zh_query))
+        conf_rank = {"A": 0, "B": 1, "C": 2, None: 3}
+        valid.sort(key=lambda r: (conf_rank.get(r.get("_confidence"), 3), -_size_bytes(r.get("size", ""))))
+        if not valid:
+            print("  无有效 PDF 结果")
+            return []
 
-            if en_query:
-                has_target = True
-                for q in en_query.split(";"):
-                    q = q.strip()
-                    if not q:
-                        continue
-                    print(f"\n{'='*60}")
-                    print(f"课程: {course} (英文教材: {q})")
-                    print(f"{'='*60}")
-                    all_downloaded.extend(self.interactive_search(course, q))
+        pick = valid[0]
+        print(f"  自动选择: [{pick.get('_confidence', '?')}] {pick['title'][:60]} | {pick.get('size', '')}")
+        d = self.download_single(pick, course_id)
+        return [d] if d else []
 
-            if zh_ex:
-                has_target = True
-                print(f"\n{'='*60}")
-                print(f"课程: {course} (习题集)")
-                print(f"{'='*60}")
-                all_downloaded.extend(self.interactive_search(course, zh_ex))
+    def _search_targets(self, course, label: str, targets: list, auto: bool = False) -> list[dict]:
+        """Process search for a group of target textbooks"""
+        if not targets:
+            return []
+        all_downloaded = []
+        for t in targets:
+            query = t.query or t.title
+            print(f"\n{'='*60}")
+            print(f"{course.name} ({label}): {query}")
+            print(f"{'='*60}")
+            results = self.search_course(query)
+            if not results:
+                print("  [无结果]")
+                continue
+            tagged = self._show_results_with_confidence(results, [t])
+            fn = self.auto_select if auto else self.interactive_select
+            downloaded = fn(tagged, course.id)
+            all_downloaded.extend(downloaded)
+        return all_downloaded
 
-            if not has_target:
-                print(f"\n{'='*60}")
-                print(f"课程: {course} (无目标)")
-                print(f"{'='*60}")
+    def hunt_course(self, course, auto: bool = False) -> list[dict]:
+        """Search all targets for a single course (Chinese textbooks → English textbooks → exercise books)"""
+        all_dl = []
+        all_dl.extend(self._search_targets(course, "中文教材", [tb for tb in course.textbooks if tb.lang == "zh"], auto))
+        all_dl.extend(self._search_targets(course, "英文教材", [tb for tb in course.textbooks if tb.lang == "en"], auto))
+        all_dl.extend(self._search_targets(course, "习题集", course.exercises, auto))
+        return all_dl
 
+    def interactive_all(self, auto: bool = False, curriculum=None) -> list[dict]:
+        """Iterate all courses
+
+        Args:
+            auto: Auto mode (skip interaction)
+            curriculum: Curriculum object, defaults to MATH_QE
+        """
+        if curriculum is None:
+            from app.curricula.math_qe import MATH_QE as curriculum
+        all_results = []
+        for course in curriculum.courses:
+            results = self.hunt_course(course, auto=auto)
+            all_results.extend(results)
+        self.libgen.close()
+        self.anna.close()
+        return all_results
+
+    def close(self):
         self.libgen.close()
         self.anna.close()

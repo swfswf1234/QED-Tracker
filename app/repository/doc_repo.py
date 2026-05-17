@@ -1,4 +1,4 @@
-"""OfficialDoc 仓储"""
+"""官方文档仓储"""
 
 from sqlalchemy.orm import Session
 from app.repository import BaseRepository

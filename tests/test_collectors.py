@@ -1,4 +1,4 @@
-"""Test: Collectors with mocked external APIs"""
+"""测试：使用模拟外部 API 的收集器"""
 
 import sys
 from pathlib import Path
@@ -7,7 +7,8 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.collectors.paper_collector import PaperCollector
-from app.collectors.textbook_hunter import LibGenHunter
+from app.tools.libgen_downloader import LibGenDownloader
+from app.tools.annas_downloader import AnnaDownloader
 from app.collectors.doc_scraper import DocScraper, DOC_SOURCES
 
 
@@ -44,10 +45,10 @@ class TestPaperCollector:
         assert path is None
 
 
-class TestLibGenHunter:
+class TestLibGenDownloader:
     def test_parse_results_empty(self):
-        hunter = LibGenHunter()
-        results = hunter._parse_results("<html></html>")
+        dl = LibGenDownloader()
+        results = dl._parse_results("<html></html>")
         assert results == []
 
     def test_parse_results_with_table(self):
@@ -61,8 +62,8 @@ class TestLibGenHunter:
         </table>
         </body></html>
         """
-        hunter = LibGenHunter()
-        results = hunter._parse_results(html)
+        dl = LibGenDownloader()
+        results = dl._parse_results(html)
         assert len(results) == 1
         assert results[0]["title"] == "Test Book"
         assert results[0]["author"] == "Book Author"
@@ -77,9 +78,16 @@ class TestLibGenHunter:
         </table>
         </body></html>
         """
-        hunter = LibGenHunter()
-        results = hunter._parse_results(html)
+        dl = LibGenDownloader()
+        results = dl._parse_results(html)
         assert len(results) == 0
+
+
+class TestAnnaDownloader:
+    def test_extract_author(self):
+        ad = AnnaDownloader()
+        assert ad._extract_author("Book Title by John Smith | some other", "Book Title") == "John Smith"
+        assert ad._extract_author("No Match", "Other") == ""
 
 
 class TestDocScraper:

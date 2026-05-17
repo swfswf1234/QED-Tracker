@@ -4,31 +4,25 @@
 
 用法:
     python scripts/hunt_textbooks.py                  # 遍历全部，交互式
-    python scripts/hunt_textbooks.py --auto           # 遍历全部，自动选第一个 PDF
+    python scripts/hunt_textbooks.py --auto           # 自动模式
     python scripts/hunt_textbooks.py --course 03      # 仅检索第3门课
     python scripts/hunt_textbooks.py --no-db          # 跳过数据库写入
 """
 
 import sys
-import io
-# Force UTF-8 for console output (avoid GBK encoding errors)
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
-import re
 from loguru import logger
 
 from app.core.config import settings
+from app.core.utils import setup_console_utf8
 from app.core.database import get_conn, init_tables, check_db
-from app.collectors.textbook_hunter import TextbookHunter, TEXTBOOK_TARGETS
+from app.collectors.textbook_hunter import TextbookHunter
+from app.curricula.math_qe import MATH_QE
 from app.repository.textbook_repo import TextbookRepo
 from app.models.textbook import Textbook
-
-
-COURSE_LIST = sorted(TEXTBOOK_TARGETS.keys())
 
 
 def save_to_db(results: list[dict]):
@@ -51,7 +45,7 @@ def save_to_db(results: list[dict]):
                 source="libgen",
                 source_url=r.get("download_url", ""),
                 local_pdf_path=r.get("local_path", ""),
-                stage="",
+                notes=r.get("_confidence", ""),
             ))
             imported += 1
         print(f"  入库: {imported} 条")
@@ -64,13 +58,14 @@ def save_to_db(results: list[dict]):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="教材检索")
-    parser.add_argument("--course", type=str, help=f"课程编号 (如 03, 04)，不传则遍历全部")
+    parser.add_argument("--course", type=str, help="课程编号 (如 03, 04)，不传则遍历全部")
     parser.add_argument("--no-db", action="store_true", help="跳过数据库写入")
     parser.add_argument("--auto", action="store_true", help="自动模式：自动选择第一个 PDF，跳过交互")
     return parser.parse_args(argv)
 
 
 def main():
+    setup_console_utf8()
     args = parse_args()
 
     hunter = TextbookHunter(proxy=settings.http_proxy)
@@ -78,45 +73,22 @@ def main():
 
     if args.course:
         prefix = args.course.zfill(2)
-        courses = [c for c in COURSE_LIST if c.startswith(prefix)]
+        courses = [c for c in MATH_QE.courses if c.id.startswith(prefix)]
         if not courses:
             print(f"未找到课程编号 '{args.course}'")
-            print(f"可用: {', '.join(COURSE_LIST)}")
+            print(f"可用: {', '.join(c.id for c in MATH_QE.courses)}")
             return
     else:
-        courses = COURSE_LIST
+        courses = MATH_QE.courses
 
     for course in courses:
-        targets = TEXTBOOK_TARGETS.get(course, {})
-        zh_q = targets.get("zh", "")
-        en_q = targets.get("en", "").split(";")[0].strip() if targets.get("en") else ""
-        zh_ex = targets.get("zh_exercise", "")
+        if args.auto:
+            results = hunter.hunt_course(course, auto=True)
+        else:
+            results = hunter.hunt_course(course, auto=False)
+        all_results.extend(results)
 
-        search_fn = hunter.auto_search if args.auto else hunter.interactive_search
-
-        # 1. 搜索中文教材
-        if zh_q:
-            print(f"\n{'='*60}")
-            print(f"课程: {course} (中文教材: {zh_q})")
-            print(f"{'='*60}")
-            all_results.extend(search_fn(course, zh_q))
-
-        # 2. 搜索英文教材
-        if en_q:
-            print(f"\n{'='*60}")
-            print(f"课程: {course} (英文教材: {en_q})")
-            print(f"{'='*60}")
-            all_results.extend(search_fn(course, en_q))
-
-        # 3. 搜索习题集
-        if zh_ex:
-            print(f"\n{'='*60}")
-            print(f"课程: {course} (习题集: {zh_ex})")
-            print(f"{'='*60}")
-            all_results.extend(search_fn(course, zh_ex))
-
-    hunter.libgen.close()
-    hunter.anna.close()
+    hunter.close()
 
     print(f"\n{'='*60}")
     print(f"总计下载: {len(all_results)} 个文件")

@@ -1,21 +1,10 @@
-"""采集器基类"""
-from dataclasses import dataclass, field
-from datetime import date
-from typing import Optional
+"""Base collector: provides source identifier, does not enforce unified method signature
 
-
-@dataclass
-class ResourceInfo:
-    source: str
-    external_id: str
-    title: str
-    url: str = ""
-    local_path: str = ""
-    metadata: dict = field(default_factory=dict)
+Each collector uses different entry methods due to business differences (textbooks/papers/docs),
+but all identify data source type through the source attribute.
+"""
 
 
 class BaseCollector:
+    """Base collector class"""
     source: str = "base"
-
-    def collect(self) -> list[ResourceInfo]:
-        raise NotImplementedError

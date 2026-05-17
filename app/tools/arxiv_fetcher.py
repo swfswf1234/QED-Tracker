@@ -1,4 +1,4 @@
-"""arXiv 论文搜索服务"""
+"""arXiv 论文搜索服务 — 从 app/services/arxiv_client.py 迁入"""
 
 import time
 import arxiv
@@ -77,7 +77,6 @@ def search_by_keywords(keywords: list[str], max_per_keyword: int = 20) -> list[d
     seen_titles = set()
 
     for i, keyword in enumerate(keywords):
-        # 关键词间增加延迟
         if i > 0:
             time.sleep(5)
 

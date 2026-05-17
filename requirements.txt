@@ -1,10 +1,11 @@
 # ============================================
-# QED-Tracker v0.1 依赖清单
+# QED-Tracker v0.2 依赖清单
 # ============================================
 
 # --- 数据库 ---
 sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0
+psycopg2-binary>=2.9.0       # PostgreSQL
+pymysql>=1.1.0               # MySQL
 
 # --- HTTP 客户端 ---
 httpx>=0.28.0
@@ -19,6 +20,10 @@ arxiv>=2.1.0
 
 # --- 日志 ---
 loguru>=0.7.0
+
+# --- API ---
+fastapi>=0.115.0
+uvicorn>=0.34.0
 
 # --- 测试 ---
 pytest>=7.0.0

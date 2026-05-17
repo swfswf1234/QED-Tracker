@@ -1,27 +1,27 @@
-"""数据库连接 — 连接池 + Session 管理"""
+"""兼容层 — 保持 v0.1 API 不变，底层委托 app/db/
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.pool import QueuePool
+旧代码 (scripts, repository) 仍通过 from app.core.database import get_conn 等引用。
+新代码应直接使用 app.db.session.create_engine_from_config()。
+"""
 
 from app.core.config import settings
+from app.db.session import create_engine_from_config
 
-engine = create_engine(
-    settings.db_url,
-    echo=False,
-    poolclass=QueuePool,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-)
+_engine = None
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+
+def _get_engine():
+    global _engine
+    if _engine is None:
+        _engine = create_engine_from_config()
+        _engine.connect()
+    return _engine
 
 
 def get_db():
-    db = SessionLocal()
+    """FastAPI Depends 兼容"""
+    engine = _get_engine()
+    db = engine.get_session()
     try:
         yield db
     finally:
@@ -29,27 +29,20 @@ def get_db():
 
 
 def get_conn():
-    return SessionLocal()
+    """脚本用连接"""
+    engine = _get_engine()
+    return engine.get_session()
 
 
 def init_tables():
-    """创建所有表 (幂等: IF NOT EXISTS)"""
-    from sqlalchemy import inspect
-    from app.models import Base as ModelsBase
-    inspector = inspect(engine)
-    existing = set(inspector.get_table_names())
-    tables = [t for t in ModelsBase.metadata.tables.values() if t.name not in existing]
-    if tables:
-        ModelsBase.metadata.create_all(bind=engine, tables=tables)
-        return len(tables)
-    return 0
+    engine = _get_engine()
+    return engine.init_tables()
 
 
-def check_db() -> bool:
-    """测试数据库连通性"""
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        return True
-    except Exception:
-        return False
+def check_db():
+    engine = _get_engine()
+    return engine.check_connection()
+
+
+from sqlalchemy.orm import declarative_base
+Base = declarative_base()

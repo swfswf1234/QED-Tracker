@@ -1,10 +1,6 @@
 from sqlalchemy import Column, String, Text, DateTime, func
 from app.core.database import Base
-import uuid
-
-
-def uuid_str():
-    return str(uuid.uuid4())
+from app.core.utils import uuid_str
 
 
 class Textbook(Base):

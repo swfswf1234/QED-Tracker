@@ -1,4 +1,4 @@
-"""Paper 仓储"""
+"""论文仓储"""
 
 from sqlalchemy.orm import Session
 from app.repository import BaseRepository

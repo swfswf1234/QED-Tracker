@@ -1,4 +1,4 @@
-"""Test: configuration loading"""
+"""测试：配置加载"""
 
 import sys, os
 from pathlib import Path
@@ -32,11 +32,15 @@ def test_dataset_path_resolution():
 
 def test_dataset_path_absolute():
     s = Settings(dataset_dir="/abs/path")
-    # On Windows, this becomes D:\abs\path; on Unix, /abs/path
+    # 在 Windows 上变为 D:\abs\path；在 Unix 上为 /abs/path
     assert s.dataset_path.is_absolute()
 
 
 def test_db_url_format():
-    s = Settings(db_host="localhost", db_port=5432, db_name="test_db", db_user="u", db_password="p")
+    s = Settings(db_engine="postgresql", db_host="localhost", db_port=5432, db_name="test_db", db_user="u", db_password="p")
     assert "test_db" in s.db_url
     assert s.db_url.startswith("postgresql://")
+
+def test_db_url_mysql():
+    s = Settings(db_engine="mysql", db_host="localhost", db_port=3306, db_name="test_db", db_user="u", db_password="p")
+    assert s.db_url.startswith("mysql+pymysql://")

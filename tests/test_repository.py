@@ -1,4 +1,4 @@
-"""Test: Repository CRUD operations (requires PostgreSQL)"""
+"""测试：仓库 CRUD 操作（需要 PostgreSQL）"""
 
 import sys
 from pathlib import Path

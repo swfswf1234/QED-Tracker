@@ -19,7 +19,6 @@ from app.core.database import get_conn, init_tables, check_db
 from app.collectors.doc_scraper import DocScraper, DOC_SOURCES
 from app.repository.doc_repo import OfficialDocRepo
 from app.models.official_doc import OfficialDoc
-import uuid
 
 
 def save_to_db(results: list[dict]):
@@ -34,7 +33,7 @@ def save_to_db(results: list[dict]):
             existing = repo.get_by_name(r["name"])
             if existing:
                 existing.version = str(r.get("elapsed_seconds", ""))
-                existing.pages_count = r.get("page_count", 0)
+                existing.pages_count = r.get("file_count", 0)
                 repo.update(existing)
                 print(f"  [更新] {r['name']}")
             else:
@@ -43,7 +42,7 @@ def save_to_db(results: list[dict]):
                     name=r["name"],
                     source_url=r["url"],
                     local_path=r.get("local_path", ""),
-                    pages_count=r.get("page_count", 0),
+                    pages_count=r.get("file_count", 0),
                 ))
                 imported += 1
         print(f"  入库: {imported} 新文档")
@@ -89,7 +88,7 @@ def main():
         print(f"{'='*60}")
         r = scraper.scrape(name, url)
         results.append(r)
-        print(f"完成: {r['file_count']} 文件, {r['page_count']} 页面, {r['elapsed_seconds']}s")
+        print(f"完成: {r['file_count']} 文件, {r['elapsed_seconds']}s")
 
     if results and not args.no_db:
         print(f"\n写入数据库...")

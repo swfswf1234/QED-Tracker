@@ -1,4 +1,4 @@
-"""Test: ORM model creation and fields"""
+"""测试：ORM 模型创建和字段"""
 
 import sys
 from pathlib import Path
@@ -75,5 +75,5 @@ class TestResource:
     def test_default_fields(self):
         r = Resource(resource_type="video", title="Tutorial", url="https://youtu.be/test")
         assert r.course_tags is None or r.course_tags == []
-        # is_favorite default=False is a server-side default; None before DB flush
+        # is_favorite 默认值为 False，由服务端设置；刷新数据库前为 None
         assert r.is_favorite is None or r.is_favorite is False

@@ -1,4 +1,4 @@
-"""Resource 仓储"""
+"""资源仓储"""
 
 from sqlalchemy.orm import Session
 from app.repository import BaseRepository
