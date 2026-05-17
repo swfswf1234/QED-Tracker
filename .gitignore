@@ -18,13 +18,20 @@ build/
 .env
 *.env
 
-# Local config (contains local paths)
+# Personal config (must be created manually from setting.example.ini)
 setting.ini
+setting.local.ini
 
-# Temp test files
+# Temp test files & downloads
 _test_*.py
 _dl_*
 _file_php_response.html
+
+# wget logs
+wget-log*
+
+# Dataset (large binary files - PDFs, images)
+dataset/
 
 # macOS
 .DS_Store

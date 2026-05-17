@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from configparser import ConfigParser
 
-from pydantic import Field
+from pydantic import Field, ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -20,11 +20,12 @@ class Settings(BaseSettings):
     # === 数据集路径 ===
     dataset_dir: str = Field(default="dataset")
 
-    # === 数据库配置 ===
+    # === 数据库配置 (多引擎) ===
+    db_engine: str = Field(default="mysql")
     db_host: str = Field(default="localhost")
-    db_port: int = Field(default=5432)
+    db_port: int = Field(default=3306)
     db_name: str = Field(default="qed_tracker")
-    db_user: str = Field(default="postgres")
+    db_user: str = Field(default="root")
     db_password: str = Field(default="")
 
     # === LLM 配置 ===
@@ -38,6 +39,9 @@ class Settings(BaseSettings):
     )
     arxiv_math_domains: list[str] = Field(
         default=["math.CA", "math.FA", "math.AP", "math.CV"]
+    )
+    arxiv_llm_domains: list[str] = Field(
+        default=["cs.LG", "cs.CL", "cs.CV", "cs.AI"]
     )
 
     # === GitHub 配置 ===
@@ -53,12 +57,7 @@ class Settings(BaseSettings):
     # === 日志配置 ===
     log_level: str = Field(default="INFO")
 
-    class Config:
-        env_prefix = "QED_"
-
-    @property
-    def db_url(self) -> str:
-        return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+    model_config = ConfigDict(env_prefix="QED_")
 
     @property
     def project_root(self) -> Path:
@@ -71,22 +70,32 @@ class Settings(BaseSettings):
             return path
         return self.project_root / path
 
+    @property
+    def db_url(self) -> str:
+        if self.db_engine == "mysql":
+            return f"mysql+pymysql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+        return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+
 
 def load_settings_from_ini() -> Settings:
     config = load_ini_config()
     kwargs = {}
 
-    if config.has_section("Paths"):
-        sec = config["Paths"]
+    if config.has_section("Core"):
+        sec = config["Core"]
         if sec.get("dataset_dir"):
             kwargs["dataset_dir"] = sec.get("dataset_dir")
+        if sec.get("log_level"):
+            kwargs["log_level"] = sec.get("log_level")
 
-    if config.has_section("Postgres"):
-        sec = config["Postgres"]
+    if config.has_section("Database"):
+        sec = config["Database"]
+        if sec.get("engine"):
+            kwargs["db_engine"] = sec.get("engine")
         kwargs["db_host"] = sec.get("host", "localhost")
-        kwargs["db_port"] = sec.getint("port", 5432)
+        kwargs["db_port"] = sec.getint("port", 3306)
         kwargs["db_name"] = sec.get("database", "qed_tracker")
-        kwargs["db_user"] = sec.get("user", "postgres")
+        kwargs["db_user"] = sec.get("user", "root")
         kwargs["db_password"] = sec.get("password", "")
 
     if config.has_section("LLM"):
@@ -103,6 +112,9 @@ def load_settings_from_ini() -> Settings:
         domain_str = sec.get("arxiv_math_domains", "")
         if domain_str:
             kwargs["arxiv_math_domains"] = [d.strip() for d in domain_str.split(",") if d.strip()]
+        llm_domain_str = sec.get("arxiv_llm_domains", "")
+        if llm_domain_str:
+            kwargs["arxiv_llm_domains"] = [d.strip() for d in llm_domain_str.split(",") if d.strip()]
 
     if config.has_section("Proxy") and config["Proxy"].get("http"):
         kwargs["http_proxy"] = config["Proxy"]["http"]
@@ -116,9 +128,6 @@ def load_settings_from_ini() -> Settings:
             kwargs["api_host"] = sec.get("host")
         if sec.get("port"):
             kwargs["api_port"] = sec.getint("port", 8001)
-
-    if config.has_section("Logging"):
-        kwargs["log_level"] = config["Logging"].get("level", "INFO")
 
     return Settings(**kwargs)
 
