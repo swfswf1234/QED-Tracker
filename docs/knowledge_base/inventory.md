@@ -1,6 +1,6 @@
-# 书目/教材状态 (v0.2)
+# 书目/教材状态 (v0.3)
 
-> 最后更新: 2026-05-17
+> 最后更新: 2026-05-20
 > LibGen 状态: ⚠️ 搜索可达（需代理 7897），但下载服务器（randombook.org）连接失败，仍无法下载
 
 ## 已有 PDF (17 个文件)
@@ -37,6 +37,19 @@
 | 07 | ODE | 丁同仁《常微分方程》 | A | ❌ 仅参考答案 | Z-Library / 百度网盘 |
 | 08 | PDE | Evans 中译本/英文版 | A/B | ❌ 误匹配 | 手动搜索 |
 | 09 | 抽象代数 | 冯克勤《近世代数引论》 | A | ❌ 无 | Z-Library / 百度网盘 |
+| 02 | 线性代数 | 《线性代数：金题精讲》 | A | ❌ 待搜索 | Z-Library / 百度网盘 |
+| 04 | 实分析 | Stein《实分析：测度论、积分和希尔伯特空间》中译本 | A | ❌ 待搜索 | Z-Library / 百度网盘 |
+| 05 | 复分析 | Stein《复分析》中译本 | A | ❌ 待搜索 | Z-Library / 百度网盘 |
+| 06 | 泛函分析 | Lax《泛函分析》 | A | ❌ 待搜索 | Z-Library / 百度网盘 |
+| 07 | ODE | 阿诺德《常微分方程》 | A | ❌ 待搜索 | Z-Library / 百度网盘 |
+| 09 | 抽象代数 | Artin《代数学》 | A | ❌ 待搜索 | Z-Library / 百度网盘 |
+| 11 | 测度论概率 | Durrett *Probability: Theory and Examples* | A | ❌ 待搜索 | — |
+| 11 | 测度论概率 | Song *Solutions Manual for Probability* | A | ❌ 待搜索 | — |
+| 11 | 测度论概率 | Billingsley *Probability and Measure* | A | ❌ 待搜索 | — |
+| 12 | 随机过程 | Karatzas & Shreve *Brownian Motion and Stochastic Calculus* | A | ❌ 待搜索 | — |
+| 12 | 随机过程 | Ross *Stochastic Processes* | A | ❌ 待搜索 | — |
+| 12 | 随机过程 | Asmussen *Applied Probability and Queues* | A | ❌ 待搜索 | — |
+| 13 | 高维概率论 | Vershynin *High-Dimensional Probability* | A | ❌ 待搜索 | — |
 
 ## 统计
 
@@ -45,6 +58,8 @@
 | 已有 A 级 (中文配对) | 9 |
 | 已有 B 级 (英文配对) | 5 |
 | 已有 C 级 (其他版本) | 1 |
-| 缺失 A 级 | 8 |
+| 缺失 A 级 | 21 |
 | 缺失 B 级 | 3 |
-| **合计** | 17 ✅ / 11 ❌ |
+| **合计** | 17 ✅ / 24 ❌ |
+
+

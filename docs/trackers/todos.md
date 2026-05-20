@@ -9,9 +9,19 @@
 | T-201 | 执行 | 补齐缺失教材 (熊金城, Stein RA/CA, Evans PDE 等 9 本) | P1 | ⬜ (LibGen 搜索可达但下载失败，需替代源) |
 | T-202 | 执行 | 按领域检索 arXiv 论文 (math.CA/FA/AP/CV) | P2 | ⬜ |
 | T-203 | 执行 | 官方文档镜像 wget --mirror (pytorch/sklearn/xgboost/yolo) | P2 | 🔄 |
-| T-204 | 功能 | resources 表对接 (博客/视频/项目链接) | P3 | ⬜ |
+| T-204 | 功能 | resources 表对接 (博客/视频/项目链接) | P3 | 🔄 |
 | T-205 | 功能 | GitHub 项目检索 (入 resources 表) | P3 | ⬜ |
 | T-206 | 讨论 | ⚠️ 大模型方向 — 确定具体资料清单 | 待定 | ⬜ |
+
+## T-204 进度
+
+| 子任务 | 状态 |
+|--------|------|
+| `app/tools/rss_tracker.py` — Quanta REST + Tao RSS 抓取 | ✅ |
+| `app/collectors/frontier_collector.py` — 编排/去重/入库 | ✅ |
+| `scripts/hunt_frontier.py` — CLI 入口 | ✅ |
+| 种子数据首次入库 (`--seed`) | 🔄 代码就绪，需 MySQL 运行后执行 |
+| LLM 摘要 (`--summary`) | ⬜ 预留
 
 ## 第三阶段：大模型方向（预留）
 

@@ -44,6 +44,10 @@ MATH_QE = Curriculum(
                     title="线性代数习题集", author="苏联", lang="zh",
                     confidence=Confidence.A, query="苏联 线性代数 习题集"
                 ),
+                TextbookTarget(
+                    title="线性代数：金题精讲", author="", lang="zh",
+                    confidence=Confidence.A, query="线性代数 金题精讲"
+                ),
             ],
         ),
         Course(
@@ -74,6 +78,10 @@ MATH_QE = Curriculum(
                     title="Real Analysis", author="Stein", lang="en",
                     confidence=Confidence.B, query="Stein Real Analysis"
                 ),
+                TextbookTarget(
+                    title="实分析：测度论、积分和希尔伯特空间", author="Stein", lang="zh",
+                    confidence=Confidence.A, query="实分析 测度论 积分 希尔伯特空间 Stein"
+                ),
             ],
             exercises=[
                 TextbookTarget(
@@ -99,6 +107,10 @@ MATH_QE = Curriculum(
                     title="Complex Analysis", author="Stein", lang="en",
                     confidence=Confidence.B, query="Stein Complex Analysis"
                 ),
+                TextbookTarget(
+                    title="复分析", author="Stein", lang="zh",
+                    confidence=Confidence.A, query="复分析 Stein"
+                ),
             ],
             exercises=[
                 TextbookTarget(
@@ -120,6 +132,10 @@ MATH_QE = Curriculum(
                     title="Functional Analysis", author="Stein", lang="en",
                     confidence=Confidence.B, query="Stein Functional Analysis"
                 ),
+                TextbookTarget(
+                    title="泛函分析", author="Lax", lang="zh",
+                    confidence=Confidence.A, query="Lax 泛函分析"
+                ),
             ],
             exercises=[
                 TextbookTarget(
@@ -140,6 +156,10 @@ MATH_QE = Curriculum(
                 TextbookTarget(
                     title="Ordinary Differential Equations", author="Tenenbaum", lang="en",
                     confidence=Confidence.B, query="Tenenbaum Ordinary Differential Equations"
+                ),
+                TextbookTarget(
+                    title="常微分方程", author="阿诺德", lang="zh",
+                    confidence=Confidence.A, query="阿诺德 常微分方程"
                 ),
             ],
             exercises=[
@@ -176,6 +196,10 @@ MATH_QE = Curriculum(
                 TextbookTarget(
                     title="Abstract Algebra", author="Dummit", lang="en",
                     confidence=Confidence.B, query="Dummit Abstract Algebra"
+                ),
+                TextbookTarget(
+                    title="代数学", author="Artin", lang="zh",
+                    confidence=Confidence.A, query="Artin 代数学"
                 ),
             ],
         ),
