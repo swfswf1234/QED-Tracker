@@ -6,12 +6,13 @@
 
 | ID | 类型 | 描述 | 优先级 | 状态 |
 |----|------|------|--------|------|
-| T-201 | 执行 | 补齐缺失教材 (熊金城, Stein RA/CA, Evans PDE 等 9 本) | P1 | ⬜ (LibGen 搜索可达但下载失败，需替代源) |
+| T-201 | 执行 | 补齐缺失教材 (16 本: 熊金城, Evans, Stein中译, 张恭庆, Lax, 丁同仁, 阿诺德, 冯克勤, Artin, 金题精讲, 方企勤, Song, Karatzas, Asmussen 等) | P1 | 🔄 (已补 6 本: Durrett/Billingsley/Ross/Vershynin + Stein RA/CA 已有但未登记) |
 | T-202 | 执行 | 按领域检索 arXiv 论文 (math.CA/FA/AP/CV) | P2 | ⬜ |
 | T-203 | 执行 | 官方文档镜像 wget --mirror (pytorch/sklearn/xgboost/yolo) | P2 | 🔄 |
 | T-204 | 功能 | Resources Hub: resources 表对接、查询、收藏、导出 | P3 | 🔄 |
 | T-205 | 功能 | GitHub 项目检索 (入 resources 表) | P3 | 🔄 |
 | T-206 | 讨论 | ⚠️ 大模型方向 — 确定具体资料清单 | 待定 | ⬜ |
+| T-207 | 新增 | 课程 11-13 概率论方向已纳入 math_qe.py (10 本缺失) | P1 | ✅ |
 
 ## T-204 进度
 
@@ -41,6 +42,18 @@
 |----|------|------|--------|
 | T-301 | 内容 | 填写 `curricula/llm_research.py` — 定义 GitHub 仓库/arXiv 领域/文档目标 | 待定 |
 | T-302 | 执行 | 大模型方向首次采集 | 待定 |
+
+## 第四阶段：计算机 — LLM 冲刺 (v0.1)
+
+| ID | 类型 | 描述 | 优先级 | 状态 |
+|----|------|------|--------|------|
+| T-401 | 内容 | `curricula/cs_llm_sprint.py` — 五阶段课程体系已定义 | P1 | ✅ |
+| T-402 | 设计 | `docs/design/cs_llm_sprint.md` — CS/LLM 冲刺设计文档 | P1 | ✅ |
+| T-403 | 采集 | Stage 1-3: DS/Algo/ML/DL 教材采集 (CLRS/ISLR/ESL/d2l.ai) | P1 | ⬜ |
+| T-404 | 采集 | Stage 4: LLM 核心论文采集 (Attention/GPT/LLaMA via arXiv) | P1 | ⬜ |
+| T-405 | 跟踪 | Stage 5: RAG/Agent 相关 GitHub 仓库跟踪 (langchain/llama_index) | P2 | ⬜ |
+| T-406 | 采集 | Stage 4: NLP 教材采集 (Jurafsky & Martin SLP) | P2 | ⬜ |
+| T-407 | 整理 | Stage 2-3/5: 视频资源整理入库 (CS229/CS231n/CS224N) | P3 | ⬜ |
 
 ## T-203 进度
 

@@ -22,6 +22,7 @@ from app.core.config import settings
 from app.curricula.base import Confidence
 from app.tools.libgen_downloader import LibGenDownloader
 from app.tools.annas_downloader import AnnaDownloader
+from app.tools.zlib_downloader import ZlibDownloader
 
 
 def _fuzzy_match(text: str, target: str) -> float:
@@ -92,13 +93,20 @@ class TextbookHunter(BaseCollector):
         self.proxy = proxy
         self.libgen = LibGenDownloader(proxy=proxy)
         self.anna = AnnaDownloader(proxy=proxy)
+        self.zlib = ZlibDownloader(proxy=proxy)
 
     def search_course(self, query: str) -> list[dict]:
-        """Search single keyword, LibGen first → Anna's Archive fallback"""
+        """Search single keyword, LibGen first → Anna's Archive → Z-Library fallback"""
         results = self.libgen.search(query, max_results=8)
         if not results:
             logger.info(f"LibGen 无结果, 尝试 Anna's Archive...")
             results = self.anna.search(query, max_results=8)
+        if not results:
+            logger.info(f"Anna's Archive 无结果, 尝试 Z-Library...")
+            if self.zlib.check_reachable():
+                results = self.zlib.search(query, max_results=8)
+            else:
+                logger.warning("Z-Library 不可达，跳过")
         return results
 
     def _show_results_with_confidence(self, results: list[dict], targets: list) -> list[dict]:
@@ -139,7 +147,13 @@ class TextbookHunter(BaseCollector):
             return {**result, "local_path": str(rel.as_posix()), "course": course_id}
 
         logger.info(f"下载: {filename}")
-        hunter = self.anna if result.get("_source") == "annas-archive" else self.libgen
+        source = result.get("_source", "")
+        if source == "annas-archive":
+            hunter = self.anna
+        elif source == "zlib":
+            hunter = self.zlib
+        else:
+            hunter = self.libgen
         ok = hunter.download(result["download_url"], filepath)
         if ok:
             rel = filepath.relative_to(settings.dataset_path)
@@ -226,8 +240,10 @@ class TextbookHunter(BaseCollector):
             all_results.extend(results)
         self.libgen.close()
         self.anna.close()
+        self.zlib.close()
         return all_results
 
     def close(self):
         self.libgen.close()
         self.anna.close()
+        self.zlib.close()

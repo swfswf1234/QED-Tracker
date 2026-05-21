@@ -218,5 +218,66 @@ MATH_QE = Curriculum(
                 ),
             ],
         ),
+        Course(
+            id="11_probability",
+            name="测度论概率",
+            stage="专精",
+            textbooks=[
+                TextbookTarget(
+                    title="Probability: Theory and Examples", author="Durrett", lang="en",
+                    confidence=Confidence.B,
+                    query="Durrett Probability Theory and Examples"
+                ),
+                TextbookTarget(
+                    title="Probability and Measure", author="Billingsley", lang="en",
+                    confidence=Confidence.B,
+                    query="Billingsley Probability and Measure"
+                ),
+            ],
+            exercises=[
+                TextbookTarget(
+                    title="Solutions Manual for Probability", author="Song", lang="en",
+                    confidence=Confidence.B,
+                    query="Song Solutions Manual Probability"
+                ),
+            ],
+        ),
+        Course(
+            id="12_stochastic_processes",
+            name="随机过程",
+            stage="专精",
+            textbooks=[
+                TextbookTarget(
+                    title="Brownian Motion and Stochastic Calculus",
+                    author="Karatzas Shreve", lang="en",
+                    confidence=Confidence.B,
+                    query="Karatzas Shreve Brownian Motion Stochastic Calculus"
+                ),
+                TextbookTarget(
+                    title="Stochastic Processes", author="Ross", lang="en",
+                    confidence=Confidence.B,
+                    query="Ross Stochastic Processes"
+                ),
+            ],
+            exercises=[
+                TextbookTarget(
+                    title="Applied Probability and Queues", author="Asmussen", lang="en",
+                    confidence=Confidence.B,
+                    query="Asmussen Applied Probability Queues"
+                ),
+            ],
+        ),
+        Course(
+            id="13_high_dim_prob",
+            name="高维概率论",
+            stage="专精",
+            textbooks=[
+                TextbookTarget(
+                    title="High-Dimensional Probability", author="Vershynin", lang="en",
+                    confidence=Confidence.B,
+                    query="Vershynin High-Dimensional Probability"
+                ),
+            ],
+        ),
     ],
 )

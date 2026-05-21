@@ -68,6 +68,7 @@ python scripts/manage_resources.py export --format markdown --output resources.m
 |------|------|------|
 | **《突破朗道位垒》** — 数学研究基础 (10 门课) | `app/curricula/math_qe.py` | ✅ 活跃 |
 | **大模型方向** — LLM 研究资源 | `app/curricula/llm_research.py` | ⚠️ 后续部分 |
+| **计算机 — LLM 冲刺** — AI 开发/大模型应用/RAG 方向 | `app/curricula/cs_llm_sprint.py` | 📌 Draft |
 
 ### 置信度定义
 
@@ -132,10 +133,11 @@ QED-Tracker/
 | `database.md` | 多库设计 + 表结构 |
 | `tests.md` | 测试指南、运行命令与覆盖范围 |
 | `design/README.md` | 设计文档分类索引与写作规则 |
-| `design/scholar_tracker_v1.md` | 采集器 + 置信度矩阵 |
+| `design/math_qe_curriculum.md` | 采集器 + 置信度矩阵 |
 | `design/book_hunter_sources.md` | LibGen 下载链路详述 |
 | `design/frontier_tracking.md` | 前沿数学/算法资讯源与 RSS 跟踪设计 |
 | `design/resources_hub.md` | resources 表统一资源中心、CLI 与 GitHub 元数据采集设计 |
 | `design/llm_research_plan.md` | ⚠️ 大模型方向设计预留 |
+| `design/cs_llm_sprint.md` | 📌 计算机 — LLM 冲刺：五阶段路线设计 |
 | `trackers/todos.md` | 当前任务清单 |
 | `knowledge_base/inventory.md` | 书目状态完整清单 |

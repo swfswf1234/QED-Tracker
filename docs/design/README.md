@@ -12,11 +12,12 @@ Documents that define what QED-Tracker tracks and how domain-specific collection
 
 | Document | Scope | Status |
 | --- | --- | --- |
-| `scholar_tracker_v1.md` | Math QE resource collection, confidence levels, collector flow, and dataset layout. | Active |
+| `math_qe_curriculum.md` | Math QE resource collection, confidence levels, collector flow, and dataset layout. | Active |
 | `book_hunter_sources.md` | Textbook source strategy, LibGen and Anna's Archive download flow, and confidence matching. | Active |
 | `frontier_tracking.md` | Frontier math and algorithm feeds, curated source list, and RSS collection strategy. | Active |
 | `resources_hub.md` | Shared resources table, CLI, repository helpers, and GitHub metadata collection. | Active |
 | `llm_research_plan.md` | LLM research direction, tool readiness, and unresolved target-list decisions. | Reserved |
+| `cs_llm_sprint.md` | CS LLM sprint: DS+Algo → ML → DL → LLM algorithm → LLM application. | Draft |
 
 ### Workflow Guides
 

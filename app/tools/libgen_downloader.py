@@ -146,6 +146,12 @@ class LibGenDownloader:
     # ── URL 解析 ──────────────────────────────────────────
 
     @staticmethod
+    def _extract_md5(url: str) -> str | None:
+        """从任意 URL 中提取 MD5 哈希值"""
+        m = re.search(r'([a-f0-9]{32})', url)
+        return m.group(1) if m else None
+
+    @staticmethod
     def _to_abs(href: str, base: str) -> str:
         if href.startswith("http"):
             return href
@@ -271,7 +277,7 @@ class LibGenDownloader:
         return False
 
     def _download_file(self, url: str, save_path: Path) -> bool:
-        """下载文件主流程：尝试完整下载 → Range 分块续传 → 部分保存"""
+        """下载文件主流程：尝试完整下载 → resolve → MD5 fallback → Range 分块续传"""
         complete = self._try_complete_download(url)
         if complete is not None:
             if not save_path.parent.exists():
@@ -282,6 +288,14 @@ class LibGenDownloader:
         resolved = self._resolve_get_url(url)
         if resolved and resolved != url:
             return self._download_file(resolved, save_path)
+
+        # MD5 fallback: randombook.org 可能不可用，改从 mirror 的 ads.php 解析
+        md5 = self._extract_md5(url)
+        if md5:
+            ads_url = f"{self.BASE_URL}/ads.php?md5={md5}"
+            real_url = self._resolve_get_url(ads_url)
+            if real_url and real_url != ads_url:
+                return self._download_file(real_url, save_path)
 
         buf, pos, total = self._get_total_size(url, None)
         if total <= 0:

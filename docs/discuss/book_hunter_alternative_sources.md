@@ -1,48 +1,34 @@
 # 📌 教材缺失源替代方案讨论
 
-> **状态**: 讨论中
+> **状态**: 方案 B 已实现（Z-Library 下载器），方案 A/C 待执行
 > **关联**: 见 `docs/knowledge_base/inventory.md` 缺失清单，对应 T-201
-> **编写**: 2026-05-17
+> **编写**: 2026-05-17 | **更新**: 2026-05-21
 
 ## 现状
 
-LibGen 7 镜像全部不可达（当前网络无代理/VPN），已成功下载的 17 本 PDF 保持在 v0.1 状态。
+LibGen 搜索可达（需代理 7897），但下载服务器连接仍失败。已实现 Z-Library fallback 下载器 (`app/tools/zlib_downloader.py`)。
 
-缺失 11 本教材分三类场景：
+缺失清单（含课程 11-13 概率论方向）共 32 本教材：
 
 | 分类 | 涉及书目 | 数量 | 问题 |
 |------|---------|------|------|
-| LibGen 不可达 | 全部依赖 LibGen 的书籍 | 全部 | 网络/代理问题 |
-| 中文教材无源 | 熊金城、丁同仁、张恭庆、冯克勤、方企勤、Evans 中译本 | 6 | LibGen 无这些中文源 |
-| 英文误匹配 | Stein *Real Analysis*, Stein *Complex Analysis*, Evans *PDE* | 3 | 同书名不同作者，置信度低 |
-| 下载中断 | 泛函分析学习指导 | 1 | 网络中断，需续传 |
+| LibGen 下载失败 | Stein RA/CA, Evans PDE, 泛函学习指导 等 | ~4 | 下载服务器不通 |
+| Z-Library 覆盖 | 中文教材 + 概率论英文教材 | 全部 | 待测试可达性 |
+| 英文误匹配 | Stein, Evans 同名不同作者 | 3 | 需精确搜索或手动选择 |
+| 概率论 10 本 | Durrett, Billingsley, Vershynin 等 | 10 | 新增课程，首次采集 |
 
-## 方案 A：仅依赖 LibGen（当前路线）
+## 方案 A：仅依赖 LibGen（现有路线）
 
-直接解决代理问题后重试全量。
+**当前**: LibGen 搜索可达但下载不通，需修复代理/VPN 后重试。
 
-**步骤**:
+## 方案 B：Z-Library 备用下载器 ✅ 已实现
 
-1. 确保 `setting.ini` 中 `[Proxy]` 段配置正确
-2. 确认 WSL 网络模式可连通（WSL2 NAT 模式需额外配置端口转发）
-3. 运行 `python scripts/hunt_textbooks.py --all`
-4. 对 Stein/Evans 等误匹配结果，在交互模式下手动选择正确版本
-
-**已知限制**:
-- 中文教材（熊金城、丁同仁、张恭庆等）LibGen 大概率无源
-- Stein/Evans 英文版需要更精确的搜索词或手动选择
-
-## 方案 B：Z-Library 备用下载器
-
-Z-Library 中文教材覆盖率高于 LibGen，可作为主要补充源。
-
-**方案要点**:
-- `app/tools/zlib_downloader.py` — search + download 接口，与 LibGenDownloader 对齐
-- 通过 `singlelogin.re` 域名访问
-- 整合进 TextbookHunter 的 fallback 链路：LibGen → Z-Library → 手动
+> `app/tools/zlib_downloader.py` 于 2026-05-21 创建，接口与 LibGenDownloader 对齐。
+> 已整合进 `app/collectors/textbook_hunter.py` 的 fallback 链：
+> LibGen → Anna's Archive → Z-Library
 
 **优点**: 中文数学教材齐全，PDF 质量好
-**风险**: 域名频繁变更，需维护可达性检测
+**风险**: 域名频繁变更，需维护可达性检测（当前通过 `singlelogin.re` 访问）
 
 ## 方案 C：中文专用源
 
@@ -59,23 +45,22 @@ Z-Library 中文教材覆盖率高于 LibGen，可作为主要补充源。
 ## 建议执行路线
 
 ```
-Phase 1 (P0): 修复网络 → LibGen 全量重试
-  └─ 结果: 评估哪些已解决、哪些仍需补充
+Step 1 (P0): 配置代理/VPN → 测试 LibGen + Z-Library 可达性
+  ├─ 测试 Z-Library: python -c "from app.tools.zlib_downloader import ZlibDownloader; print(ZlibDownloader().check_reachable())"
+  └─ 测试 LibGen:   python scripts/hunt_textbooks.py --auto
 
-Phase 2 (P1): 根据 Phase 1 结果决策
-  ├─ 若中文教材仍缺失 → 方案 B (Z-Library)
-  └─ 若英文误匹配仍存在 → 人工手动选择 + 更新搜索词
+Step 2 (P1): If Z-Library 可达 → 首次全量搜索 + 下载
+  └─ 优先: 熊金城、丁同仁、张恭庆、冯克勤（LibGen 无中文源）
 
-Phase 3 (P2): 剩余缺口处理
-  └─ 方案 C (中文专用源按需执行)
+Step 3 (P2): 剩余缺口手动处理
+  └─ 方案 C 按需执行
 ```
 
 ## 待办
 
-- [ ] 验证代理/VPN 配置后 LibGen 是否可达
-- [ ] 重跑 LibGen 全量检索并记录结果
-- [ ] 更新 `docs/knowledge_base/inventory.md` 反映新状态
-- [ ] 如决定引入 Z-Library，创建 `app/tools/zlib_downloader.py`
-
-
-
+- [ ] 配置代理后测试 Z-Library 可达性 (`check_reachable()`)
+- [ ] 配置代理后测试 LibGen 下载恢复
+- [ ] 重跑全量检索并记录结果
+- [x] 实现 Z-Library 下载器 (`app/tools/zlib_downloader.py`)
+- [x] 整合进 TextbookHunter 的 fallback 链
+- [x] 扩展 math_qe.py 加入课程 11-13 概率论方向

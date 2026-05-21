@@ -1,7 +1,7 @@
 # 前沿跟踪配置 v0.1
 
 > QED-Tracker 设计文档：定义前沿数学/算法资讯源及精选列表，用于自动采集和跟踪。
-> 来源：`docs/discuss/add_book_and_source.md` 文章/图文与 RSS 部分（视频待定）
+> 文章/图文与 RSS 部分（视频待定）
 
 ## RSS 源
 
@@ -50,7 +50,7 @@ RSS/API 轮询 → 每日新文章检测 → 元数据入库(resources表)
 
 ## 数字化流程建议
 
-来自 `add_book_and_source.md` 的建议：
+来自上述资料的建议：
 
 > 将 **Rick Durrett *Probability: Theory and Examples* (第5版) 第4章: Martingales** 作为 MinerU 管道的核心测试语料。该章包含 sigma-代数流 $\mathcal{F}_n$、鞅变换等测度论符号，能有效检验 MinerU 对复杂数学 LaTeX 的还原能力。
 

@@ -13,6 +13,7 @@ graph TB
     subgraph "课程体系"
         MATH[app/curricula/math_qe.py]
         LLM[app/curricula/llm_research.py]
+        CS[app/curricula/cs_llm_sprint.py]
     end
 
     subgraph "工具层 app/tools/"
@@ -73,8 +74,9 @@ graph TB
 |----|------|------|------|
 | **配置** | Config | `app/core/config.py` | 从 setting.ini 读取配置，多库引擎选择 |
 | **课程体系** | Curriculum Base | `app/curricula/base.py` | 课程基类 + 置信度枚举 (A/B/C) |
-| | Math QE | `app/curricula/math_qe.py` | 突破朗道位垒 (10 门课 + 目标教材) |
+| | Math QE | `app/curricula/math_qe.py` | 突破朗道位垒 (13 门课 + 目标教材) |
 | | LLM Research | `app/curricula/llm_research.py` | ⚠️ 大模型方向 (后续部分) |
+| | CS LLM Sprint | `app/curricula/cs_llm_sprint.py` | 计算机 — LLM 冲刺：五阶段 (DS→ML→DL→LLM 算法→LLM 应用) |
 | **工具层** | Logger | `app/tools/logger.py` | 集中日志配置 |
 | | LibGen Downloader | `app/tools/libgen_downloader.py` | 多镜像搜索 + Range 分块续传 |
 | | Anna's Downloader | `app/tools/annas_downloader.py` | Anna's Archive 备选源 |
