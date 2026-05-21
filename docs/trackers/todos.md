@@ -9,8 +9,8 @@
 | T-201 | 执行 | 补齐缺失教材 (熊金城, Stein RA/CA, Evans PDE 等 9 本) | P1 | ⬜ (LibGen 搜索可达但下载失败，需替代源) |
 | T-202 | 执行 | 按领域检索 arXiv 论文 (math.CA/FA/AP/CV) | P2 | ⬜ |
 | T-203 | 执行 | 官方文档镜像 wget --mirror (pytorch/sklearn/xgboost/yolo) | P2 | 🔄 |
-| T-204 | 功能 | resources 表对接 (博客/视频/项目链接) | P3 | 🔄 |
-| T-205 | 功能 | GitHub 项目检索 (入 resources 表) | P3 | ⬜ |
+| T-204 | 功能 | Resources Hub: resources 表对接、查询、收藏、导出 | P3 | 🔄 |
+| T-205 | 功能 | GitHub 项目检索 (入 resources 表) | P3 | 🔄 |
 | T-206 | 讨论 | ⚠️ 大模型方向 — 确定具体资料清单 | 待定 | ⬜ |
 
 ## T-204 进度
@@ -20,8 +20,20 @@
 | `app/tools/rss_tracker.py` — Quanta REST + Tao RSS 抓取 | ✅ |
 | `app/collectors/frontier_collector.py` — 编排/去重/入库 | ✅ |
 | `scripts/hunt_frontier.py` — CLI 入口 | ✅ |
+| `app/repository/resource_repo.py` — URL 去重、搜索、收藏查询 | ✅ |
+| `scripts/manage_resources.py` — list/search/favorite/export CLI | ✅ |
+| `docs/design/resources_hub.md` — 资源中心设计 | ✅ |
 | 种子数据首次入库 (`--seed`) | 🔄 代码就绪，需 MySQL 运行后执行 |
 | LLM 摘要 (`--summary`) | ⬜ 预留
+
+## T-205 进度
+
+| 子任务 | 状态 |
+|--------|------|
+| `app/tools/github_downloader.py` — GitHub API 元数据工具 | ✅ |
+| `app/collectors/github_collector.py` — GitHub repo 元数据入 resources | ✅ |
+| `scripts/hunt_github.py` — repo 参数/文件输入 CLI | ✅ |
+| LLM 清单批量接入 | ⬜ |
 
 ## 第三阶段：大模型方向（预留）
 

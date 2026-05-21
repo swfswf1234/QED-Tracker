@@ -53,6 +53,13 @@ python scripts/hunt_papers.py --domain math.CA --max 10
 
 # 8. 爬取官方文档
 python scripts/hunt_docs.py --name pytorch
+
+# 9. 采集 GitHub 项目元数据
+python scripts/hunt_github.py pytorch/pytorch vllm-project/vllm
+
+# 10. 查询/导出 resources 表
+python scripts/manage_resources.py list --type repo
+python scripts/manage_resources.py export --format markdown --output resources.md
 ```
 
 ## 课程体系
@@ -120,10 +127,15 @@ QED-Tracker/
 
 | 文档 | 说明 |
 |------|------|
+| `agent_protocol.md` | Agent 阅读顺序、工作流、验证与文档维护协议 |
 | `architecture.md` | 系统架构 + Mermaid 全景图 |
 | `database.md` | 多库设计 + 表结构 |
+| `tests.md` | 测试指南、运行命令与覆盖范围 |
+| `design/README.md` | 设计文档分类索引与写作规则 |
 | `design/scholar_tracker_v1.md` | 采集器 + 置信度矩阵 |
 | `design/book_hunter_sources.md` | LibGen 下载链路详述 |
+| `design/frontier_tracking.md` | 前沿数学/算法资讯源与 RSS 跟踪设计 |
+| `design/resources_hub.md` | resources 表统一资源中心、CLI 与 GitHub 元数据采集设计 |
 | `design/llm_research_plan.md` | ⚠️ 大模型方向设计预留 |
 | `trackers/todos.md` | 当前任务清单 |
 | `knowledge_base/inventory.md` | 书目状态完整清单 |
