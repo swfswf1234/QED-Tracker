@@ -30,8 +30,8 @@ _file_php_response.html
 # wget logs
 wget-log*
 
-# Dataset (large binary files - PDFs, images)
-dataset/
+# Dataset (large binary files - only ignore official_docs mirrors)
+dataset/official_docs/
 
 # macOS
 .DS_Store
