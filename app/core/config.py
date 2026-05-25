@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     # === 数据集路径 ===
     dataset_dir: str = Field(default="dataset")
+    textbook_dir: str = Field(default="")
 
     # === 数据库配置 (多引擎) ===
     db_engine: str = Field(default="mysql")
@@ -71,6 +72,15 @@ class Settings(BaseSettings):
         return self.project_root / path
 
     @property
+    def textbook_path(self) -> Path:
+        """教材下载专用路径，默认与 dataset_path 相同"""
+        raw = self.textbook_dir or self.dataset_dir
+        path = Path(raw)
+        if path.is_absolute():
+            return path
+        return self.project_root / path
+
+    @property
     def db_url(self) -> str:
         if self.db_engine == "mysql":
             return f"mysql+pymysql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
@@ -85,6 +95,8 @@ def load_settings_from_ini() -> Settings:
         sec = config["Core"]
         if sec.get("dataset_dir"):
             kwargs["dataset_dir"] = sec.get("dataset_dir")
+        if sec.get("textbook_dir"):
+            kwargs["textbook_dir"] = sec.get("textbook_dir")
         if sec.get("log_level"):
             kwargs["log_level"] = sec.get("log_level")
 

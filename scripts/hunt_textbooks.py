@@ -1,6 +1,6 @@
 """教材检索入口 — 一次性运行
 
-遍历所有课程，搜索目标教材 PDF，下载到 dataset/textbooks/。
+遍历所有课程，搜索目标教材 PDF，下载到 dataset/textbooks/（路径由 setting.ini 中 dataset_dir 配置）。
 
 用法:
     python scripts/hunt_textbooks.py                  # 遍历全部，交互式

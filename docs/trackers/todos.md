@@ -6,7 +6,7 @@
 
 | ID | 类型 | 描述 | 优先级 | 状态 |
 |----|------|------|--------|------|
-| T-201 | 执行 | 补齐缺失教材 (16 本: 熊金城, Evans, Stein中译, 张恭庆, Lax, 丁同仁, 阿诺德, 冯克勤, Artin, 金题精讲, 方企勤, Song, Karatzas, Asmussen 等) | P1 | 🔄 (已补 6 本: Durrett/Billingsley/Ross/Vershynin + Stein RA/CA 已有但未登记) |
+| T-201 | 执行 | 补齐缺失教材 (熊金城, Stein RA/CA, Evans PDE, 概率论方向 10 本 等) | P1 | ⬜ (LibGen 搜索可达但下载失败，需替代源) |
 | T-202 | 执行 | 按领域检索 arXiv 论文 (math.CA/FA/AP/CV) | P2 | ⬜ |
 | T-203 | 执行 | 官方文档镜像 wget --mirror (pytorch/sklearn/xgboost/yolo) | P2 | 🔄 |
 | T-204 | 功能 | Resources Hub: resources 表对接、查询、收藏、导出 | P3 | 🔄 |

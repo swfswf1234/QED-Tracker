@@ -80,7 +80,7 @@ python scripts/manage_resources.py export --format markdown --output resources.m
 
 ## 数据集
 
-已有文件位于 `dataset/textbooks/`：
+已有文件位于 `../dataset/textbooks/`（或在 `setting.ini` 中通过 `dataset_dir` 配置）：
 
 | 课程 | 教材 | 置信度 |
 |------|------|--------|

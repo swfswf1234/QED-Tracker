@@ -135,7 +135,7 @@ class TextbookHunter(BaseCollector):
 
     def download_single(self, result: dict, course_id: str) -> Optional[dict]:
         """Download single result to course directory"""
-        save_dir = settings.dataset_path / "textbooks" / course_id
+        save_dir = settings.textbook_path / "textbooks" / course_id
         safe_title = re.sub(r'[<>:"/\\|?*]', "", result["title"]).strip()[:80]
         safe_title = re.sub(r'\s+', "_", safe_title)
         filename = f"{safe_title}.pdf"
@@ -143,7 +143,7 @@ class TextbookHunter(BaseCollector):
 
         if filepath.exists():
             logger.info(f"已存在: {filename}")
-            rel = filepath.relative_to(settings.dataset_path)
+            rel = filepath.relative_to(settings.textbook_path)
             return {**result, "local_path": str(rel.as_posix()), "course": course_id}
 
         logger.info(f"下载: {filename}")
@@ -156,7 +156,7 @@ class TextbookHunter(BaseCollector):
             hunter = self.libgen
         ok = hunter.download(result["download_url"], filepath)
         if ok:
-            rel = filepath.relative_to(settings.dataset_path)
+            rel = filepath.relative_to(settings.textbook_path)
             print(f"    [OK] 已保存: {rel}")
             return {**result, "local_path": str(rel.as_posix()), "course": course_id}
         else:

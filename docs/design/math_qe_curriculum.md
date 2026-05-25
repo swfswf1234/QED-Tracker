@@ -52,7 +52,7 @@
   → LibGenDownloader.search() / AnnaDownloader.search()  (tools/)
   → 结果展示(含置信度标记) → 交互/自动选择
   → LibGenDownloader.download()  (Range 分块续传)
-  → dataset/textbooks/{course}/
+  → {dataset_dir}/textbooks/{course}/
   → 入库: textbooks 表
 ```
 

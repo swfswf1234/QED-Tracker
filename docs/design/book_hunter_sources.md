@@ -13,7 +13,7 @@ graph LR
     F --> G[标记 A/B/C]
     G --> H[交互选择 / 自动选择]
     H --> I[下载: Range分块续传]
-    I --> J[dataset/textbooks/]
+    I --> J[{dataset_dir}/textbooks/]
     J --> K[入库 PostgreSQL/MySQL]
 ```
 
