@@ -17,6 +17,9 @@ class TextbookTarget:
     lang: str = "zh"
     confidence: Confidence = Confidence.C
     query: str = ""
+    edition: str = ""
+    kind: str = "textbook"
+    required: bool = True
 
 
 @dataclass

@@ -12,6 +12,8 @@ Usage:
 """
 
 import re
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +25,45 @@ from app.curricula.base import Confidence
 from app.tools.libgen_downloader import LibGenDownloader
 from app.tools.annas_downloader import AnnaDownloader
 from app.tools.zlib_downloader import ZlibDownloader
+
+
+class DownloadStatus(str, Enum):
+    SKIP_EXISTS = "SKIP_EXISTS"
+    SUCCESS = "SUCCESS"
+    PASS_NO_RESULT = "PASS_NO_RESULT"
+    PASS_NO_EXACT_MATCH = "PASS_NO_EXACT_MATCH"
+    FAIL_DOWNLOAD = "FAIL_DOWNLOAD"
+    FAIL_SOURCE_UNREACHABLE = "FAIL_SOURCE_UNREACHABLE"
+
+
+@dataclass
+class DownloadAttempt:
+    course: str
+    target_title: str
+    target_author: str
+    target_kind: str
+    source: str
+    status: DownloadStatus
+    reason: str = ""
+    local_path: str = ""
+    result_title: str = ""
+    result_author: str = ""
+    download_url: str = ""
+    confidence: str = ""
+
+    def as_result(self) -> dict:
+        return {
+            "course": self.course,
+            "title": self.result_title or self.target_title,
+            "author": self.result_author or self.target_author,
+            "source": self.source,
+            "source_url": self.download_url,
+            "download_url": self.download_url,
+            "local_path": self.local_path,
+            "_confidence": self.confidence,
+            "_status": self.status.value,
+            "_reason": self.reason,
+        }
 
 
 def _fuzzy_match(text: str, target: str) -> float:
@@ -69,6 +110,56 @@ def _match_confidence(result: dict, target) -> Optional[str]:
     return None
 
 
+def _normalize_tokens(text: str) -> list[str]:
+    text = (text or "").lower()
+    return [t for t in re.split(r'[\s,;:()（）、，。；：\-\u2014\u2013._/]+', text) if t]
+
+
+def _contains_author(text: str, author: str) -> bool:
+    if not author:
+        return True
+    haystack = (text or "").lower()
+    tokens = [t for t in _normalize_tokens(author) if len(t) > 1]
+    if not tokens:
+        return True
+    return all(t in haystack for t in tokens)
+
+
+def _language_matches(result_lang: str, target_lang: str) -> bool:
+    lang = (result_lang or "").strip().lower()
+    if target_lang == "en":
+        return lang in ("", "en", "eng", "english")
+    if target_lang == "zh":
+        return lang in ("", "zh", "chi", "chinese", "cn", "中文")
+    return True
+
+
+def _edition_matches(result: dict, edition: str) -> bool:
+    if not edition:
+        return True
+    needle_tokens = _normalize_tokens(edition)
+    haystack = " ".join([
+        result.get("title", ""),
+        result.get("edition", ""),
+        result.get("year", ""),
+    ]).lower()
+    return all(t in haystack for t in needle_tokens)
+
+
+def _strict_match(result: dict, target) -> Optional[str]:
+    """Return target confidence only when title, author, language and edition match."""
+    title_sim = _fuzzy_match(result.get("title", ""), target.title)
+    if title_sim < 0.8:
+        return None
+    if not _contains_author(result.get("author", ""), target.author):
+        return None
+    if not _language_matches(result.get("language", ""), target.lang):
+        return None
+    if not _edition_matches(result, getattr(target, "edition", "")):
+        return None
+    return getattr(target.confidence, "value", str(target.confidence))
+
+
 def _size_bytes(s: str) -> int:
     """Convert size string (e.g. '10MB') to bytes"""
     if not s:
@@ -89,11 +180,16 @@ def _size_bytes(s: str) -> int:
 class TextbookHunter(BaseCollector):
     source = "textbook"
 
-    def __init__(self, proxy: str = ""):
+    def __init__(self, proxy: str = "", sources: list[tuple[str, object]] | None = None):
         self.proxy = proxy
         self.libgen = LibGenDownloader(proxy=proxy)
         self.anna = AnnaDownloader(proxy=proxy)
         self.zlib = ZlibDownloader(proxy=proxy)
+        self.sources = sources or [
+            ("libgen", self.libgen),
+            ("annas-archive", self.anna),
+            ("zlib", self.zlib),
+        ]
 
     def search_course(self, query: str) -> list[dict]:
         """Search single keyword, LibGen first → Anna's Archive → Z-Library fallback"""
@@ -197,6 +293,182 @@ class TextbookHunter(BaseCollector):
         d = self.download_single(pick, course_id)
         return [d] if d else []
 
+    def _target_exists(self, course_id: str, target) -> str:
+        save_dir = settings.textbook_path / "textbooks" / course_id
+        if not save_dir.exists():
+            return ""
+        candidates = sorted(save_dir.glob("*.pdf"))
+        for path in candidates:
+            haystack = path.stem.replace("_", " ")
+            title_sim = _fuzzy_match(haystack, target.title)
+            if target.author:
+                if title_sim >= 0.8:
+                    return str(path.relative_to(settings.textbook_path).as_posix())
+                if title_sim >= 0.5 and _contains_author(haystack, target.author):
+                    return str(path.relative_to(settings.textbook_path).as_posix())
+            else:
+                if title_sim >= 0.8:
+                    return str(path.relative_to(settings.textbook_path).as_posix())
+        return ""
+
+    def _source_reachable(self, source) -> bool:
+        check = getattr(source, "check_reachable", None)
+        if check is None:
+            return True
+        try:
+            return bool(check())
+        except Exception:
+            return False
+
+    def _download_result(
+        self,
+        source,
+        source_name: str,
+        result: dict,
+        course_id: str,
+        target,
+        target_kind: str | None = None,
+    ) -> DownloadAttempt:
+        kind = target_kind or getattr(target, "kind", "textbook")
+        save_dir = settings.textbook_path / "textbooks" / course_id
+        result_author = (result.get("author") or result.get("author", "") or "").strip()
+        author_tag = f"{result_author[:30]}_" if result_author else ""
+        safe_title = re.sub(r'[<>:"/\\|?*]', "", result.get("title") or target.title).strip()[:80]
+        safe_title = re.sub(r'\s+', "_", safe_title)
+        filepath = save_dir / f"{author_tag}{safe_title}.pdf"
+        if filepath.exists():
+            rel = filepath.relative_to(settings.textbook_path).as_posix()
+            return DownloadAttempt(
+                course=course_id,
+                target_title=target.title,
+                target_author=target.author,
+                target_kind=kind,
+                source=source_name,
+                status=DownloadStatus.SKIP_EXISTS,
+                reason="matching filename already exists",
+                local_path=rel,
+                result_title=result.get("title", ""),
+                result_author=result.get("author", ""),
+                download_url=result.get("download_url", ""),
+                confidence=_strict_match(result, target) or "",
+            )
+        ok = source.download(result.get("download_url", ""), filepath)
+        if ok:
+            rel = filepath.relative_to(settings.textbook_path).as_posix()
+            return DownloadAttempt(
+                course=course_id,
+                target_title=target.title,
+                target_author=target.author,
+                target_kind=kind,
+                source=source_name,
+                status=DownloadStatus.SUCCESS,
+                reason="downloaded",
+                local_path=rel,
+                result_title=result.get("title", ""),
+                result_author=result.get("author", ""),
+                download_url=result.get("download_url", ""),
+                confidence=_strict_match(result, target) or "",
+            )
+        if filepath.exists():
+            filepath.unlink()
+        return DownloadAttempt(
+            course=course_id,
+            target_title=target.title,
+            target_author=target.author,
+            target_kind=kind,
+            source=source_name,
+            status=DownloadStatus.FAIL_DOWNLOAD,
+            reason="exact match found but download failed",
+            result_title=result.get("title", ""),
+            result_author=result.get("author", ""),
+            download_url=result.get("download_url", ""),
+            confidence=_strict_match(result, target) or "",
+        )
+
+    def one_click_target(self, course, target, missing_only: bool = True, target_kind: str | None = None) -> DownloadAttempt:
+        kind = target_kind or getattr(target, "kind", "textbook")
+        existing = self._target_exists(course.id, target) if missing_only else ""
+        if existing:
+            return DownloadAttempt(
+                course=course.id,
+                target_title=target.title,
+                target_author=target.author,
+                target_kind=kind,
+                source="local",
+                status=DownloadStatus.SKIP_EXISTS,
+                reason="local matching PDF exists",
+                local_path=existing,
+                confidence=getattr(target.confidence, "value", str(target.confidence)),
+            )
+
+        had_results = False
+        unreachable = []
+        last_attempt = None
+        for source_name, source in self.sources:
+            if not self._source_reachable(source):
+                unreachable.append(source_name)
+                continue
+            if source_name == "libgen" and target.lang == "zh":
+                continue
+            query_parts = [p for p in [target.title, target.author] if p]
+            query = target.query or " ".join(query_parts).strip() or target.title
+            results = source.search(query, max_results=8)
+            if not results:
+                continue
+            had_results = True
+            tagged = []
+            for result in results:
+                conf = _strict_match(result, target)
+                if conf:
+                    result = {**result, "_confidence": conf, "_source": source_name}
+                    tagged.append(result)
+            if not tagged:
+                continue
+            tagged.sort(key=lambda r: -_size_bytes(r.get("size", "")))
+            attempt = self._download_result(source, source_name, tagged[0], course.id, target, target_kind=kind)
+            if attempt.status == DownloadStatus.SUCCESS:
+                return attempt
+            last_attempt = attempt
+
+        if last_attempt:
+            return last_attempt
+        if unreachable and not had_results:
+            return DownloadAttempt(
+                course=course.id,
+                target_title=target.title,
+                target_author=target.author,
+                target_kind=kind,
+                source=",".join(unreachable),
+                status=DownloadStatus.FAIL_SOURCE_UNREACHABLE,
+                reason="all reachable sources returned no results; unreachable: " + ",".join(unreachable),
+                confidence=getattr(target.confidence, "value", str(target.confidence)),
+            )
+        status = DownloadStatus.PASS_NO_EXACT_MATCH if had_results else DownloadStatus.PASS_NO_RESULT
+        return DownloadAttempt(
+            course=course.id,
+            target_title=target.title,
+            target_author=target.author,
+            target_kind=kind,
+            source="known-sources",
+            status=status,
+            reason="no strict title/author/version match" if had_results else "no results from known sources",
+            confidence=getattr(target.confidence, "value", str(target.confidence)),
+        )
+
+    def one_click_course(self, course, missing_only: bool = True) -> list[DownloadAttempt]:
+        attempts = []
+        for target in course.textbooks:
+            attempts.append(self.one_click_target(course, target, missing_only=missing_only, target_kind="textbook"))
+        for target in course.exercises:
+            attempts.append(self.one_click_target(course, target, missing_only=missing_only, target_kind="exercise"))
+        return attempts
+
+    def one_click_all(self, courses: list, missing_only: bool = True) -> list[DownloadAttempt]:
+        attempts = []
+        for course in courses:
+            attempts.extend(self.one_click_course(course, missing_only=missing_only))
+        return attempts
+
     def _search_targets(self, course, label: str, targets: list, auto: bool = False) -> list[dict]:
         """Process search for a group of target textbooks"""
         if not targets:
@@ -238,12 +510,15 @@ class TextbookHunter(BaseCollector):
         for course in curriculum.courses:
             results = self.hunt_course(course, auto=auto)
             all_results.extend(results)
-        self.libgen.close()
-        self.anna.close()
-        self.zlib.close()
+        self.close()
         return all_results
 
     def close(self):
-        self.libgen.close()
-        self.anna.close()
-        self.zlib.close()
+        seen = set()
+        for _, source in self.sources:
+            if id(source) in seen:
+                continue
+            seen.add(id(source))
+            close = getattr(source, "close", None)
+            if close:
+                close()

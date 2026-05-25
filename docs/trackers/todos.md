@@ -6,13 +6,24 @@
 
 | ID | 类型 | 描述 | 优先级 | 状态 |
 |----|------|------|--------|------|
-| T-201 | 执行 | 补齐缺失教材 (熊金城, Stein RA/CA, Evans PDE, 概率论方向 10 本 等) | P1 | ⬜ (LibGen 搜索可达但下载失败，需替代源) |
+| T-201 | 执行 | 补齐缺失教材 (熊金城, Stein RA/CA, Evans PDE, 概率论方向 10 本 等) | P1 | 🔄 一键补缺工具已实现，需在可联网/代理环境执行 |
 | T-202 | 执行 | 按领域检索 arXiv 论文 (math.CA/FA/AP/CV) | P2 | ⬜ |
 | T-203 | 执行 | 官方文档镜像 wget --mirror (pytorch/sklearn/xgboost/yolo) | P2 | 🔄 |
 | T-204 | 功能 | Resources Hub: resources 表对接、查询、收藏、导出 | P3 | 🔄 |
 | T-205 | 功能 | GitHub 项目检索 (入 resources 表) | P3 | 🔄 |
 | T-206 | 讨论 | ⚠️ 大模型方向 — 确定具体资料清单 | 待定 | ⬜ |
 | T-207 | 新增 | 课程 11-13 概率论方向已纳入 math_qe.py (10 本缺失) | P1 | ✅ |
+
+## T-201 进度
+
+| 子任务 | 状态 |
+|--------|------|
+| `TextbookTarget` 支持版本、类型、必需标记 | ✅ |
+| `TextbookHunter.one_click_*` 严格补缺链路 | ✅ |
+| `scripts/hunt_textbooks.py --one-click --missing-only --report` | ✅ |
+| `scripts/probe_textbook_sources.py` 扩展来源探测 | ✅ |
+| Open Library / Internet Archive / Google Books 探测 adapter | ✅ |
+| 在可联网/代理环境执行真实下载并更新 inventory | ⬜ |
 
 ## T-204 进度
 

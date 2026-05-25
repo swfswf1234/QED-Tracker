@@ -1,4 +1,4 @@
-# Book Hunter — 教材检索方案 v0.2
+# Book Hunter — 教材检索方案 v0.3
 
 ## 检索链路
 
@@ -23,6 +23,66 @@ graph LR
 |----|--------|------|------|
 | **Library Genesis** | 主源 | 覆盖绝大多数数学教材 | `tools/libgen_downloader.py`: httpx + BeautifulSoup，7 镜像轮询 |
 | **Anna's Archive** | 备用 | LibGen 无结果时自动 fallback | `tools/annas_downloader.py`: 搜索详情页→提取 PDF |
+| **Z-Library** | 备用 | 仅在可达时尝试，Cloudflare 阻塞则跳过 | `tools/zlib_downloader.py`: singlelogin 页面探测 |
+
+## 一键补缺模式
+
+入口:
+
+```bash
+python scripts/hunt_textbooks.py --one-click --missing-only --report dataset/reports/textbooks.md
+```
+
+一键模式只处理 `app/curricula/math_qe.py` 中已经给出的教材和习题册，不临时开放搜索新书目。流程:
+
+```mermaid
+graph LR
+    A[math_qe.py targets] --> B{本地已有?}
+    B -->|是| C[SKIP_EXISTS]
+    B -->|否| D[LibGen]
+    D --> E[Anna]
+    E --> F[Z-Library]
+    F --> G{严格匹配?}
+    G -->|是| H[下载并记录 SUCCESS/FAIL_DOWNLOAD]
+    G -->|否| I[PASS_NO_RESULT 或 PASS_NO_EXACT_MATCH]
+    H --> J[继续下一项]
+    I --> J
+```
+
+严格匹配要求:
+
+- 标题相似度达标。
+- 目标配置了作者时，候选作者必须包含目标作者 token。
+- 语言与目标一致；来源缺语言时允许继续。
+- 目标配置了 `edition` 时，候选标题、edition 或年份中必须能匹配版本 token。
+
+状态语义:
+
+| 状态 | 含义 |
+| --- | --- |
+| `SKIP_EXISTS` | 本地教材目录已有匹配 PDF，不搜索网络。 |
+| `SUCCESS` | 已知来源找到严格匹配并下载成功。 |
+| `PASS_NO_RESULT` | 已知来源没有搜索结果，跳过并继续。 |
+| `PASS_NO_EXACT_MATCH` | 有搜索结果但不满足名称/作者/版本严格匹配，跳过并继续。 |
+| `FAIL_DOWNLOAD` | 找到严格匹配但下载失败，记录失败并继续。 |
+| `FAIL_SOURCE_UNREACHABLE` | 来源可达性检测失败，记录失败并继续。 |
+
+## 扩展来源探测
+
+`scripts/probe_textbook_sources.py` 用于调研更多下载或手动线索，不参与默认一键下载链路:
+
+```bash
+python scripts/probe_textbook_sources.py --target "Evans Partial Differential Equations"
+```
+
+当前探测源:
+
+| 源 | 用途 | 自动下载策略 |
+| --- | --- | --- |
+| Open Library | 官方 Search API 查书目和 Internet Archive 标识 | 只报告 IA 链接，不默认下载 |
+| Internet Archive | advancedsearch API 查 texts 条目 | 只报告条目页，后续可按 metadata/files 接入下载 |
+| Google Books | Volumes API 查 ebook/PDF 可用性 | 仅报告明确 `pdf.downloadLink` |
+| OAPEN/OpenAlex/Crossref | 生成开放获取/元数据手动线索 | 手动线索，不自动下载 |
 
 ## LibGen 下载流程
 

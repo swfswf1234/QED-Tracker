@@ -10,6 +10,7 @@ from scripts.hunt_textbooks import parse_args as parse_textbooks
 from scripts.hunt_docs import parse_args as parse_docs
 from scripts.hunt_github import parse_args as parse_github
 from scripts.manage_resources import parse_args as parse_resources
+from scripts.probe_textbook_sources import parse_args as parse_probe_sources
 
 
 class TestHuntPapersCLI:
@@ -42,6 +43,12 @@ class TestHuntTextbooksCLI:
     def test_no_db(self):
         args = parse_textbooks(["--no-db"])
         assert args.no_db
+
+    def test_one_click_report_args(self):
+        args = parse_textbooks(["--one-click", "--missing-only", "--report", "dataset/reports/books.md"])
+        assert args.one_click
+        assert args.missing_only
+        assert args.report == "dataset/reports/books.md"
 
 
 class TestHuntDocsCLI:
@@ -96,3 +103,10 @@ class TestHuntGitHubCLI:
         args = parse_github(["--file", "repos.txt", "--no-db"])
         assert args.file == "repos.txt"
         assert args.no_db
+
+
+class TestProbeTextbookSourcesCLI:
+    def test_probe_target_arg(self):
+        args = parse_probe_sources(["--target", "Evans Partial Differential Equations"])
+        assert args.target == "Evans Partial Differential Equations"
+        assert args.max_results == 5

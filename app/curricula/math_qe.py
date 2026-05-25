@@ -61,7 +61,7 @@ MATH_QE = Curriculum(
                 ),
                 TextbookTarget(
                     title="Topology", author="Munkres", lang="en",
-                    confidence=Confidence.B, query="Munkres Topology"
+                    confidence=Confidence.B, query="Munkres Topology", edition="2nd"
                 ),
             ],
         ),
@@ -72,7 +72,7 @@ MATH_QE = Curriculum(
             textbooks=[
                 TextbookTarget(
                     title="实变函数论", author="周民强", lang="zh",
-                    confidence=Confidence.A, query="实变函数论 周民强"
+                    confidence=Confidence.A, query="实变函数论 周民强", edition="2"
                 ),
                 TextbookTarget(
                     title="Real Analysis", author="Stein", lang="en",
@@ -180,7 +180,7 @@ MATH_QE = Curriculum(
                 ),
                 TextbookTarget(
                     title="Partial Differential Equations", author="Evans", lang="en",
-                    confidence=Confidence.B, query="Evans Partial Differential Equations"
+                    confidence=Confidence.B, query="Evans Partial Differential Equations", edition="2nd"
                 ),
             ],
         ),
@@ -191,7 +191,7 @@ MATH_QE = Curriculum(
             textbooks=[
                 TextbookTarget(
                     title="近世代数引论", author="冯克勤", lang="zh",
-                    confidence=Confidence.A, query="近世代数引论 冯克勤"
+                    confidence=Confidence.A, query="近世代数引论 冯克勤", edition="4"
                 ),
                 TextbookTarget(
                     title="Abstract Algebra", author="Dummit", lang="en",
@@ -214,7 +214,7 @@ MATH_QE = Curriculum(
                 ),
                 TextbookTarget(
                     title="Berkeley Problems in Mathematics", author="", lang="en",
-                    confidence=Confidence.B, query="Berkeley Problems in Mathematics"
+                    confidence=Confidence.B, query="Berkeley Problems in Mathematics", edition="3rd"
                 ),
             ],
         ),
