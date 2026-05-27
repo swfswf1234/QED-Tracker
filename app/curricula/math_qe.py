@@ -2,7 +2,7 @@ from app.curricula.base import Curriculum, Course, TextbookTarget, Confidence
 
 MATH_QE = Curriculum(
     name="突破朗道位垒",
-    description="面向数学博士资格考试 (QE) 的《突破朗道位垒》课程体系，10 门课分四个阶段",
+    description="面向数学博士资格考试 (QE) 的《突破朗道位垒》课程体系，13 门课分四个阶段",
     courses=[
         Course(
             id="01_math_analysis",
@@ -45,8 +45,10 @@ MATH_QE = Curriculum(
                     confidence=Confidence.A, query="苏联 线性代数 习题集"
                 ),
                 TextbookTarget(
-                    title="线性代数：金题精讲", author="", lang="zh",
-                    confidence=Confidence.A, query="线性代数 金题精讲"
+                    title="Linear Algebra Done Right 4th Edition Solutions",
+                    author="Axler", lang="en",
+                    confidence=Confidence.B, kind="exercise",
+                    query="https://github.com/AxlLind/Linear-Algebra-Done-Right-4E-Solutions",
                 ),
             ],
         ),
@@ -114,8 +116,9 @@ MATH_QE = Curriculum(
             ],
             exercises=[
                 TextbookTarget(
-                    title="复变函数习题集", author="方企勤", lang="zh",
-                    confidence=Confidence.A, query="复变函数习题集 方企勤"
+                    title="复分析习题集", author="Ahlfors", lang="zh",
+                    confidence=Confidence.A, kind="exercise",
+                    query="复分析习题集 Ahlfors",
                 ),
             ],
         ),
@@ -183,6 +186,13 @@ MATH_QE = Curriculum(
                     confidence=Confidence.B, query="Evans Partial Differential Equations", edition="2nd"
                 ),
             ],
+            exercises=[
+                TextbookTarget(
+                    title="偏微分方程习题集", author="", lang="zh",
+                    confidence=Confidence.A, kind="exercise",
+                    query="偏微分方程习题集",
+                ),
+            ],
         ),
         Course(
             id="09_abstract_algebra",
@@ -200,6 +210,13 @@ MATH_QE = Curriculum(
                 TextbookTarget(
                     title="代数学", author="Artin", lang="zh",
                     confidence=Confidence.A, query="Artin 代数学"
+                ),
+            ],
+            exercises=[
+                TextbookTarget(
+                    title="近世代数引论习题解答", author="冯克勤", lang="zh",
+                    confidence=Confidence.A, kind="exercise",
+                    query="近世代数引论习题解答 冯克勤",
                 ),
             ],
         ),
@@ -233,12 +250,22 @@ MATH_QE = Curriculum(
                     confidence=Confidence.B,
                     query="Billingsley Probability and Measure"
                 ),
+                TextbookTarget(
+                    title="概率论基础", author="严士健", lang="zh",
+                    confidence=Confidence.A,
+                    query="严士健 概率论基础"
+                ),
             ],
             exercises=[
                 TextbookTarget(
                     title="Solutions Manual for Probability", author="Song", lang="en",
                     confidence=Confidence.B,
                     query="Song Solutions Manual Probability"
+                ),
+                TextbookTarget(
+                    title="概率论基础习题集", author="严士健", lang="zh",
+                    confidence=Confidence.A, kind="exercise",
+                    query="概率论基础习题集 严士健"
                 ),
             ],
         ),
