@@ -1,123 +1,46 @@
-# 系统架构 v0.2
+# QED-Tracker 0.3 架构
 
-> QED-Tracker 重构版架构：采集层 → 工具层 → 仓储层 → 数据库抽象层
+## 目标与边界
 
-## 全景
+QED-Tracker 是可安装的本地 CLI，不运行服务、不连接数据库。它产出经过校验的原始 PDF 和稳定来源清单；Axiom-Flow 从此边界之后负责解析与审阅。
 
 ```mermaid
-graph TB
-    subgraph "配置"
-        CFG[setting.ini] --> CORE[app/core/config.py]
-    end
-
-    subgraph "课程体系"
-        MATH[app/curricula/math_qe.py]
-        LLM[app/curricula/llm_research.py]
-        CS[app/curricula/cs_llm_sprint.py]
-    end
-
-    subgraph "工具层 app/tools/"
-        LOG[tools/logger.py]
-        LD[tools/libgen_downloader.py]
-        AD[tools/annas_downloader.py]
-        AF[tools/arxiv_fetcher.py]
-        GD[tools/github_downloader.py]
-        WM[tools/wget_mirror.py<br/>wget --mirror via WSL]
-    end
-
-    subgraph "采集层 app/collectors/"
-        TH[textbook_hunter.py] --> LD & AD
-        TH --> MATH
-        PC[paper_collector.py] --> AF
-        DS[doc_scraper.py] --> WM
-    end
-
-    subgraph "仓储层 app/repository/"
-        REPO[BaseRepository[T]]
-        TR[textbook_repo.py]
-        PR[paper_repo.py]
-        DR[doc_repo.py]
-        RR[resource_repo.py]
-    end
-
-    subgraph "数据库抽象层 app/db/"
-        BASE[db/base.py: 抽象接口]
-        MYSQL[db/mysql.py: MySQL 适配器]
-        PG[db/postgresql.py: PostgreSQL 适配器]
-        SESS[db/session.py: 连接池管理]
-        INIT[db/init_db.py: 建库建表]
-    end
-
-    subgraph "CLI 入口 scripts/"
-        HT[scripts/hunt_textbooks.py]
-        HP[scripts/hunt_papers.py]
-        HD[scripts/hunt_docs.py]
-        SCAN[scripts/scan_dataset.py]
-        IDB[scripts/init_db.py]
-    end
-
-    HT --> TH
-    HP --> PC
-    HD --> DS
-    SCAN --> REPO
-    IDB --> INIT
-
-    TH & PC & DS --> REPO
-    REPO --> BASE
-    BASE --> MYSQL
-    BASE --> PG
+flowchart LR
+    CLI[qed-tracker CLI] --> BP[教材来源适配器]
+    CLI --> AP[arXiv 适配器]
+    BP --> DM[通用下载器]
+    AP --> DM
+    DM --> PDF[校验后的 PDF]
+    PDF --> INV[SHA-256 资源清单]
+    CAT[冻结目录 JSON] --> MATCH[严格匹配]
+    MATCH --> BP
+    INV --> AX[Axiom HTTP 客户端]
+    AX --> AF[Axiom-Flow]
 ```
 
-## 模块职责
+## 包职责
 
-| 层 | 模块 | 文件 | 职责 |
-|----|------|------|------|
-| **配置** | Config | `app/core/config.py` | 从 setting.ini 读取配置，多库引擎选择 |
-| **课程体系** | Curriculum Base | `app/curricula/base.py` | 课程基类 + 置信度枚举 (A/B/C) |
-| | Math QE | `app/curricula/math_qe.py` | 突破朗道位垒 (13 门课 + 目标教材) |
-| | LLM Research | `app/curricula/llm_research.py` | ⚠️ 大模型方向 (后续部分) |
-| | CS LLM Sprint | `app/curricula/cs_llm_sprint.py` | 计算机 — LLM 冲刺：五阶段 (DS→ML→DL→LLM 算法→LLM 应用) |
-| **工具层** | Logger | `app/tools/logger.py` | 集中日志配置 |
-| | LibGen Downloader | `app/tools/libgen_downloader.py` | 多镜像搜索 + Range 分块续传 |
-| | Anna's Downloader | `app/tools/annas_downloader.py` | Anna's Archive 备选源 |
-| | arXiv Fetcher | `app/tools/arxiv_fetcher.py` | arXiv API 封装 (从 services 迁入) |
-| | GitHub Downloader | `app/tools/github_downloader.py` | GitHub release/docs 跟踪 |
-| | Wget Mirror | `app/tools/wget_mirror.py` | wget --mirror 全站镜像 (通过 WSL 调用) |
-| | Video Tracker | `app/tools/video_tracker.py` | 📌 占位: 视频/博客跟踪 |
-| **采集层** | TextbookHunter | `app/collectors/textbook_hunter.py` | 教材采集编排: 搜索→匹配置信度→下载→入库 |
-| | PaperCollector | `app/collectors/paper_collector.py` | arXiv 论文检索: 搜索→交互→下载→入库 |
-| | DocScraper | `app/collectors/doc_scraper.py` | 官方文档镜像: wget --mirror via WSL, 含 CSS/JS/字体 |
-| **仓储层** | BaseRepository[T] | `app/repository/__init__.py` | 泛型 CRUD 基类 |
-| | TextbookRepo | `app/repository/textbook_repo.py` | 教材仓储 (by_course, by_path) |
-| | PaperRepo | `app/repository/paper_repo.py` | 论文仓储 (by_arxiv_id) |
-| | OfficialDocRepo | `app/repository/doc_repo.py` | 文档仓储 (by_name) |
-| | ResourceRepo | `app/repository/resource_repo.py` | 资源仓储 (by_type) |
-| **DB 抽象层** | Base Interface | `app/db/base.py` | 抽象数据库接口 (connect/execute/close) |
-| | MySQL | `app/db/mysql.py` | MySQL 适配器 |
-| | PostgreSQL | `app/db/postgresql.py` | PostgreSQL 适配器 (从 core/database.py 迁入) |
-| | Session | `app/db/session.py` | 连接池管理 |
-| | Init DB | `app/db/init_db.py` | 建库建表逻辑 (从 scripts/ 迁入) |
-| **CLI** | hunt_textbooks | `scripts/hunt_textbooks.py` | 教材检索入口 |
-| | hunt_papers | `scripts/hunt_papers.py` | 论文检索入口 |
-| | hunt_docs | `scripts/hunt_docs.py` | 文档爬取入口 |
-| | scan_dataset | `scripts/scan_dataset.py` | 扫描已有文件入库 |
-| | init_db | `scripts/init_db.py` | 快速建库 (转发 app/db/init_db.py) |
+| 模块 | 职责 |
+| --- | --- |
+| `config.py` | TOML、环境变量和命令行覆盖；解析数据根、来源和 Axiom URL。 |
+| `models.py` | 候选、目录目标、匹配结果和资源 schema。 |
+| `providers/` | 隔离来源协议与 HTML/API 解析，不直接写文件。 |
+| `matching.py` | 题名、作者、语言和版次的保守匹配。 |
+| `downloader.py` | 重试、Range 续传、PDF 校验、SHA-256 和原子落盘。 |
+| `inventory.py` | 内容哈希身份、单资源 JSON、确定性 JSONL 和 Axiom 传输记录。 |
+| `services.py` | 搜索、下载、去重和冻结目录用例。 |
+| `axiom.py` | Axiom 健康检查、multipart 上传和显式解析任务。 |
+| `cli.py` | 唯一用户入口和稳定退出码。 |
 
-## 数据流
+## 数据不变量
 
-```
-用户 → CLI/API → Collector → Tool(下载/搜索) → 本地 dataset/
-                    ↓
-              课程体系(置信度匹配)
-                    ↓
-              Repository(CRUD)
-                    ↓
-          DB 抽象层 → MySQL / PostgreSQL
-```
+1. 来源适配器不得直接写入正式 PDF。
+2. `.part` 只有校验成功后才能原子替换目标文件。
+3. `sha256:<digest>` 是跨路径稳定身份；相同内容只保留一个资源记录。
+4. 资源 JSON 保存本项目事实，Axiom 状态写入独立 transfer JSON。
+5. `inventory scan` 只登记数据根内 PDF，不移动或删除原件。
+6. 目录 JSON 是可选输入，不是下载核心依赖；`math-qe` 永久标记为 frozen。
 
-## 关键设计原则
+## 已删除边界
 
-1. **工具层与采集层分离**: 具体下载/搜索逻辑下沉到 tools/，collector 只做编排
-2. **DB 抽象层可选**: 应用可运行无数据库模式（`--no-db`），仅操作本地文件
-3. **课程体系驱动**: 采集什么、怎么匹配置信度由 curricula/ 定义，collector 不硬编码
-4. **多引擎透明**: repository 层不感知底层是 MySQL 还是 PostgreSQL
+0.2 的 FastAPI、SQLAlchemy、多数据库、repository/model、GitHub/RSS、官方文档镜像和硬编码 Python curricula 均不再属于项目。Git 历史只用于追溯，不能视为当前接口。

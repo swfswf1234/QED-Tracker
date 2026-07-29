@@ -1,103 +1,38 @@
 # QED-Tracker Agent Protocol
 
-> Version: 1.1
+> Version: 2.0
 > Status: Active
-> Purpose: give agents a stable entry point for reading context, making changes, validating work, and keeping the documentation system coherent.
 
 ## 1. Reading Order
 
-Before changing code or documentation, read context in this order:
+1. `README.md`：产品边界和用户命令。
+2. `docs/trackers/todos.md`：当前工作与未来规划。
+3. `docs/architecture.md`：包边界和数据流。
+4. 与任务对应的 `docs/design/` 文档。
+5. `docs/tests.md`：验证命令。
+6. 只有追溯旧决策时才阅读历史 worklog 和知识库存快照。
 
-1. `README.md` for product scope, runtime assumptions, and user-facing commands.
-2. `docs/trackers/todos.md` for active work and known gaps.
-3. The relevant design documents:
-   - `docs/architecture.md` for system boundaries and data flow.
-   - `docs/database.md` for schema and persistence rules.
-   - `docs/design/README.md` for the design-document map.
-   - Specific files under `docs/design/` for the feature or workflow being changed.
-4. `docs/knowledge_base/` when the task touches textbook inventory, learning dependencies, or resource status.
-5. Recent `docs/worklogs/YYYY-MM-DD.md` entries when the task continues previous work.
-
-Do not rely on memory when a repository document already records the decision.
+不得根据已删除的 0.2 数据库/API 架构恢复功能。当前运行事实以代码、测试和 `.qed-tracker/resources/*.json` 为准。
 
 ## 2. Work Loop
 
-Every non-trivial task should follow the P-E-V-L loop.
+- 修改前说明目标、影响面和数据风险；不得隐式扫描、移动或删除数据根内 PDF。
+- 来源适配器只负责搜索与解析下载地址；文件写入、续传、校验、哈希和去重必须经过通用下载与清单服务。
+- 默认测试不得访问公网。来源 HTML/API 变化通过固定 fixture 和显式人工探测处理。
+- 修改公开 CLI、目录 schema、资源 schema 或 Axiom 契约时，同步更新设计文档和测试。
+- 非平凡变更更新 tracker 和当天 worklog。
 
-### 2.1 Plan
+## 3. Runtime Rules
 
-- State the current understanding, intended edits, and risk areas before changing files.
-- For multi-step work, keep a visible task list and update it as the work progresses.
-- If an operation is destructive or hard to reverse, ask for human confirmation first.
+- Python 3.12；依赖和命令入口以 `pyproject.toml` 为准。
+- 个人配置使用 `qed-tracker.local.toml` 或 `QED_TRACKER_*` 环境变量。
+- TLS 校验默认开启；只有用户明确配置时才允许关闭。
+- 批量目录下载只接受严格题名、作者、语言和版次匹配；不确定候选必须进入人工复核。
+- Axiom 推送默认只导入 PDF；只有显式 `--parse` 才可创建可能产生模型费用的任务。
 
-### 2.2 Execute
+## 4. Git Policy
 
-- Keep edits scoped to the requested task and the affected documentation or code paths.
-- Follow existing repository patterns before introducing a new abstraction.
-- Python code should remain modular and compatible with the existing FastAPI, repository, and collector layout.
-- Mathematical notation in docs and comments must use standard LaTeX syntax: `$...$` or `$$...$$`.
-
-### 2.3 Verify
-
-- Run the most relevant tests, scripts, or static checks for the changed area.
-- If verification cannot run because of missing services, dependencies, credentials, or network access, record that limitation explicitly.
-- For documentation-only changes, verify links, paths, and terminology with repository search.
-
-### 2.4 Log
-
-- Update `docs/trackers/todos.md` when task status changes.
-- Update the relevant design document when architecture, workflow, schema, or module ownership changes.
-- Add a dated worklog entry in `docs/worklogs/` for substantial changes, including changed files and verification evidence.
-
-## 3. Documentation System
-
-Use each documentation area for one job only.
-
-| Location | Responsibility |
-| --- | --- |
-| `README.md` | Public project entry point, quick start, and high-level map. |
-| `docs/agent_protocol.md` | Agent operating protocol and documentation maintenance rules. |
-| `docs/architecture.md` | Current system architecture and module boundaries. |
-| `docs/database.md` | Current database design, schema, and persistence rules. |
-| `docs/tests.md` | Test strategy, commands, and coverage notes. |
-| `docs/design/` | Accepted designs, module designs, domain designs, and workflow guides. |
-| `docs/discuss/` | Open proposals and unresolved technical discussion. Move resolved decisions into `docs/design/` or trackers. |
-| `docs/trackers/` | Active and resolved task status only. Do not store detailed designs here. |
-| `docs/worklogs/` | Dated execution records. File names must use `YYYY-MM-DD.md`. |
-| `docs/knowledge_base/` | Resource inventory, learning dependencies, and durable domain facts. |
-
-See `docs/design/README.md` for the detailed design-document taxonomy.
-
-## 4. Knowledge Core Rules
-
-For textbook digitization, RAG preparation, and mathematical resources:
-
-- Preserve logical hierarchy from source material: titles, chapters, theorems, proofs, exercises, references, and captions.
-- Preserve source cross-references such as "see Theorem 2.1" instead of normalizing them away.
-- Mark uncertain OCR or formula recognition as `[CHECK_REQUIRED]`; do not silently rewrite mathematical meaning.
-- Treat `docs/knowledge_base/inventory.md` as the durable inventory record for textbook status.
-
-## 5. Runtime Environment
-
-- Conda environment: `QED_env`
-- Python version: 3.12
-- Dependency install: `pip install -r requirements.txt`
-- Runtime configuration: copy `setting.example.ini` to `setting.ini`, then configure database and proxy values.
-- Proxy configuration: use the `[Proxy]` section in `setting.ini`.
-- Python commands should run inside `QED_env` unless the user explicitly chooses another environment.
-
-## 6. Git And Change Hygiene
-
-- Branch policy:
-  - Keep `main` stable. Only merge a release branch into it after release validation and acceptance are complete.
-  - Use `dev` as the daily integration branch.
-  - For larger changes, create `feat/*` branches from `dev` and merge them back into `dev` when complete.
-  - Create each release candidate by merging `dev` into the long-lived `release` branch; validate and accept the candidate on `release` before merging it into `main`.
-  - If a release-only fix is made on `release`, merge it into `main` with the release and then sync it back to `dev` so the next release retains the fix.
-- Commit prefixes: `feat:`, `fix:`, `docs:`, `refactor:`.
-- Before committing, check whether the change requires updates to:
-  - `docs/design/`
-  - `docs/trackers/`
-  - `docs/worklogs/YYYY-MM-DD.md`
-  - `README.md`
-- Never revert unrelated user changes. If existing dirty files affect the task, work with them and call out any constraint.
+- `main` 保持稳定；日常开发进入 `dev`，发布候选依次进入 `release` 和 `main`。
+- 大改动从 `dev` 派生 `feat/*`；`release` 修复随发布进入 `main` 后必须同步回 `dev`。
+- 提交前运行定向测试、完整 Pytest、Ruff、安装/CLI 冒烟和 `git diff --check`。
+- 不回滚无关用户变更。

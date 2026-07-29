@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "id": "math-qe",
+  "name": "突破朗道位垒",
+  "description": "已完成的数学博士资格考试教材与习题集目录；冻结于 QED-Tracker 0.3。",
+  "status": "frozen",
+  "targets": [
+    {"id":"01-rudin-zh","course_id":"01_math_analysis","course_name":"数学分析","kind":"book","title":"数学分析原理","authors":["Rudin"],"language":"zh","query":"数学分析原理 Rudin"},
+    {"id":"01-rudin-en","course_id":"01_math_analysis","course_name":"数学分析","kind":"book","title":"Principles of Mathematical Analysis","authors":["Rudin"],"language":"en","query":"Principles of Mathematical Analysis Rudin"},
+    {"id":"01-demidovich","course_id":"01_math_analysis","course_name":"数学分析","kind":"exercise","title":"吉米多维奇数学分析习题集","authors":["吉米多维奇"],"language":"zh","query":"吉米多维奇 数学分析习题集"},
+
+    {"id":"02-axler-zh","course_id":"02_linear_algebra","course_name":"线性代数","kind":"book","title":"线性代数应该这样学","authors":["Axler"],"language":"zh","query":"线性代数应该这样学 Axler"},
+    {"id":"02-axler-en","course_id":"02_linear_algebra","course_name":"线性代数","kind":"book","title":"Linear Algebra Done Right","authors":["Axler"],"language":"en","query":"Linear Algebra Done Right Axler"},
+    {"id":"02-soviet-exercises","course_id":"02_linear_algebra","course_name":"线性代数","kind":"exercise","title":"线性代数习题集","authors":["苏联"],"language":"zh","query":"苏联 线性代数 习题集"},
+    {"id":"02-axler-solutions","course_id":"02_linear_algebra","course_name":"线性代数","kind":"exercise","title":"Linear Algebra Done Right 4th Edition Solutions","authors":["Axler"],"language":"en","edition":"4th","query":"Linear Algebra Done Right 4th Edition Solutions Axler"},
+
+    {"id":"03-xiong","course_id":"03_topology","course_name":"点集拓扑","kind":"book","title":"点集拓扑学","authors":["熊金城"],"language":"zh","query":"点集拓扑学 熊金城"},
+    {"id":"03-munkres","course_id":"03_topology","course_name":"点集拓扑","kind":"book","title":"Topology","authors":["Munkres"],"language":"en","edition":"2nd","query":"Munkres Topology 2nd"},
+
+    {"id":"04-zhou","course_id":"04_real_analysis","course_name":"实分析","kind":"book","title":"实变函数论","authors":["周民强"],"language":"zh","edition":"2","query":"实变函数论 周民强 第2版"},
+    {"id":"04-stein-en","course_id":"04_real_analysis","course_name":"实分析","kind":"book","title":"Real Analysis","authors":["Stein"],"language":"en","query":"Stein Real Analysis"},
+    {"id":"04-stein-zh","course_id":"04_real_analysis","course_name":"实分析","kind":"book","title":"实分析：测度论、积分和希尔伯特空间","authors":["Stein"],"language":"zh","query":"实分析 测度论 积分 希尔伯特空间 Stein"},
+    {"id":"04-zhou-exercises","course_id":"04_real_analysis","course_name":"实分析","kind":"exercise","title":"实变函数解题指南","authors":["周民强"],"language":"zh","query":"实变函数解题指南 周民强"},
+
+    {"id":"05-ahlfors-zh","course_id":"05_complex_analysis","course_name":"复分析","kind":"book","title":"复分析","authors":["Ahlfors"],"language":"zh","query":"复分析 Ahlfors"},
+    {"id":"05-ahlfors-en","course_id":"05_complex_analysis","course_name":"复分析","kind":"book","title":"Complex Analysis","authors":["Ahlfors"],"language":"en","query":"Ahlfors Complex Analysis"},
+    {"id":"05-stein-en","course_id":"05_complex_analysis","course_name":"复分析","kind":"book","title":"Complex Analysis","authors":["Stein"],"language":"en","query":"Stein Complex Analysis"},
+    {"id":"05-stein-zh","course_id":"05_complex_analysis","course_name":"复分析","kind":"book","title":"复分析","authors":["Stein"],"language":"zh","query":"复分析 Stein"},
+    {"id":"05-ahlfors-exercises","course_id":"05_complex_analysis","course_name":"复分析","kind":"exercise","title":"复分析习题集","authors":["Ahlfors"],"language":"zh","query":"复分析习题集 Ahlfors"},
+
+    {"id":"06-zhang","course_id":"06_functional_analysis","course_name":"泛函分析","kind":"book","title":"泛函分析","authors":["张恭庆"],"language":"zh","query":"泛函分析 张恭庆"},
+    {"id":"06-stein","course_id":"06_functional_analysis","course_name":"泛函分析","kind":"book","title":"Functional Analysis","authors":["Stein"],"language":"en","query":"Stein Functional Analysis"},
+    {"id":"06-lax","course_id":"06_functional_analysis","course_name":"泛函分析","kind":"book","title":"泛函分析","authors":["Lax"],"language":"zh","query":"Lax 泛函分析"},
+    {"id":"06-exercises","course_id":"06_functional_analysis","course_name":"泛函分析","kind":"exercise","title":"泛函分析学习指导","authors":[],"language":"zh","query":"泛函分析学习指导"},
+
+    {"id":"07-ding","course_id":"07_ode","course_name":"常微分方程","kind":"book","title":"常微分方程","authors":["丁同仁"],"language":"zh","query":"常微分方程 丁同仁"},
+    {"id":"07-tenenbaum","course_id":"07_ode","course_name":"常微分方程","kind":"book","title":"Ordinary Differential Equations","authors":["Tenenbaum"],"language":"en","query":"Tenenbaum Ordinary Differential Equations"},
+    {"id":"07-arnold","course_id":"07_ode","course_name":"常微分方程","kind":"book","title":"常微分方程","authors":["阿诺德"],"language":"zh","query":"阿诺德 常微分方程"},
+    {"id":"07-exercises","course_id":"07_ode","course_name":"常微分方程","kind":"exercise","title":"常微分方程习题解","authors":[],"language":"zh","query":"常微分方程习题解"},
+
+    {"id":"08-evans-zh","course_id":"08_pde","course_name":"偏微分方程","kind":"book","title":"偏微分方程","authors":["Evans"],"language":"zh","query":"偏微分方程 Evans"},
+    {"id":"08-evans-en","course_id":"08_pde","course_name":"偏微分方程","kind":"book","title":"Partial Differential Equations","authors":["Evans"],"language":"en","edition":"2nd","query":"Evans Partial Differential Equations 2nd"},
+    {"id":"08-exercises","course_id":"08_pde","course_name":"偏微分方程","kind":"exercise","title":"偏微分方程习题集","authors":[],"language":"zh","query":"偏微分方程习题集"},
+
+    {"id":"09-feng","course_id":"09_abstract_algebra","course_name":"抽象代数","kind":"book","title":"近世代数引论","authors":["冯克勤"],"language":"zh","edition":"4","query":"近世代数引论 冯克勤 第4版"},
+    {"id":"09-dummit","course_id":"09_abstract_algebra","course_name":"抽象代数","kind":"book","title":"Abstract Algebra","authors":["Dummit"],"language":"en","query":"Dummit Abstract Algebra"},
+    {"id":"09-artin","course_id":"09_abstract_algebra","course_name":"抽象代数","kind":"book","title":"代数学","authors":["Artin"],"language":"zh","query":"Artin 代数学"},
+    {"id":"09-feng-exercises","course_id":"09_abstract_algebra","course_name":"抽象代数","kind":"exercise","title":"近世代数引论习题解答","authors":["冯克勤"],"language":"zh","query":"近世代数引论习题解答 冯克勤"},
+
+    {"id":"10-berkeley-zh","course_id":"10_qe_prep","course_name":"QE 冲刺","kind":"book","title":"伯克利数学问题集","authors":[],"language":"zh","query":"伯克利数学问题集"},
+    {"id":"10-berkeley-en","course_id":"10_qe_prep","course_name":"QE 冲刺","kind":"book","title":"Berkeley Problems in Mathematics","authors":[],"language":"en","edition":"3rd","query":"Berkeley Problems in Mathematics 3rd"},
+
+    {"id":"11-durrett","course_id":"11_probability","course_name":"测度论概率","kind":"book","title":"Probability: Theory and Examples","authors":["Durrett"],"language":"en","query":"Durrett Probability Theory and Examples"},
+    {"id":"11-billingsley","course_id":"11_probability","course_name":"测度论概率","kind":"book","title":"Probability and Measure","authors":["Billingsley"],"language":"en","query":"Billingsley Probability and Measure"},
+    {"id":"11-yan","course_id":"11_probability","course_name":"测度论概率","kind":"book","title":"概率论基础","authors":["严士健"],"language":"zh","query":"严士健 概率论基础"},
+    {"id":"11-song-solutions","course_id":"11_probability","course_name":"测度论概率","kind":"exercise","title":"Solutions Manual for Probability","authors":["Song"],"language":"en","query":"Song Solutions Manual Probability"},
+    {"id":"11-yan-exercises","course_id":"11_probability","course_name":"测度论概率","kind":"exercise","title":"概率论基础习题集","authors":["严士健"],"language":"zh","query":"概率论基础习题集 严士健"},
+
+    {"id":"12-karatzas-shreve","course_id":"12_stochastic_processes","course_name":"随机过程","kind":"book","title":"Brownian Motion and Stochastic Calculus","authors":["Karatzas","Shreve"],"language":"en","query":"Karatzas Shreve Brownian Motion Stochastic Calculus"},
+    {"id":"12-ross","course_id":"12_stochastic_processes","course_name":"随机过程","kind":"book","title":"Stochastic Processes","authors":["Ross"],"language":"en","query":"Ross Stochastic Processes"},
+    {"id":"12-asmussen","course_id":"12_stochastic_processes","course_name":"随机过程","kind":"exercise","title":"Applied Probability and Queues","authors":["Asmussen"],"language":"en","query":"Asmussen Applied Probability Queues"},
+
+    {"id":"13-vershynin","course_id":"13_high_dim_prob","course_name":"高维概率论","kind":"book","title":"High-Dimensional Probability","authors":["Vershynin"],"language":"en","query":"Vershynin High-Dimensional Probability"}
+  ]
+}

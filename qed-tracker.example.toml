@@ -1,0 +1,17 @@
+[core]
+data_root = "data"
+proxy = ""
+timeout_seconds = 30
+retries = 3
+tls_verify = true
+sources = [
+  "internet_archive",
+  "open_library",
+  "google_books",
+  "libgen",
+  "annas_archive",
+  "zlib",
+]
+
+[axiom]
+url = "http://127.0.0.1:8000"

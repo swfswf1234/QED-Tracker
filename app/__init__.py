@@ -1,1 +1,0 @@
-# SelfAutoScholar App

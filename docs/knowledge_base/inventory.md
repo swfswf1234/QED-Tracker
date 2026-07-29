@@ -1,4 +1,6 @@
-# 数学教材库存
+# 数学教材库存（历史快照）
+
+> 本文档保留 0.2 阶段的人工核验结果，不再表示当前磁盘或下载状态。0.3 运行事实以数据根下 `.qed-tracker/resources/*.json` 为准，冻结目标以包内 `math-qe.json` 为准。
 
 > 更新时间：2026-05-27（二轮）
 > 范围：仅记录 QE 数学课程的教程与习题集。
@@ -182,6 +184,6 @@
 | 12 - 随机过程 | Karatzas & Shreve 完整版 | 当前为中文优先补缺，且 12 课程本轮已关闭 |
 | 11 - 概率论 | Song 英文 probability solutions manual | 优先级低于严士健中文教程和习题集 |
 
-## 相关非数学资源
+## 0.3 迁移说明
 
-CS/LLM 资源、官方文档镜像、GitHub 仓库、arXiv 采集不在本数学库存中展开。相关内容见 `docs/design/cs_llm_sprint.md`、`docs/design/resources_hub.md` 和 `docs/trackers/todos.md`。
+本快照不再维护非数学资源或实时磁盘状态。arXiv 下载和未来教材目录规划见当前 `README.md` 与 `docs/trackers/todos.md`。

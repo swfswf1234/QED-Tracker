@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qed-tracker"
+version = "0.3.0"
+description = "教材、习题集与 arXiv 论文的本地优先下载工具"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "arxiv>=2.1.0",
+  "beautifulsoup4>=4.12.0",
+  "httpx>=0.28.0",
+  "pypdf>=5.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.5.0",
+]
+
+[project.scripts]
+qed-tracker = "qed_tracker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+qed_tracker = ["catalogs/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]

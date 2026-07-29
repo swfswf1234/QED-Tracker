@@ -18,7 +18,8 @@ build/
 .env
 *.env
 
-# Personal config (must be created manually from setting.example.ini)
+# Personal config
+qed-tracker.local.toml
 setting.ini
 setting.local.ini
 
@@ -32,6 +33,7 @@ wget-log*
 
 # Dataset (large binary files - PDFs, images)
 dataset/
+data/
 
 # macOS
 .DS_Store

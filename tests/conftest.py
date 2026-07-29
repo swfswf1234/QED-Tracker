@@ -1,19 +1,15 @@
-"""pytest 测试夹具"""
+from __future__ import annotations
+
+from io import BytesIO
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from app.core.database import Base
+from pypdf import PdfWriter
 
 
 @pytest.fixture
-def db_session():
-    """用于测试模型和仓库的内存 SQLite 数据库"""
-    engine = create_engine("sqlite:///:memory:", echo=False)
-    Base.metadata.create_all(bind=engine)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    yield session
-    session.close()
-    Base.metadata.drop_all(bind=engine)
+def pdf_bytes() -> bytes:
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    stream = BytesIO()
+    writer.write(stream)
+    return stream.getvalue()
