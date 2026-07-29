@@ -88,7 +88,12 @@ For textbook digitization, RAG preparation, and mathematical resources:
 
 ## 6. Git And Change Hygiene
 
-- Branch policy: keep `main` stable; use `dev` for daily work and `feat/*` for larger changes.
+- Branch policy:
+  - Keep `main` stable. Only merge a release branch into it after release validation and acceptance are complete.
+  - Use `dev` as the daily integration branch.
+  - For larger changes, create `feat/*` branches from `dev` and merge them back into `dev` when complete.
+  - Create each release candidate by merging `dev` into the long-lived `release` branch; validate and accept the candidate on `release` before merging it into `main`.
+  - If a release-only fix is made on `release`, merge it into `main` with the release and then sync it back to `dev` so the next release retains the fix.
 - Commit prefixes: `feat:`, `fix:`, `docs:`, `refactor:`.
 - Before committing, check whether the change requires updates to:
   - `docs/design/`
