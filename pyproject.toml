@@ -4,13 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qed-tracker"
-version = "0.3.0"
-description = "教材、习题集与 arXiv 论文的本地优先下载工具"
+version = "0.5.0"
+description = "教材、习题集与智能 arXiv 论文发现的本地优先下载工具"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "arxiv>=2.1.0",
-  "beautifulsoup4>=4.12.0",
   "httpx>=0.28.0",
   "pypdf>=5.0.0",
 ]
@@ -29,7 +28,7 @@ qed-tracker = "qed_tracker.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-qed_tracker = ["catalogs/*.json"]
+qed_tracker = ["catalogs/*.json", "paper_profiles/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

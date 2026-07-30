@@ -1,13 +1,13 @@
 
 from qed_tracker.catalog import list_catalogs, load_catalog
-from qed_tracker.config import load_settings
+from qed_tracker.config import llm_api_key, load_settings
 from qed_tracker.matching import match_candidate
 from qed_tracker.models import Candidate
 
 
 def test_load_settings_uses_toml_and_environment(tmp_path, monkeypatch):
     config = tmp_path / "config.toml"
-    config.write_text('[core]\ndata_root = "library"\nretries = 5\nsources = ["libgen"]\n\n[axiom]\nurl = "http://example.test/"\n', encoding="utf-8")
+    config.write_text('[core]\ndata_root = "library"\nretries = 5\nsources = ["internet_archive"]\n\n[axiom]\nurl = "http://example.test/"\n\n[llm]\nmodel = "qwen-test"\ncall_budget = 4\n', encoding="utf-8")
     monkeypatch.setenv("QED_TRACKER_TIMEOUT_SECONDS", "45")
     monkeypatch.chdir(tmp_path)
 
@@ -16,8 +16,18 @@ def test_load_settings_uses_toml_and_environment(tmp_path, monkeypatch):
     assert settings.data_root == (tmp_path / "library").resolve()
     assert settings.retries == 5
     assert settings.timeout_seconds == 45
-    assert settings.sources == ("libgen",)
+    assert settings.sources == ("internet_archive",)
     assert settings.axiom_url == "http://example.test"
+    assert settings.llm_model == "qwen-test"
+    assert settings.llm_call_budget == 4
+
+
+def test_llm_key_uses_dedicated_environment_without_entering_settings(monkeypatch):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "fallback")
+    assert llm_api_key() == "fallback"
+    monkeypatch.setenv("QED_TRACKER_LLM_API_KEY", "preferred")
+    assert llm_api_key() == "preferred"
+    assert "preferred" not in repr(load_settings())
 
 
 def test_math_catalog_is_frozen_and_has_unique_targets():

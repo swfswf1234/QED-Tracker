@@ -10,6 +10,8 @@ def test_arxiv_result_is_normalized_to_candidate():
         title="  A   Paper\nTitle ",
         authors=[SimpleNamespace(name="Ada"), SimpleNamespace(name="Emmy")],
         published=datetime(2024, 1, 2, tzinfo=UTC),
+        updated=datetime(2024, 1, 3, tzinfo=UTC),
+        categories=["cs.CL", "cs.LG"],
         pdf_url="https://arxiv.org/pdf/2401.00001",
         summary="An\nabstract",
     )
@@ -18,3 +20,5 @@ def test_arxiv_result_is_normalized_to_candidate():
     assert candidate.title == "A Paper Title"
     assert candidate.authors == ("Ada", "Emmy")
     assert candidate.identifiers == {"arxiv": "2401.00001"}
+    assert candidate.subjects == ("cs.CL", "cs.LG")
+    assert candidate.updated_at.startswith("2024-01-03")

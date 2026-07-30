@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from qed_tracker.downloader import inspect_pdf
+from qed_tracker.downloader import DownloadedFile, inspect_pdf
 from qed_tracker.models import Candidate, CatalogTarget, ResourceKind, ResourceRecord
 
 
@@ -37,15 +37,46 @@ class Inventory:
     ) -> ResourceRecord:
         resolved = path.resolve()
         try:
-            relative = resolved.relative_to(self.data_root).as_posix()
+            resolved.relative_to(self.data_root)
         except ValueError as exc:
             raise ValueError(f"资源必须位于数据根目录内：{self.data_root}") from exc
         digest, size, page_count = inspect_pdf(resolved)
-        existing = self.get(digest)
+        downloaded = DownloadedFile(resolved, digest, size, page_count)
+        return self._register_verified(
+            downloaded,
+            kind=kind,
+            title=title,
+            authors=authors,
+            language=language,
+            year=year,
+            identifiers=identifiers,
+            source=source,
+            catalog_target=catalog_target,
+        )
+
+    def _register_verified(
+        self,
+        downloaded: DownloadedFile,
+        *,
+        kind: ResourceKind,
+        title: str,
+        authors: Iterable[str] = (),
+        language: str = "",
+        year: str = "",
+        identifiers: dict[str, str] | None = None,
+        source: dict[str, Any] | None = None,
+        catalog_target: CatalogTarget | None = None,
+    ) -> ResourceRecord:
+        resolved = downloaded.path.resolve()
+        try:
+            relative = resolved.relative_to(self.data_root).as_posix()
+        except ValueError as exc:
+            raise ValueError(f"资源必须位于数据根目录内：{self.data_root}") from exc
+        existing = self.get(downloaded.sha256)
         if existing and existing.absolute_path(self.data_root).exists():
             return existing
         record = ResourceRecord(
-            resource_id=f"sha256:{digest}",
+            resource_id=f"sha256:{downloaded.sha256}",
             kind=kind.value,
             title=title or resolved.stem,
             authors=list(authors),
@@ -55,10 +86,10 @@ class Inventory:
             source=source or {"provider": "local", "retrieved_at": datetime.now(UTC).isoformat()},
             file={
                 "relative_path": relative,
-                "sha256": digest,
-                "size_bytes": size,
+                "sha256": downloaded.sha256,
+                "size_bytes": downloaded.size_bytes,
                 "mime_type": "application/pdf",
-                "page_count": page_count,
+                "page_count": downloaded.page_count,
             },
             catalog_ref=(
                 {"catalog_id": "math-qe", "target_id": catalog_target.id, "course_id": catalog_target.course_id}
@@ -66,7 +97,7 @@ class Inventory:
                 else None
             ),
         )
-        target = self._record_path(digest)
+        target = self._record_path(downloaded.sha256)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(record.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
         temporary = target.with_suffix(".json.tmp")
@@ -75,10 +106,10 @@ class Inventory:
         return record
 
     def register_candidate(
-        self, path: Path, candidate: Candidate, kind: ResourceKind, catalog_target: CatalogTarget | None = None
+        self, downloaded: DownloadedFile, candidate: Candidate, kind: ResourceKind, catalog_target: CatalogTarget | None = None
     ) -> ResourceRecord:
-        return self.register(
-            path,
+        return self._register_verified(
+            downloaded,
             kind=kind,
             title=candidate.title,
             authors=candidate.authors,
@@ -116,15 +147,6 @@ class Inventory:
         if kind:
             records = [record for record in records if record.kind == kind]
         return sorted(records, key=lambda record: (record.kind, record.title.casefold(), record.resource_id))
-
-    def export_jsonl(self, destination: Path | None = None) -> Path:
-        destination = destination or self.data_root / ".qed-tracker" / "manifest.jsonl"
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        payload = "".join(json.dumps(record.to_dict(), ensure_ascii=False, sort_keys=True) + "\n" for record in self.list())
-        temporary = destination.with_suffix(destination.suffix + ".tmp")
-        temporary.write_text(payload, encoding="utf-8")
-        os.replace(temporary, destination)
-        return destination
 
     def verify(self) -> list[tuple[ResourceRecord, str]]:
         results = []

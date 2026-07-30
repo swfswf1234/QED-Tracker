@@ -9,14 +9,16 @@ from dataclasses import asdict
 from pathlib import Path
 
 from qed_tracker import __version__
+from qed_tracker.application import BookService, ResourceService, attempts_markdown
+from qed_tracker.application.papers import PaperService
 from qed_tracker.axiom import AxiomClient
 from qed_tracker.catalog import list_catalogs, load_catalog
-from qed_tracker.config import Settings, example_config, load_settings
+from qed_tracker.config import Settings, example_config, llm_api_key, load_settings
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
 from qed_tracker.models import Availability, Candidate, ResourceKind
-from qed_tracker.providers import ArxivProvider, create_book_providers
-from qed_tracker.services import BookService, ResourceService, attempts_markdown
+from qed_tracker.profiles import list_paper_profiles, load_paper_profile
+from qed_tracker.providers import ArxivProvider, BailianPaperAdvisor, create_book_providers
 
 
 def _add_limit(parser: argparse.ArgumentParser, default: int = 10) -> None:
@@ -34,11 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     books = commands.add_parser("books", help="教材和习题集")
     books_commands = books.add_subparsers(dest="books_command", required=True)
-    books_search = books_commands.add_parser("search", help="搜索所有已启用来源")
-    books_search.add_argument("query")
-    books_search.add_argument("--source", action="append", dest="sources")
-    _add_limit(books_search)
-    books_get = books_commands.add_parser("get", help="搜索、选择并下载")
+    books_get = books_commands.add_parser("get", help="搜索，并在显式选择时下载")
     books_get.add_argument("query")
     books_get.add_argument("--source", action="append", dest="sources")
     books_get.add_argument("--pick", type=int, help="直接选择搜索结果序号")
@@ -61,6 +59,25 @@ def build_parser() -> argparse.ArgumentParser:
     _add_limit(paper_search)
     paper_get = paper_commands.add_parser("get", help="按 arXiv ID 或 URL 下载")
     paper_get.add_argument("identifiers", nargs="+")
+    paper_recommend = paper_commands.add_parser("recommend", help="用百炼规划检索并生成论文选择报告")
+    paper_recommend.add_argument("goal", nargs="?", default="", help="本次临时研究目标")
+    paper_recommend.add_argument("--profile", default="llm-engineering", help="内置档案名或 JSON 路径")
+    paper_recommend.add_argument("--category", action="append", dest="categories", default=[])
+    paper_recommend.add_argument("--top", type=int, default=10, help="最多推荐数量")
+    _add_limit(paper_recommend)
+    paper_profiles = paper_commands.add_parser("profiles", help="查看论文目标档案")
+    paper_profile_commands = paper_profiles.add_subparsers(dest="profiles_command", required=True)
+    paper_profile_commands.add_parser("list", help="列出内置档案")
+    paper_profile_show = paper_profile_commands.add_parser("show", help="显示档案")
+    paper_profile_show.add_argument("profile")
+    paper_selections = paper_commands.add_parser("selections", help="查看选择报告或显式下载")
+    paper_selection_commands = paper_selections.add_subparsers(dest="selections_command", required=True)
+    paper_selection_commands.add_parser("list", help="列出选择报告")
+    paper_selection_show = paper_selection_commands.add_parser("show", help="显示选择报告")
+    paper_selection_show.add_argument("selection_id")
+    paper_selection_download = paper_selection_commands.add_parser("download", help="从固定选择报告下载推荐论文")
+    paper_selection_download.add_argument("selection_id")
+    paper_selection_download.add_argument("--pick", type=int, action="append", required=True)
 
     catalog = commands.add_parser("catalog", help="冻结下载目录")
     catalog_commands = catalog.add_subparsers(dest="catalog_command", required=True)
@@ -81,8 +98,6 @@ def build_parser() -> argparse.ArgumentParser:
     inventory_list = inventory_commands.add_parser("list", help="列出资源")
     inventory_list.add_argument("--kind", choices=[kind.value for kind in ResourceKind])
     inventory_commands.add_parser("verify", help="校验文件与清单")
-    inventory_export = inventory_commands.add_parser("export", help="确定性导出 JSONL")
-    inventory_export.add_argument("--output", type=Path)
 
     axiom = commands.add_parser("axiom", help="交付给 Axiom-Flow")
     axiom_commands = axiom.add_subparsers(dest="axiom_command", required=True)
@@ -134,39 +149,62 @@ def _book_service(settings: Settings, names: tuple[str, ...] | None = None) -> B
     return BookService(providers, ResourceService(Inventory(settings.data_root), downloader))
 
 
+def _paper_service(settings: Settings, *, with_advisor: bool = False) -> PaperService:
+    provider = ArxivProvider(retries=settings.retries)
+    manager = DownloadManager(proxy=settings.proxy, timeout=max(settings.timeout_seconds, 120), retries=settings.retries, tls_verify=settings.tls_verify)
+    resources = ResourceService(Inventory(settings.data_root), manager)
+    advisor = None
+    if with_advisor:
+        advisor = BailianPaperAdvisor(
+            api_key=llm_api_key(),
+            model=settings.llm_model,
+            base_url=settings.llm_base_url,
+            timeout=settings.llm_timeout_seconds,
+            call_budget=settings.llm_call_budget,
+            max_tokens=settings.llm_max_tokens,
+        )
+    return PaperService(provider, resources, advisor=advisor)
+
+
+def _display_selection(report: dict) -> None:
+    print(f"Selection: {report['selection_id']} | {report['status']}")
+    for item in report.get("assessments", []):
+        candidate = item["candidate"]
+        assessment = item["assessment"]
+        marker = "RECOMMEND" if item.get("recommended") else "REVIEW"
+        print(f"[{item['rank']}] [{marker}] [{item['score']}] {candidate['title']}")
+        print(f"    {candidate['identifiers'].get('arxiv', '-')} | {assessment['reason']}")
+
+
 def _books(args, settings: Settings) -> int:
     inventory = Inventory(settings.data_root)
     if args.books_command == "fetch-url":
         manager = DownloadManager(proxy=settings.proxy, timeout=settings.timeout_seconds, retries=settings.retries, tls_verify=settings.tls_verify)
+        resources = ResourceService(inventory, manager)
         try:
             candidate = Candidate("url", args.url, args.title, tuple(args.author), args.language, page_url=args.url, download_url=args.url)
-            record = ResourceService(inventory, manager).download_candidate(candidate, kind=ResourceKind(args.kind), destination_dir=settings.data_root / "books" / "inbox")
+            record = resources.download_candidate(candidate, kind=ResourceKind(args.kind), destination_dir=settings.data_root / "books" / "inbox")
             _print(record.to_dict(), args.json)
             return 0
         finally:
-            manager.close()
-    service = _book_service(settings, tuple(args.sources) if args.sources else None)
+            resources.close()
+    try:
+        service = _book_service(settings, tuple(args.sources) if args.sources else None)
+    except ValueError as exc:
+        _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     try:
         ranked = service.search(args.query, limit=args.limit)
         candidates = [item.candidate for item in ranked]
-        if args.books_command == "search":
-            _print([_candidate_dict(item) for item in candidates], True) if args.json else _display_candidates(candidates)
-            for name, error in service.failures:
-                print(f"WARN {name}: {error}", file=sys.stderr)
-            return 0 if candidates else 3
+        for name, error in service.failures:
+            print(f"WARN {name}: {error}", file=sys.stderr)
         if not candidates:
             print("没有搜索结果", file=sys.stderr)
             return 3
-        _display_candidates(candidates)
+        if args.pick is None:
+            _print([_candidate_dict(item) for item in candidates], True) if args.json else _display_candidates(candidates)
+            return 0
         pick = args.pick
-        if pick is None:
-            if not sys.stdin.isatty():
-                print("非交互环境必须提供 --pick", file=sys.stderr)
-                return 2
-            raw = input("选择下载序号（留空取消）：").strip()
-            if not raw:
-                return 0
-            pick = int(raw)
         if pick < 1 or pick > len(candidates):
             print("选择序号超出范围", file=sys.stderr)
             return 2
@@ -178,20 +216,48 @@ def _books(args, settings: Settings) -> int:
         _print(record.to_dict(), args.json)
         return 0
     finally:
-        service.resources.downloader.close()
         service.close()
 
 
 def _papers(args, settings: Settings) -> int:
-    provider = ArxivProvider(retries=settings.retries)
-    manager = DownloadManager(proxy=settings.proxy, timeout=max(settings.timeout_seconds, 120), retries=settings.retries, tls_verify=settings.tls_verify)
-    resources = ResourceService(Inventory(settings.data_root), manager)
+    if args.papers_command == "profiles":
+        try:
+            if args.profiles_command == "list":
+                _print(list(list_paper_profiles()), args.json)
+                return 0
+            profile = load_paper_profile(args.profile)
+            _print(asdict(profile), True) if args.json else print(json.dumps(asdict(profile), ensure_ascii=False, indent=2))
+            return 0
+        except ValueError as exc:
+            _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+    service = _paper_service(settings, with_advisor=args.papers_command == "recommend")
     try:
+        if args.papers_command == "selections":
+            if args.selections_command == "list":
+                reports = service.list_selections()
+                summaries = [{"selection_id": item["selection_id"], "status": item["status"], "created_at": item["created_at"], "profile": item["profile"]["id"]} for item in reports]
+                _print(summaries, args.json) if args.json else print("\n".join(f"{item['selection_id']} | {item['status']} | {item['profile']}" for item in summaries))
+                return 0
+            if args.selections_command == "show":
+                report = service.get_selection(args.selection_id)
+                _print(report, True) if args.json else _display_selection(report)
+                return 0
+            report, failures = service.download_selection(args.selection_id, args.pick)
+            _print(report, True) if args.json else _display_selection(report)
+            if failures == len(set(args.pick)):
+                return 5
+            return 4 if failures else 0
+        if args.papers_command == "recommend":
+            profile = load_paper_profile(args.profile)
+            report = service.recommend(profile, goal=args.goal, categories=args.categories, limit=args.limit, top=args.top)
+            _print(report, True) if args.json else _display_selection(report)
+            return 0 if report["status"] == "ranked" else 3
         if args.papers_command == "get":
-            candidates = [provider.get(identifier) for identifier in args.identifiers]
+            candidates = service.get(args.identifiers)
             picks = range(len(candidates))
         else:
-            candidates = provider.search(args.query, category=args.category, author=args.author, limit=args.limit)
+            candidates = service.search(args.query, category=args.category, author=args.author, limit=args.limit)
             if args.json and not args.download:
                 _print([_candidate_dict(item) for item in candidates], True)
             elif not args.download:
@@ -201,15 +267,15 @@ def _papers(args, settings: Settings) -> int:
         for index in picks:
             if index < 0 or index >= len(candidates):
                 raise ValueError(f"论文序号超出范围：{index + 1}")
-            candidate = candidates[index]
-            destination = settings.data_root / "papers" / (candidate.year or "unknown")
-            records.append(resources.download_candidate(candidate, kind=ResourceKind.PAPER, destination_dir=destination))
+            records.append(service.download(candidates[index]))
         if records:
             _print([record.to_dict() for record in records], args.json)
         return 0 if candidates else 3
+    except ValueError as exc:
+        _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     finally:
-        provider.close()
-        manager.close()
+        service.close()
 
 
 def _catalog(args, settings: Settings) -> int:
@@ -221,7 +287,11 @@ def _catalog(args, settings: Settings) -> int:
         value = {"id": catalog.id, "name": catalog.name, "description": catalog.description, "status": catalog.status, "targets": [asdict(target) for target in catalog.targets]}
         _print(value, True) if args.json else print("\n".join(f"{target.id}: {target.course_name} | {target.kind.value} | {target.title}" for target in catalog.targets))
         return 0
-    service = _book_service(settings)
+    try:
+        service = _book_service(settings)
+    except ValueError as exc:
+        _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     try:
         attempts = service.run_catalog(catalog, course=args.course, download=args.download, limit=args.limit)
         if args.report:
@@ -234,7 +304,6 @@ def _catalog(args, settings: Settings) -> int:
                 print(f"[{item.status}] {item.target.id} | {item.target.title} | {item.reason}")
         return 4 if any(item.status == "FAILED" for item in attempts) else 0
     finally:
-        service.resources.downloader.close()
         service.close()
 
 
@@ -254,9 +323,7 @@ def _inventory(args, settings: Settings) -> int:
         results = inventory.verify()
         _print([{"resource_id": record.resource_id, "status": status} for record, status in results], True) if args.json else print("\n".join(f"[{status}] {record.resource_id} {record.title}" for record, status in results))
         return 4 if any(status != "ok" for _, status in results) else 0
-    path = inventory.export_jsonl(args.output)
-    _print(str(path), args.json)
-    return 0
+    raise ValueError(f"未知 inventory 命令：{args.inventory_command}")
 
 
 def _axiom(args, settings: Settings) -> int:
@@ -284,7 +351,13 @@ def _axiom(args, settings: Settings) -> int:
 
 def _config(args, settings: Settings) -> int:
     if args.config_command == "show":
-        _print({"data_root": str(settings.data_root), "proxy": settings.proxy, "timeout_seconds": settings.timeout_seconds, "retries": settings.retries, "sources": list(settings.sources), "axiom_url": settings.axiom_url, "tls_verify": settings.tls_verify}, True)
+        _print({
+            "data_root": str(settings.data_root), "proxy": settings.proxy, "timeout_seconds": settings.timeout_seconds,
+            "retries": settings.retries, "sources": list(settings.sources), "axiom_url": settings.axiom_url,
+            "tls_verify": settings.tls_verify, "llm_model": settings.llm_model, "llm_base_url": settings.llm_base_url,
+            "llm_timeout_seconds": settings.llm_timeout_seconds, "llm_call_budget": settings.llm_call_budget,
+            "llm_max_tokens": settings.llm_max_tokens,
+        }, True)
         return 0
     path = args.path
     if path.exists() and not args.force:

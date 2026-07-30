@@ -36,6 +36,42 @@ class Candidate:
     availability: Availability = Availability.DOWNLOADABLE
     identifiers: dict[str, str] = field(default_factory=dict)
     abstract: str = ""
+    subjects: tuple[str, ...] = ()
+    published_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class PaperProfile:
+    id: str
+    name: str
+    description: str
+    audience: str
+    goals: tuple[str, ...]
+    topics: tuple[str, ...]
+    allowed_categories: tuple[str, ...]
+    exclude: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class PaperSearch:
+    terms: tuple[str, ...]
+    category: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class PaperAssessment:
+    arxiv_id: str
+    goal_fit: int
+    foundational_value: int
+    readability: int
+    reason: str
+    risks: tuple[str, ...] = ()
+
+    @property
+    def score(self) -> int:
+        return self.goal_fit * 10 + self.foundational_value * 6 + self.readability * 4
 
 
 @dataclass(frozen=True, slots=True)

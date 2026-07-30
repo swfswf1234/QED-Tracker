@@ -1,4 +1,4 @@
-"""带续传、校验和原子落盘的通用 PDF 下载器。"""
+"""带重试、校验和原子落盘的通用 PDF 下载器。"""
 
 from __future__ import annotations
 
@@ -67,23 +67,10 @@ class DownloadManager:
         last_error: Exception | None = None
         for attempt in range(self.retries):
             try:
-                if partial.exists():
-                    try:
-                        digest, size, page_count = inspect_pdf(partial)
-                    except DownloadError:
-                        pass
-                    else:
-                        os.replace(partial, destination)
-                        return DownloadedFile(destination, digest, size, page_count)
-                offset = partial.stat().st_size if partial.exists() else 0
-                headers = {"Range": f"bytes={offset}-"} if offset else {}
-                with self.client.stream("GET", url, headers=headers) as response:
+                partial.unlink(missing_ok=True)
+                with self.client.stream("GET", url) as response:
                     response.raise_for_status()
-                    append = offset > 0 and response.status_code == 206
-                    if offset and not append:
-                        offset = 0
-                    mode = "ab" if append else "wb"
-                    with partial.open(mode) as stream:
+                    with partial.open("wb") as stream:
                         for chunk in response.iter_bytes(1024 * 1024):
                             stream.write(chunk)
                 digest, size, page_count = inspect_pdf(partial)

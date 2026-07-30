@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -17,5 +19,7 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: python -m ruff check src tests
       - run: python -m pytest tests -q
+      - run: python -m pip wheel . --no-deps --no-build-isolation --wheel-dir dist
       - run: qed-tracker --version
       - run: qed-tracker --json catalog list
+      - run: git diff --check HEAD^ HEAD

@@ -32,8 +32,20 @@ class ArxivProvider:
             terms.append(f'au:"{author}"')
         if not terms:
             raise ValueError("至少需要关键词、分类或作者之一")
+        return self._run_search(" AND ".join(terms), limit)
+
+    def search_terms(self, terms: tuple[str, ...], *, category: str, limit: int = 10) -> list[Candidate]:
+        cleaned = tuple(dict.fromkeys(" ".join(term.replace('"', " ").split()) for term in terms if term.strip()))
+        if not cleaned:
+            raise ValueError("论文检索计划必须包含关键词")
+        query = "(" + " OR ".join(f'all:"{term}"' for term in cleaned) + ")"
+        if category:
+            query += f" AND cat:{category}"
+        return self._run_search(query, limit)
+
+    def _run_search(self, query: str, limit: int) -> list[Candidate]:
         search = arxiv.Search(
-            query=" AND ".join(terms),
+            query=query,
             max_results=limit,
             sort_by=arxiv.SortCriterion.SubmittedDate,
             sort_order=arxiv.SortOrder.Descending,
@@ -61,6 +73,9 @@ class ArxivProvider:
             download_url=item.pdf_url,
             identifiers={"arxiv": arxiv_id},
             abstract=" ".join(item.summary.split()),
+            subjects=tuple(getattr(item, "categories", ())),
+            published_at=item.published.isoformat(),
+            updated_at=getattr(item, "updated", item.published).isoformat(),
         )
 
     def close(self) -> None:

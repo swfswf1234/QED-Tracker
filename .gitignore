@@ -13,6 +13,7 @@ build/
 # IDE
 .idea/
 .vscode/
+.agents/
 *.swp
 *.swo
 
@@ -29,6 +30,8 @@ setting.local.ini
 _test_*.py
 _dl_*
 _file_php_response.html
+temp_stdout.txt
+temp_stderr.txt
 
 # wget logs
 wget-log*

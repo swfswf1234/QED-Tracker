@@ -1,0 +1,24 @@
+{
+  "id": "llm-engineering",
+  "name": "LLM 算法与工程",
+  "description": "覆盖 Transformer、训练与推理优化、RAG、Agent 和评测的研究学习路径。",
+  "audience": "希望建立 LLM 算法理解与工程落地能力的开发者",
+  "goals": [
+    "理解 Transformer 与现代语言模型核心机制",
+    "跟踪训练、微调、推理和系统优化方法",
+    "掌握 RAG、Agent、多模态检索和可靠评测"
+  ],
+  "topics": [
+    "transformer and language model architecture",
+    "fine-tuning and alignment",
+    "inference serving quantization and efficiency",
+    "retrieval augmented generation",
+    "agents tool use and evaluation"
+  ],
+  "allowed_categories": ["cs.CL", "cs.LG", "cs.AI", "cs.IR", "cs.DC", "cs.CV"],
+  "exclude": [
+    "只包含产品宣传且没有技术方法的内容",
+    "与语言模型、检索或智能体目标无关的垂直应用",
+    "摘要缺少可识别方法、实验或结论的论文"
+  ]
+}

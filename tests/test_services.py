@@ -1,10 +1,10 @@
 import httpx
 
+from qed_tracker.application import BookService, ResourceService
 from qed_tracker.catalog import Catalog, load_catalog
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
 from qed_tracker.models import Candidate
-from qed_tracker.services import BookService, ResourceService
 
 
 class FakeProvider:
@@ -23,7 +23,7 @@ class FakeProvider:
         return None
 
 
-def test_catalog_preview_and_strict_download(tmp_path, pdf_bytes):
+def test_catalog_preview_and_strict_download(tmp_path, pdf_bytes, monkeypatch):
     target = next(target for target in load_catalog("math-qe").targets if target.id == "03-munkres")
     catalog = Catalog("math-qe", "Math", "", "frozen", (target,))
     candidate = Candidate(
@@ -36,12 +36,16 @@ def test_catalog_preview_and_strict_download(tmp_path, pdf_bytes):
     service = BookService([FakeProvider(candidate)], ResourceService(Inventory(tmp_path), manager))
     try:
         assert service.run_catalog(catalog)[0].status == "READY"
+        monkeypatch.setattr(
+            "qed_tracker.inventory.inspect_pdf",
+            lambda path: (_ for _ in ()).throw(AssertionError("downloaded PDF must not be inspected twice")),
+        )
         attempt = service.run_catalog(catalog, download=True)[0]
     finally:
-        manager.close()
         service.close()
     assert attempt.status == "DOWNLOADED"
     assert attempt.record.catalog_ref["target_id"] == "03-munkres"
+    assert manager.client.is_closed
 
 
 def test_catalog_does_not_auto_download_incomplete_metadata(tmp_path):
@@ -53,6 +57,5 @@ def test_catalog_does_not_auto_download_incomplete_metadata(tmp_path):
     try:
         attempt = service.run_catalog(catalog, download=True)[0]
     finally:
-        manager.close()
         service.close()
     assert attempt.status == "REVIEW"

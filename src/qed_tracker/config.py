@@ -12,9 +12,6 @@ DEFAULT_SOURCES = (
     "internet_archive",
     "open_library",
     "google_books",
-    "libgen",
-    "annas_archive",
-    "zlib",
 )
 
 
@@ -27,6 +24,11 @@ class Settings:
     sources: tuple[str, ...] = DEFAULT_SOURCES
     axiom_url: str = "http://127.0.0.1:8000"
     tls_verify: bool = True
+    llm_model: str = "qwen-plus"
+    llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    llm_timeout_seconds: float = 60.0
+    llm_call_budget: int = 6
+    llm_max_tokens: int = 4096
 
     @property
     def state_dir(self) -> Path:
@@ -62,6 +64,7 @@ def load_settings(config_path: Path | None = None, **overrides: Any) -> Settings
     raw = _read_toml(path) if path else {}
     core = raw.get("core", {})
     axiom = raw.get("axiom", {})
+    llm = raw.get("llm", {})
     values: dict[str, Any] = {}
     if core.get("data_root"):
         values["data_root"] = Path(core["data_root"]).expanduser()
@@ -77,6 +80,16 @@ def load_settings(config_path: Path | None = None, **overrides: Any) -> Settings
         values["tls_verify"] = _bool(core["tls_verify"])
     if axiom.get("url"):
         values["axiom_url"] = axiom["url"].rstrip("/")
+    if llm.get("model"):
+        values["llm_model"] = str(llm["model"])
+    if llm.get("base_url"):
+        values["llm_base_url"] = str(llm["base_url"]).rstrip("/")
+    if "timeout_seconds" in llm:
+        values["llm_timeout_seconds"] = float(llm["timeout_seconds"])
+    if "call_budget" in llm:
+        values["llm_call_budget"] = int(llm["call_budget"])
+    if "max_tokens" in llm:
+        values["llm_max_tokens"] = int(llm["max_tokens"])
 
     env_map = {
         "QED_TRACKER_DATA_ROOT": ("data_root", Path),
@@ -85,6 +98,11 @@ def load_settings(config_path: Path | None = None, **overrides: Any) -> Settings
         "QED_TRACKER_RETRIES": ("retries", int),
         "QED_TRACKER_AXIOM_URL": ("axiom_url", str),
         "QED_TRACKER_TLS_VERIFY": ("tls_verify", _bool),
+        "QED_TRACKER_LLM_MODEL": ("llm_model", str),
+        "QED_TRACKER_LLM_BASE_URL": ("llm_base_url", str),
+        "QED_TRACKER_LLM_TIMEOUT_SECONDS": ("llm_timeout_seconds", float),
+        "QED_TRACKER_LLM_CALL_BUDGET": ("llm_call_budget", int),
+        "QED_TRACKER_LLM_MAX_TOKENS": ("llm_max_tokens", int),
     }
     for env_name, (field_name, converter) in env_map.items():
         if env_name in os.environ:
@@ -99,7 +117,11 @@ def load_settings(config_path: Path | None = None, **overrides: Any) -> Settings
     data_root = settings.data_root
     if not data_root.is_absolute():
         data_root = (Path.cwd() / data_root).resolve()
-    return replace(settings, data_root=data_root, axiom_url=settings.axiom_url.rstrip("/"))
+    return replace(settings, data_root=data_root, axiom_url=settings.axiom_url.rstrip("/"), llm_base_url=settings.llm_base_url.rstrip("/"))
+
+
+def llm_api_key() -> str:
+    return os.getenv("QED_TRACKER_LLM_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or ""
 
 
 def example_config(data_root: str = "data") -> str:
@@ -113,5 +135,11 @@ def example_config(data_root: str = "data") -> str:
         "tls_verify = true\n"
         f"sources = [{sources}]\n\n"
         "[axiom]\n"
-        'url = "http://127.0.0.1:8000"\n'
+        'url = "http://127.0.0.1:8000"\n\n'
+        "[llm]\n"
+        'model = "qwen-plus"\n'
+        'base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"\n'
+        "timeout_seconds = 60\n"
+        "call_budget = 6\n"
+        "max_tokens = 4096\n"
     )

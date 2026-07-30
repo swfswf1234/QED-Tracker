@@ -1,0 +1,24 @@
+{
+  "id": "math-research",
+  "name": "数学研究与高阶学习",
+  "description": "服务分析、方程、概率和高维理论学习，优先可建立理论主线的论文。",
+  "audience": "具备数学分析、线性代数和基础概率背景的高阶学习者",
+  "goals": [
+    "补充教材之外的现代结果与综述",
+    "连接泛函分析、偏微分方程、概率论与高维方法",
+    "优先选择能够形成清晰学习路径的论文"
+  ],
+  "topics": [
+    "functional analysis",
+    "partial differential equations",
+    "probability theory",
+    "high-dimensional probability",
+    "convex and geometric analysis"
+  ],
+  "allowed_categories": ["math.FA", "math.AP", "math.PR", "math.CA", "math.MG", "stat.TH"],
+  "exclude": [
+    "只有极窄应用背景且无法连接目标理论的论文",
+    "摘要无法说明主要问题或贡献的论文",
+    "超出当前档案分类范围的论文"
+  ]
+}
