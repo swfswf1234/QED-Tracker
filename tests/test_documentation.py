@@ -26,6 +26,7 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/guides/operations.md"),
     Path("docs/guides/development.md"),
     Path("docs/plans/index.md"),
+    Path("docs/plans/2026-08-service-and-book-download.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
     Path("docs/trackers/completed.md"),
