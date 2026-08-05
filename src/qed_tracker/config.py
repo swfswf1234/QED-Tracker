@@ -1,9 +1,12 @@
-"""无数据库本地配置；命令行和环境变量可覆盖 TOML。"""
+"""统一配置：直读根 `.env` 的 `QED_*` 变量；本地 TOML 与 `QED_TRACKER_*` 已退役。
+
+密钥（`QWEN_API_KEY`、`QED_DB_PASSWORD`）只经环境读取，不进入 `Settings` 的 repr。
+无根 `.env` 时使用内置最小默认值；缺密钥时相关能力降级，不阻塞启动。
+"""
 
 from __future__ import annotations
 
 import os
-import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -14,41 +17,42 @@ DEFAULT_SOURCES = (
     "google_books",
 )
 
+_DASH_SCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    data_root: Path = Path("data")
+    data_root: Path = Path("dataset/qed-tracker")
     proxy: str = ""
     timeout_seconds: float = 30.0
     retries: int = 3
     sources: tuple[str, ...] = DEFAULT_SOURCES
-    axiom_url: str = "http://127.0.0.1:8000"
+    axiom_url: str = "http://127.0.0.1:8902"
     tls_verify: bool = True
     llm_model: str = "qwen-plus"
-    llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    llm_base_url: str = _DASH_SCOPE_BASE_URL
     llm_timeout_seconds: float = 60.0
     llm_call_budget: int = 6
     llm_max_tokens: int = 4096
+    port: int = 8901
+    tracker_url: str = "http://127.0.0.1:8901"
+    db_host: str = "127.0.0.1"
+    db_port: int = 3306
+    db_name: str = "qed"
+    db_user: str = "root"
+    db_password: str = ""
 
     @property
     def state_dir(self) -> Path:
-        return self.data_root / ".qed-tracker"
+        return self.data_root / "meta"
 
+    @property
+    def db_configured(self) -> bool:
+        return bool(self.db_password)
 
-def _default_config_paths() -> list[Path]:
-    paths = [Path.cwd() / "qed-tracker.local.toml"]
-    configured = os.getenv("QED_TRACKER_CONFIG")
-    if configured:
-        paths.insert(0, Path(configured).expanduser())
-    paths.append(Path.home() / ".qed-tracker" / "config.toml")
-    return paths
-
-
-def _read_toml(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    with path.open("rb") as stream:
-        return tomllib.load(stream)
+    @property
+    def llm_configured(self) -> bool:
+        return bool(llm_api_key())
 
 
 def _bool(value: Any) -> bool:
@@ -57,59 +61,31 @@ def _bool(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def load_settings(config_path: Path | None = None, **overrides: Any) -> Settings:
-    path = config_path
-    if path is None:
-        path = next((candidate for candidate in _default_config_paths() if candidate.exists()), None)
-    raw = _read_toml(path) if path else {}
-    core = raw.get("core", {})
-    axiom = raw.get("axiom", {})
-    llm = raw.get("llm", {})
-    values: dict[str, Any] = {}
-    if core.get("data_root"):
-        values["data_root"] = Path(core["data_root"]).expanduser()
-    if "proxy" in core:
-        values["proxy"] = core["proxy"]
-    if "timeout_seconds" in core:
-        values["timeout_seconds"] = float(core["timeout_seconds"])
-    if "retries" in core:
-        values["retries"] = int(core["retries"])
-    if "sources" in core:
-        values["sources"] = tuple(core["sources"])
-    if "tls_verify" in core:
-        values["tls_verify"] = _bool(core["tls_verify"])
-    if axiom.get("url"):
-        values["axiom_url"] = axiom["url"].rstrip("/")
-    if llm.get("model"):
-        values["llm_model"] = str(llm["model"])
-    if llm.get("base_url"):
-        values["llm_base_url"] = str(llm["base_url"]).rstrip("/")
-    if "timeout_seconds" in llm:
-        values["llm_timeout_seconds"] = float(llm["timeout_seconds"])
-    if "call_budget" in llm:
-        values["llm_call_budget"] = int(llm["call_budget"])
-    if "max_tokens" in llm:
-        values["llm_max_tokens"] = int(llm["max_tokens"])
+_ENV_MAP = {
+    "QED_MODEL": ("llm_model", str),
+    "QED_AXIOM_URL": ("axiom_url", str),
+    "QED_TRACKER_PORT": ("port", int),
+    "QED_TRACKER_URL": ("tracker_url", str),
+    "QED_DB_HOST": ("db_host", str),
+    "QED_DB_PORT": ("db_port", int),
+    "QED_DB_NAME": ("db_name", str),
+    "QED_DB_USER": ("db_user", str),
+    "QED_DB_PASSWORD": ("db_password", str),
+    "QED_PROXY": ("proxy", str),
+    "QED_TIMEOUT_SECONDS": ("timeout_seconds", float),
+    "QED_RETRIES": ("retries", int),
+    "QED_TLS_VERIFY": ("tls_verify", _bool),
+    "QED_LLM_BASE_URL": ("llm_base_url", str),
+}
 
-    env_map = {
-        "QED_TRACKER_DATA_ROOT": ("data_root", Path),
-        "QED_TRACKER_PROXY": ("proxy", str),
-        "QED_TRACKER_TIMEOUT_SECONDS": ("timeout_seconds", float),
-        "QED_TRACKER_RETRIES": ("retries", int),
-        "QED_TRACKER_AXIOM_URL": ("axiom_url", str),
-        "QED_TRACKER_TLS_VERIFY": ("tls_verify", _bool),
-        "QED_TRACKER_LLM_MODEL": ("llm_model", str),
-        "QED_TRACKER_LLM_BASE_URL": ("llm_base_url", str),
-        "QED_TRACKER_LLM_TIMEOUT_SECONDS": ("llm_timeout_seconds", float),
-        "QED_TRACKER_LLM_CALL_BUDGET": ("llm_call_budget", int),
-        "QED_TRACKER_LLM_MAX_TOKENS": ("llm_max_tokens", int),
-    }
-    for env_name, (field_name, converter) in env_map.items():
+
+def load_settings(**overrides: Any) -> Settings:
+    values: dict[str, Any] = {}
+    for env_name, (field_name, converter) in _ENV_MAP.items():
         if env_name in os.environ:
             values[field_name] = converter(os.environ[env_name])
-    if "QED_TRACKER_SOURCES" in os.environ:
-        values["sources"] = tuple(item.strip() for item in os.environ["QED_TRACKER_SOURCES"].split(",") if item.strip())
-
+    if "QED_SOURCES" in os.environ:
+        values["sources"] = tuple(item.strip() for item in os.environ["QED_SOURCES"].split(",") if item.strip())
     values.update({key: value for key, value in overrides.items() if value is not None})
     if "data_root" in values:
         values["data_root"] = Path(values["data_root"]).expanduser()
@@ -117,29 +93,26 @@ def load_settings(config_path: Path | None = None, **overrides: Any) -> Settings
     data_root = settings.data_root
     if not data_root.is_absolute():
         data_root = (Path.cwd() / data_root).resolve()
-    return replace(settings, data_root=data_root, axiom_url=settings.axiom_url.rstrip("/"), llm_base_url=settings.llm_base_url.rstrip("/"))
+    return replace(
+        settings,
+        data_root=data_root,
+        axiom_url=settings.axiom_url.rstrip("/"),
+        tracker_url=settings.tracker_url.rstrip("/"),
+        llm_base_url=settings.llm_base_url.rstrip("/"),
+    )
 
 
 def llm_api_key() -> str:
-    return os.getenv("QED_TRACKER_LLM_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or ""
+    return os.getenv("QWEN_API_KEY") or ""
 
 
-def example_config(data_root: str = "data") -> str:
-    sources = ", ".join(f'"{name}"' for name in DEFAULT_SOURCES)
-    return (
-        "[core]\n"
-        f'data_root = "{data_root.replace(chr(92), "/")}"\n'
-        'proxy = ""\n'
-        "timeout_seconds = 30\n"
-        "retries = 3\n"
-        "tls_verify = true\n"
-        f"sources = [{sources}]\n\n"
-        "[axiom]\n"
-        'url = "http://127.0.0.1:8000"\n\n'
-        "[llm]\n"
-        'model = "qwen-plus"\n'
-        'base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"\n'
-        "timeout_seconds = 60\n"
-        "call_budget = 6\n"
-        "max_tokens = 4096\n"
-    )
+def degradation_notice(settings: Settings) -> str:
+    """无根 `.env` 或缺密钥时的启动尾注提醒。"""
+    missing = []
+    if not settings.llm_configured:
+        missing.append("QWEN_API_KEY（LLM 评估降级：catalog evaluate 跳过评估只落候选）")
+    if not settings.db_configured:
+        missing.append("QED_DB_PASSWORD（MySQL 登记降级：仅写 meta/resources/ JSON）")
+    if not missing:
+        return ""
+    return "启动尾注：根 .env 缺少 " + "、".join(missing) + "；相关能力已降级，不阻塞主链路。"

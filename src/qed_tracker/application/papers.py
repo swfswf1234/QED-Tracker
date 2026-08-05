@@ -73,7 +73,7 @@ class PaperService:
         return [self.provider.get(identifier) for identifier in identifiers]
 
     def download(self, candidate: Candidate) -> ResourceRecord:
-        destination = self.resources.inventory.data_root / "papers" / (candidate.year or "unknown")
+        destination = self.resources.inventory.data_root / "raw" / "papers" / (candidate.year or "unknown")
         return self.resources.download_candidate(candidate, kind=ResourceKind.PAPER, destination_dir=destination)
 
     def recommend(

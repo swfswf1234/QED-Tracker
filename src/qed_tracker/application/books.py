@@ -76,10 +76,13 @@ class BookService:
         catalog_id: str = "",
     ) -> ResourceRecord:
         resolved = self.resolve(candidate)
-        if catalog_target:
-            destination = self.resources.inventory.data_root / "books" / catalog_id / catalog_target.course_id
+        root = self.resources.inventory.data_root
+        if kind == ResourceKind.EXERCISE:
+            destination = root / "raw" / "exercises" / "inbox"
+        elif catalog_target:
+            destination = root / "raw" / "books" / catalog_id / catalog_target.course_id
         else:
-            destination = self.resources.inventory.data_root / "books" / "inbox"
+            destination = root / "raw" / "books" / "inbox"
         return self.resources.download_candidate(resolved, kind=kind, destination_dir=destination, catalog_target=catalog_target)
 
     def run_catalog(self, catalog: Catalog, *, course: str = "", download: bool = False, limit: int = 8) -> list[CatalogAttempt]:

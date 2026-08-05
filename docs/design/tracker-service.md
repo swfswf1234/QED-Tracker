@@ -1,11 +1,11 @@
 # QED-Tracker 服务接口设计（tracker-service）
 
 设计状态：Accepted
-实现状态：Not Started
+实现状态：Partial（服务骨架、任务层、只读端点与下载任务已落地；评估、验收闭环与 CLI 客户端随 2026-08 计划推进）
 最后更新：2026-08-05
 需求方：QED-Engine
-关联代码：src/qed_tracker/api/（服务化轮新增，尚未实现）
-关联测试：服务化轮新增 API（TestClient）与客户端（MockTransport）测试、8901 真实服务冒烟测试
+关联代码：src/qed_tracker/api/（FastAPI 服务与后台任务层，服务化轮已实现）
+关联测试：tests/test_api.py（服务化轮新增 API 与任务层测试）、8901 真实服务冒烟测试
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
 决策记录：2026-08-05 用户裁决——人机协同闭环：LLM 评估候选落库 → 人工确认后才下载 → 下载后
 预览验收；拒绝/删除必填原因，文件硬删 + DB 记录留痕；CLI 同步支持闭环。

@@ -16,8 +16,8 @@ from qed_tracker.models import Candidate, CatalogTarget, ResourceKind, ResourceR
 class Inventory:
     def __init__(self, data_root: Path):
         self.data_root = data_root.resolve()
-        self.resources_dir = self.data_root / ".qed-tracker" / "resources"
-        self.transfers_dir = self.data_root / ".qed-tracker" / "transfers" / "axiom"
+        self.resources_dir = self.data_root / "meta" / "resources"
+        self.transfers_dir = self.data_root / "meta" / "transfers" / "axiom"
 
     def _record_path(self, digest: str) -> Path:
         return self.resources_dir / f"{digest}.json"

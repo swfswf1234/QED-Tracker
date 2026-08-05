@@ -12,11 +12,12 @@ QED-Tracker 是一个本地优先的 PDF 获取工具，聚焦教材、习题集
 
 ```powershell
 python -m pip install -e ".[dev]"
-qed-tracker config init --data-root E:/qed/dataset
+qed-tracker config show
 qed-tracker --help
 ```
 
-本地配置默认写入仓库根目录下、不纳入版本控制的 `qed-tracker.local.toml`。仓库中的 `qed-tracker.example.toml` 是完整配置示例。
+配置直读根仓库 `.env` 的 `QED_*` 变量（`QWEN_API_KEY`、`QED_MODEL`、`QED_DB_*` 等），
+本地 TOML 与 `QED_TRACKER_*` 环境变量已退役；无根 `.env` 时使用内置最小默认值并输出尾注提醒。
 
 ## 快速使用
 
@@ -60,7 +61,7 @@ qed-tracker axiom push sha256:<digest> --parse --page-start 1 --page-end 20
 
 `inventory scan` 只登记数据根目录内的 PDF，不移动或删除原文件。下载先写入 `.part`，通过 PDF 结构校验后才原子落盘并登记。
 
-0.5 内置教材来源只保留 Internet Archive、Open Library 和 Google Books。旧配置中的 `libgen`、`annas_archive`、`zlib` 必须从 `[core].sources` 或 `QED_TRACKER_SOURCES` 删除；已下载资源不受影响。
+内置教材来源固定为 Internet Archive、Open Library 和 Google Books 三个开放来源，不依赖旧配置。
 
 ## 与 Axiom-Flow 的边界
 

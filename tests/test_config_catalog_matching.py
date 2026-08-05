@@ -5,29 +5,48 @@ from qed_tracker.matching import match_candidate
 from qed_tracker.models import Candidate
 
 
-def test_load_settings_uses_toml_and_environment(tmp_path, monkeypatch):
-    config = tmp_path / "config.toml"
-    config.write_text('[core]\ndata_root = "library"\nretries = 5\nsources = ["internet_archive"]\n\n[axiom]\nurl = "http://example.test/"\n\n[llm]\nmodel = "qwen-test"\ncall_budget = 4\n', encoding="utf-8")
-    monkeypatch.setenv("QED_TRACKER_TIMEOUT_SECONDS", "45")
+def test_load_settings_reads_qed_variables_from_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("QED_MODEL", "qwen-test")
+    monkeypatch.setenv("QED_AXIOM_URL", "http://example.test/")
+    monkeypatch.setenv("QED_TRACKER_PORT", "8901")
+    monkeypatch.setenv("QED_DB_HOST", "db.local")
+    monkeypatch.setenv("QED_DB_PORT", "3307")
+    monkeypatch.setenv("QED_DB_NAME", "qed")
+    monkeypatch.setenv("QED_DB_USER", "reader")
+    monkeypatch.setenv("QED_DB_PASSWORD", "secret")
     monkeypatch.chdir(tmp_path)
 
-    settings = load_settings(config)
+    settings = load_settings()
 
-    assert settings.data_root == (tmp_path / "library").resolve()
-    assert settings.retries == 5
-    assert settings.timeout_seconds == 45
-    assert settings.sources == ("internet_archive",)
-    assert settings.axiom_url == "http://example.test"
     assert settings.llm_model == "qwen-test"
-    assert settings.llm_call_budget == 4
+    assert settings.axiom_url == "http://example.test"
+    assert settings.port == 8901
+    assert settings.db_host == "db.local"
+    assert settings.db_port == 3307
+    assert settings.db_name == "qed"
+    assert settings.db_user == "reader"
+    assert settings.db_password == "secret"
+    assert settings.db_configured
 
 
-def test_llm_key_uses_dedicated_environment_without_entering_settings(monkeypatch):
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "fallback")
-    assert llm_api_key() == "fallback"
-    monkeypatch.setenv("QED_TRACKER_LLM_API_KEY", "preferred")
-    assert llm_api_key() == "preferred"
-    assert "preferred" not in repr(load_settings())
+def test_load_settings_defaults_without_environment(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    settings = load_settings()
+
+    assert settings.data_root == (tmp_path / "dataset" / "qed-tracker").resolve()
+    assert settings.axiom_url == "http://127.0.0.1:8902"
+    assert settings.port == 8901
+    assert settings.db_name == "qed"
+    assert settings.db_password == ""
+    assert not settings.db_configured
+    assert settings.state_dir == (tmp_path / "dataset" / "qed-tracker" / "meta").resolve()
+
+
+def test_llm_key_reads_qwen_api_key_without_entering_settings(monkeypatch):
+    monkeypatch.setenv("QWEN_API_KEY", "qwen-secret")
+    assert llm_api_key() == "qwen-secret"
+    assert "qwen-secret" not in repr(load_settings())
 
 
 def test_math_catalog_is_frozen_and_has_unique_targets():

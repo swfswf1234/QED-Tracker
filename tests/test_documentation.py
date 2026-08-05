@@ -60,7 +60,6 @@ CODE_REFERENCE_PATTERN = re.compile(r"`((?:src|tests)/[^`]+)`")
 LEGACY_PATTERNS = {
     "legacy application path": re.compile(r"(?:^|[`\s(])app/"),
     "legacy documentation path": re.compile(r"docs/(?:discuss|worklogs|knowledge_base)/"),
-    "retired framework": re.compile(r"\bSQLAlchemy\b"),
     "retired version": re.compile(r"\b0\.2\b"),
 }
 

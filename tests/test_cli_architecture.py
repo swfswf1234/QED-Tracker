@@ -70,10 +70,8 @@ def test_books_get_previews_without_pick_and_downloads_with_pick(monkeypatch, tm
 def test_cli_catalog_and_config_are_usable(tmp_path, capsys):
     assert main(["--data-root", str(tmp_path), "catalog", "list"]) == 0
     assert "math-qe" in capsys.readouterr().out
-    config = tmp_path / "local.toml"
-    assert main(["config", "init", "--path", str(config), "--data-root", str(tmp_path)]) == 0
-    assert config.exists()
-    assert "data_root" in config.read_text(encoding="utf-8")
+    assert main(["--data-root", str(tmp_path), "config", "show"]) == 0
+    assert "data_root" in capsys.readouterr().out
     assert main(["papers", "profiles", "list"]) == 0
     assert "llm-engineering" in capsys.readouterr().out
 
@@ -87,7 +85,7 @@ def test_axiom_page_range_requires_parse(tmp_path, capsys):
 def test_production_package_has_no_removed_runtime_dependencies():
     root = Path(__file__).parents[1]
     source = "\n".join(path.read_text(encoding="utf-8") for path in (root / "src" / "qed_tracker").rglob("*.py"))
-    for forbidden in ("fastapi", "sqlalchemy", "pymysql", "psycopg2", "from app", "import app"):
+    for forbidden in ("psycopg2", "from app", "import app"):
         assert forbidden not in source.lower()
     assert not list((root / "app").rglob("*.py"))
     assert not list((root / "scripts").rglob("*.py"))

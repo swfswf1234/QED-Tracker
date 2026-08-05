@@ -13,7 +13,7 @@ from qed_tracker.application import BookService, ResourceService, attempts_markd
 from qed_tracker.application.papers import PaperService
 from qed_tracker.axiom import AxiomClient
 from qed_tracker.catalog import list_catalogs, load_catalog
-from qed_tracker.config import Settings, example_config, llm_api_key, load_settings
+from qed_tracker.config import Settings, llm_api_key, load_settings
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
 from qed_tracker.models import Availability, Candidate, ResourceKind
@@ -28,7 +28,6 @@ def _add_limit(parser: argparse.ArgumentParser, default: int = 10) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="qed-tracker", description="教材、习题集与 arXiv 论文下载工具")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--config", type=Path, help="显式 TOML 配置路径")
     parser.add_argument("--data-root", type=Path, help="覆盖数据根目录")
     parser.add_argument("--proxy", help="覆盖 HTTP 代理")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
@@ -108,18 +107,14 @@ def build_parser() -> argparse.ArgumentParser:
     axiom_push.add_argument("--page-start", type=int)
     axiom_push.add_argument("--page-end", type=int)
 
-    config = commands.add_parser("config", help="本地配置")
+    config = commands.add_parser("config", help="生效配置")
     config_commands = config.add_subparsers(dest="config_command", required=True)
-    config_init = config_commands.add_parser("init", help="创建本地配置")
-    config_init.add_argument("--path", type=Path, default=Path("qed-tracker.local.toml"))
-    config_init.add_argument("--data-root", default="E:/qed/dataset")
-    config_init.add_argument("--force", action="store_true")
     config_commands.add_parser("show", help="显示生效配置")
     return parser
 
 
 def _settings(args) -> Settings:
-    return load_settings(args.config, data_root=args.data_root, proxy=args.proxy)
+    return load_settings(data_root=args.data_root, proxy=args.proxy)
 
 
 def _print(value, json_output: bool = False) -> None:
@@ -183,7 +178,7 @@ def _books(args, settings: Settings) -> int:
         resources = ResourceService(inventory, manager)
         try:
             candidate = Candidate("url", args.url, args.title, tuple(args.author), args.language, page_url=args.url, download_url=args.url)
-            record = resources.download_candidate(candidate, kind=ResourceKind(args.kind), destination_dir=settings.data_root / "books" / "inbox")
+            record = resources.download_candidate(candidate, kind=ResourceKind(args.kind), destination_dir=settings.data_root / "raw" / "books" / "inbox")
             _print(record.to_dict(), args.json)
             return 0
         finally:
@@ -356,17 +351,12 @@ def _config(args, settings: Settings) -> int:
             "retries": settings.retries, "sources": list(settings.sources), "axiom_url": settings.axiom_url,
             "tls_verify": settings.tls_verify, "llm_model": settings.llm_model, "llm_base_url": settings.llm_base_url,
             "llm_timeout_seconds": settings.llm_timeout_seconds, "llm_call_budget": settings.llm_call_budget,
-            "llm_max_tokens": settings.llm_max_tokens,
+            "llm_max_tokens": settings.llm_max_tokens, "port": settings.port, "tracker_url": settings.tracker_url,
+            "db_host": settings.db_host, "db_port": settings.db_port, "db_name": settings.db_name,
+            "db_user": settings.db_user, "db_configured": settings.db_configured,
         }, True)
         return 0
-    path = args.path
-    if path.exists() and not args.force:
-        print(f"配置已存在：{path}（使用 --force 覆盖）", file=sys.stderr)
-        return 2
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(example_config(args.data_root), encoding="utf-8")
-    print(path.resolve())
-    return 0
+    raise ValueError(f"未知 config 命令：{args.config_command}")
 
 
 def main(argv: list[str] | None = None) -> int:
