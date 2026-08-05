@@ -1,11 +1,14 @@
 # QED-Tracker 服务接口设计（tracker-service）
 
 设计状态：Accepted
-实现状态：Partial（服务骨架、任务层、只读端点与下载任务已落地；评估、验收闭环与 CLI 客户端随 2026-08 计划推进）
+实现状态：Partial（服务骨架、任务层、只读端点、下载任务与 MySQL 资源登记索引已落地；评估、验收闭环与 CLI 客户端随 2026-08 计划推进）
 最后更新：2026-08-05
 需求方：QED-Engine
-关联代码：src/qed_tracker/api/（FastAPI 服务与后台任务层，服务化轮已实现）
-关联测试：tests/test_api.py（服务化轮新增 API 与任务层测试）、8901 真实服务冒烟测试
+关联代码：src/qed_tracker/api/（FastAPI 服务与后台任务层，服务化轮已实现）、src/qed_tracker/db/ 与
+src/qed_tracker/database.py（qt_resources ORM、状态机仓库、双写登记，QED-012 已实现）、
+src/qed_tracker/migrations/（Alembic 迁移 0001_qt_resources）
+关联测试：tests/test_api.py（服务化轮新增 API 与任务层测试）、tests/test_db_models.py、
+tests/test_db_registry.py、tests/test_db_mysql_smoke.py（QED_DB_SMOKE=1 本机冒烟）、8901 真实服务冒烟测试
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
 决策记录：2026-08-05 用户裁决——人机协同闭环：LLM 评估候选落库 → 人工确认后才下载 → 下载后
 预览验收；拒绝/删除必填原因，文件硬删 + DB 记录留痕；CLI 同步支持闭环。
@@ -120,9 +123,13 @@ reject <id> --reason <原因>`、`resources approve <id>`、`books download <id>
     回归。
   - 非法迁移（如未 confirm 即下载、rejected 后再验收）返回 409；reject 缺 reason 返回 422。
   - rejected 资源 DB 记录永不删除；后续评估任务按 catalog_ref + title/sha256 跳过同源已拒候选。
-- 登记顺序：PDF 落盘 → 写资源 JSON → 写 MySQL；任一步失败任务失败并保留可重放现场（重复
+- 登记顺序：PDF 落盘 → 写资源 JSON → 写 MySQL（已实现：下载任务 progress 70 处经
+  ResourceRegistry.register_downloaded 双写，同 sha256 幂等复用既有记录，主键由
+  `cand_<md5>` 迁移为 `sha256:<digest>`）；任一步失败任务失败并保留可重放现场（重复
   提交同 sha256 幂等复用既有记录）。
-- 数据库栈与迁移：沿用 Axiom-Flow 的 ORM + Alembic 模式；「ORM 框架旧禁令」
+- 数据库栈与迁移：已采用 SQLAlchemy 2.0 ORM + Alembic（`alembic.ini` + `src/qed_tracker/migrations/`，
+  URL 由 QED_DB_* 构造不写死；迁移脚本须保持纯 ASCII，Windows locale 编码读取）。
+  迁移应用入口 `upgrade_database()` 供服务启动与冒烟复用；「ORM 框架旧禁令」
   （`tests/test_documentation.py` LEGACY_PATTERNS 与 `tests/test_cli_architecture.py` 禁导入
   清单）随实现轮同步移除，并更新对应治理测试。
 
