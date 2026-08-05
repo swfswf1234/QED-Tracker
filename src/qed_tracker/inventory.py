@@ -133,6 +133,14 @@ class Inventory:
             return None
         return ResourceRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
+    def remove(self, resource_id: str) -> bool:
+        """删除本地清单记录（调用方负责文件删除；供验收级拒绝硬删留痕）。"""
+        path = self._record_path(resource_id.removeprefix("sha256:"))
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
+
     def find_by_catalog_target(self, catalog_id: str, target_id: str) -> ResourceRecord | None:
         for record in self.list():
             reference = record.catalog_ref or {}
