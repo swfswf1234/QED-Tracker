@@ -43,12 +43,18 @@ def repository(tmp_path):
     engine.dispose()
 
 
-def mock_downloader(content: bytes) -> DownloadManager:
+def mock_downloader(content: bytes, delay: float = 0.0) -> DownloadManager:
     manager = DownloadManager(retries=1)
     manager.client.close()
-    manager.client = httpx.Client(
-        transport=httpx.MockTransport(lambda request: httpx.Response(200, content=content, request=request))
-    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if delay:
+            import time
+
+            time.sleep(delay)
+        return httpx.Response(200, content=content, request=request)
+
+    manager.client = httpx.Client(transport=httpx.MockTransport(handler))
     return manager
 
 
@@ -91,6 +97,74 @@ def _wait_finished(client: TestClient, task_id: str, timeout: float = 8.0) -> di
             return data
         time.sleep(0.02)
     raise AssertionError(f"task {task_id} 未在 {timeout}s 内结束")
+
+
+def _wait_running_message(client: TestClient, task_id: str, timeout: float = 8.0) -> list[str]:
+    """任务运行期间收集 message 快照，用于断言进度步骤。"""
+    import time
+
+    messages: list[str] = []
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        data = client.get(f"/api/v1/tasks/{task_id}").json()
+        if data["status"] in ("succeeded", "failed"):
+            break
+        if data.get("message") and (not messages or messages[-1] != data["message"]):
+            messages.append(data["message"])
+        time.sleep(0.01)
+    return messages
+
+
+def test_download_failure_logs_error(tmp_path, repository, caplog):
+    """任务失败必须输出结构化日志（含任务类型与错误），便于定位卡点。"""
+    import logging
+
+    resource_id = _seed_candidate(repository)
+    candidate = Candidate("fake", "x3", "Topology", ("James Munkres",), "en", download_url="https://example.test/t.pdf")
+    failing = DownloadManager(retries=1)
+    failing.client.close()
+    failing.client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500, request=request)))
+    with caplog.at_level(logging.INFO, logger="qed_tracker"):
+        with make_client(tmp_path, candidate=candidate, downloader=failing, repository=repository) as client:
+            repository.confirm(resource_id)
+            task_id = client.post("/api/v1/tasks/books/download", json={"resource_id": resource_id}).json()["task_id"]
+            task = _wait_finished(client, task_id)
+            assert task["status"] == "failed"
+    records = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert any("任务失败" in msg for _, msg in records), f"无任务失败日志：{records}"
+    assert any("books/download" in msg for _, msg in records), f"日志未含任务类型：{records}"
+
+
+def test_download_resolves_missing_url_before_fetch(tmp_path, repository, pdf_bytes):
+    """evaluate 落库的 archive 候选无 download_url；下载时先经 provider.resolve 补齐并回填。"""
+
+    from dataclasses import replace
+
+    from qed_tracker.api.main import Application, _make_download_handler
+    from qed_tracker.config import load_settings
+
+    class ResolvingProvider(FakeProvider):
+        def resolve(self, candidate):
+            return replace(candidate, download_url="https://example.test/t.pdf")
+
+    resource_id = _seed_candidate(repository, download_url="")
+    candidate = Candidate("fake", "x3", "Topology", ("James Munkres",), "en", download_url="")
+    settings = replace(load_settings(data_root=tmp_path), db_password="")
+    container = Application(
+        settings,
+        book_providers=[ResolvingProvider(candidate)],
+        papers_provider=None,
+        downloader=mock_downloader(pdf_bytes),
+        repository=repository,
+    )
+    repository.confirm(resource_id)
+    handler = _make_download_handler(container)
+    result = handler({"resource_id": resource_id}, lambda pct, msg: None)
+    assert result["file"]["sha256"]
+    # 候选行主键迁移为 sha256:<digest>
+    row = repository.get(f"sha256:{result['file']['sha256']}")
+    assert row is not None and row.status == "downloaded"
+    assert row.source["download_url"] == "https://example.test/t.pdf"
 
 
 def _seed_candidate(repository, *, title="Topology", resource_id=None, download_url="https://example.test/t.pdf"):
@@ -164,6 +238,38 @@ def test_download_failure_marks_failed_and_retryable(tmp_path, repository):
         task = _wait_finished(client, response.json()["task_id"])
         assert task["status"] == "failed"
         assert repository.get(resource_id).status == ResourceStatus.FAILED.value
+        assert task["error"]  # 失败原因落盘
+
+
+def test_download_task_reports_progress_steps(tmp_path, repository, pdf_bytes):
+    """下载任务 message 随进度更新：下载中(URL) → 校验落盘 → 登记完成。"""
+    from dataclasses import replace
+
+    from qed_tracker.api.main import Application, _make_download_handler
+    from qed_tracker.config import load_settings
+
+    resource_id = _seed_candidate(repository)
+    candidate = Candidate("fake", "x3", "Topology", ("James Munkres",), "en", download_url="https://example.test/t.pdf")
+    settings = replace(load_settings(data_root=tmp_path), db_password="")
+    container = Application(
+        settings,
+        book_providers=[FakeProvider(candidate)],
+        papers_provider=None,
+        downloader=mock_downloader(pdf_bytes),
+        repository=repository,
+    )
+    repository.confirm(resource_id)
+    handler = _make_download_handler(container)
+    calls: list[tuple[int, str]] = []
+    result = handler({"resource_id": resource_id}, lambda pct, msg: calls.append((pct, msg)))
+    assert result["file"]["sha256"]
+    combined = "\n".join(msg for _, msg in calls)
+    assert "https://example.test/t.pdf" in combined, f"进度消息未含下载地址：{calls}"
+    assert "校验" in combined, f"进度消息未含校验步骤：{calls}"
+    assert "登记" in combined, f"进度消息未含登记步骤：{calls}"
+    assert calls[-1][0] == 100
+    percents = [pct for pct, _ in calls]
+    assert percents == sorted(percents), f"进度非单调：{calls}"
 
 
 # ---- QED-014：/resources 合并清单与状态过滤 ----

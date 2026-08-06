@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -17,6 +18,14 @@ from qed_tracker.db.repository import ResourceRepository
 from qed_tracker.models import BookAssessment, Candidate
 
 MIN_RECOMMEND_SCORE = 60
+
+
+def _source_failure_reason(failures: list[tuple[str, str]]) -> str:
+    """来源失败原因：列出每个 provider 的具体错误（便于定位卡点，如 DNS 污染/限流）。"""
+    if not failures:
+        return "来源不可得"
+    details = "; ".join(f"{name}: {error[:160]}" for name, error in failures)
+    return f"来源不可得（{details}）"
 
 
 class BookAdvisor(Protocol):
@@ -46,7 +55,7 @@ class CatalogEvaluator:
         self.repository = repository
         self.advisor = advisor
 
-    def evaluate(self, catalog: Catalog, *, course: str = "", limit: int = 8) -> dict[str, Any]:
+    def evaluate(self, catalog: Catalog, *, course: str = "", limit: int = 8, progress: Callable[[int, str], None] | None = None) -> dict[str, Any]:
         report: dict[str, Any] = {
             "catalog_id": catalog.id,
             "course_id": course or None,
@@ -58,13 +67,18 @@ class CatalogEvaluator:
             "errors": [],
         }
         targets = [target for target in catalog.targets if not course or target.course_id.startswith(course.zfill(2))]
-        for target in targets:
+        total = len(targets)
+        for index, target in enumerate(targets, start=1):
             report["targets"] += 1
             ref = _catalog_ref(catalog, target)
+            if progress is not None:
+                progress(int(30 + (index - 1) / total * 60), f"评估 {index}/{total}：{target.id}（{target.title}）搜索中")
             try:
                 self._evaluate_target(target, ref, limit, report)
             except Exception as exc:  # noqa: BLE001 - 单目标失败不中断整个任务
                 report["errors"].append({"target_id": target.id, "error": str(exc)[:300]})
+                if progress is not None:
+                    progress(int(30 + index / total * 60), f"评估 {index}/{total}：{target.id} 失败：{str(exc)[:120]}")
         return report
 
     def _evaluate_target(self, target, ref: dict[str, str], limit: int, report: dict[str, Any]) -> None:
@@ -78,9 +92,7 @@ class CatalogEvaluator:
         ranked = self.books.search(target.query or target.title, limit=limit, target=target)
         strict = next((item for item in ranked if item.match and item.match.strict), None)
         if strict is None:
-            reason = "来源不可得"
-            if self.books.failures:
-                reason += "；" + ", ".join(name for name, _ in self.books.failures)
+            reason = _source_failure_reason(self.books.failures)
             self.repository.upsert_candidate(
                 title=target.title,
                 authors=target.authors,

@@ -43,3 +43,6 @@ data/
 # macOS
 .DS_Store
 Thumbs.db
+
+# local service logs
+tracker8901*.log

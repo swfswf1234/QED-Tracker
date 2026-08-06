@@ -61,6 +61,27 @@ def test_internet_archive_resolves_largest_public_pdf():
     assert resolved.size_bytes == 20
 
 
+def test_internet_archive_multiword_query_searches_all_fields():
+    """archive.org Solr 的 `title:(a b c)` 对多词查询返回 0；必须全字段 AND 连接。"""
+
+    captured = {}
+
+    def handler(request):
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"response": {"docs": []}}, request=request)
+
+    provider = InternetArchiveProvider()
+    _replace_client(provider, handler)
+    try:
+        provider.search("Munkres Topology 2nd", 8)
+    finally:
+        provider.close()
+    q = httpx.URL(captured["url"]).params["q"]
+    assert "mediatype:texts" in q
+    assert not q.startswith("title:("), f"多词查询不得用 title:(...) 限定：{q}"
+    assert "Munkres" in q and "Topology" in q
+
+
 def test_retired_provider_has_actionable_migration_error():
     with pytest.raises(ValueError, match=r"0\.5.*core.*sources"):
         create_book_providers(("libgen",))

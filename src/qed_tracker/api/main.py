@@ -136,6 +136,7 @@ def _make_download_handler(app: Application):
     def handler(params: dict[str, Any], progress) -> dict[str, Any]:
         if app.repository is None:
             raise RuntimeError("数据库未配置：下载任务需 qt_resources 行")
+        progress(5, "校验资源状态")
         row = app.repository.get(params["resource_id"])
         if row is None or row.status != ResourceStatus.CONFIRMED.value:
             raise RuntimeError(f"仅 confirmed 状态可触发下载，当前：{row.status if row else '不存在'}")
@@ -152,16 +153,24 @@ def _make_download_handler(app: Application):
             download_url=source.get("download_url", ""),
         )
         if not candidate.download_url:
-            raise RuntimeError("候选缺少 download_url，无法下载")
-        progress(15, "开始下载")
+            progress(12, f"解析下载地址（{candidate.provider}）")
+            try:
+                candidate = app.books.resolve(candidate)
+            except Exception as exc:
+                raise RuntimeError(f"来源解析下载地址失败（{candidate.provider}）：{exc}") from exc
+            if not candidate.download_url:
+                raise RuntimeError("候选缺少 download_url，无法下载")
+            app.repository.update_source(row.resource_id, source | {"download_url": candidate.download_url})
+        progress(15, f"开始下载：{candidate.title}（{candidate.download_url}）")
         app.repository.start_download(row.resource_id)
         try:
             record = app.books.download(candidate, kind=ResourceKind(row.kind))
         except Exception:
             app.repository.fail(row.resource_id)
             raise
-        progress(70, "登记索引")
+        progress(70, "校验 PDF 并登记本地清单")
         # 候选行迁移为 sha256:<digest> 并回填；同 sha256 已有行则幂等复用（catalog_ref 保留）
+        progress(90, "登记 MySQL 索引（qt_resources）")
         app.repository.complete_download(
             row.resource_id,
             sha256=record.sha256,
@@ -181,9 +190,9 @@ def _make_evaluate_handler(app: Application):
         course = params.get("course_id", "")
         progress(10, "加载冻结目录")
         catalog = load_catalog("math-qe")
-        progress(30, "搜索并评估")
+        progress(20, "搜索并评估（每个来源逐个重试，最慢可能数分钟）")
         evaluator = CatalogEvaluator(app.books, app.repository, advisor=app.advisor)
-        report = evaluator.evaluate(catalog, course=course)
+        report = evaluator.evaluate(catalog, course=course, progress=lambda pct, msg: progress(pct, msg))
         progress(100, "完成")
         return report
 

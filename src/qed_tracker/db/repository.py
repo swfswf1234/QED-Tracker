@@ -226,6 +226,16 @@ class ResourceRepository:
             session.commit()
             return row
 
+    def update_source(self, resource_id: str, source: dict[str, Any]) -> QtResource:
+        """回填/更新来源信息（如下载时解析出的真实 download_url），保留其余列。"""
+        with self._session_factory() as session:
+            row = session.get(QtResource, resource_id)
+            if row is None:
+                raise KeyError(f"资源不存在：{resource_id}")
+            row.source = source
+            session.commit()
+            return row
+
     def upsert_downloaded(
         self,
         *,

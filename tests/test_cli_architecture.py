@@ -82,6 +82,58 @@ def test_axiom_page_range_requires_parse(tmp_path, capsys):
     assert "只能与 --parse" in capsys.readouterr().err
 
 
+def test_serve_runs_uvicorn_with_created_app(monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: None)
+    monkeypatch.setattr("qed_tracker.cli.upgrade_database", lambda settings: None)
+    fake_app = object()
+    monkeypatch.setattr("qed_tracker.api.main.create_app", lambda settings, **kwargs: fake_app)
+    monkeypatch.setattr("qed_tracker.cli.uvicorn.run", lambda app, **kwargs: captured.update({"app": app} | kwargs))
+    assert main(["--data-root", str(tmp_path), "serve", "--port", "8901"]) == 0
+    assert captured["app"] is fake_app
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 8901
+
+
+def test_serve_continues_when_database_migration_fails(monkeypatch, tmp_path, capsys):
+    def boom(settings):
+        raise RuntimeError("MySQL 不可用")
+
+    monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: None)
+    monkeypatch.setattr("qed_tracker.cli.upgrade_database", boom)
+    monkeypatch.setattr("qed_tracker.api.main.create_app", lambda settings, **kwargs: object())
+    monkeypatch.setattr("qed_tracker.cli.uvicorn.run", lambda app, **kwargs: None)
+    assert main(["--data-root", str(tmp_path), "serve", "--port", "8901"]) == 0
+    assert "MySQL" in capsys.readouterr().err
+
+
+def test_serve_loads_root_env_into_environment(monkeypatch, tmp_path):
+    """serve 独立启动时自动注入根 .env 的 QED_* 与密钥（不覆盖已显式设置的环境变量）。"""
+    import os as os_module
+
+    from qed_tracker import cli as cli_module
+
+    monkeypatch.delenv("QED_DB_PASSWORD", raising=False)
+    (tmp_path / ".env").write_text("QED_DB_PASSWORD=secret123\nQWEN_API_KEY=sk-env\n", encoding="utf-8")
+    monkeypatch.setenv("QWEN_API_KEY", "explicit")
+    try:
+        assert cli_module._load_root_env(tmp_path) == tmp_path / ".env"
+        assert os_module.environ["QED_DB_PASSWORD"] == "secret123"
+    finally:
+        os_module.environ.pop("QED_DB_PASSWORD", None)  # 清理注入，避免污染其他测试
+    assert os_module.environ["QWEN_API_KEY"] == "explicit"  # 已有值不被覆盖
+
+    # main(serve) 以 cwd 为查找起点调用 _load_root_env
+    seen = []
+    monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: seen.append(start) or None)
+    monkeypatch.setattr("qed_tracker.cli.upgrade_database", lambda settings: None)
+    monkeypatch.setattr("qed_tracker.api.main.create_app", lambda settings, **kwargs: object())
+    monkeypatch.setattr("qed_tracker.cli.uvicorn.run", lambda app, **kwargs: None)
+    assert main(["--data-root", str(tmp_path), "serve"]) == 0
+    assert seen == [Path.cwd()]
+    os_module.environ.pop("QED_DB_PASSWORD", None)  # 清理注入，避免污染其他测试
+
+
 def test_production_package_has_no_removed_runtime_dependencies():
     root = Path(__file__).parents[1]
     source = "\n".join(path.read_text(encoding="utf-8") for path in (root / "src" / "qed_tracker").rglob("*.py"))

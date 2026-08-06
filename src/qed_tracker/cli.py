@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
+
+import uvicorn
 
 from qed_tracker import __version__
 from qed_tracker.application import BookService, ResourceService, attempts_markdown
@@ -14,6 +17,7 @@ from qed_tracker.application.papers import PaperService
 from qed_tracker.axiom import AxiomClient
 from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key, load_settings
+from qed_tracker.database import upgrade_database
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
 from qed_tracker.models import Availability, Candidate, ResourceKind
@@ -110,6 +114,10 @@ def build_parser() -> argparse.ArgumentParser:
     config = commands.add_parser("config", help="生效配置")
     config_commands = config.add_subparsers(dest="config_command", required=True)
     config_commands.add_parser("show", help="显示生效配置")
+
+    serve = commands.add_parser("serve", help="启动工作台 API 服务（8901）")
+    serve.add_argument("--host", default="127.0.0.1", help="监听地址")
+    serve.add_argument("--port", type=int, default=None, help="监听端口（默认取配置 port）")
     return parser
 
 
@@ -359,12 +367,47 @@ def _config(args, settings: Settings) -> int:
     raise ValueError(f"未知 config 命令：{args.config_command}")
 
 
+def _serve(args, settings: Settings) -> int:
+    import logging
+
+    from qed_tracker.api.main import create_app
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    try:
+        upgrade_database(settings)
+    except Exception as exc:  # 数据库不可用时服务仍可启动（健康/浏览可用，任务明确报错）
+        print(f"WARN 数据库迁移跳过：{exc}", file=sys.stderr)
+    uvicorn.run(create_app(settings), host=args.host, port=args.port or settings.port, log_level="info")
+    return 0
+
+
+def _load_root_env(start: Path) -> Path | None:
+    """从 start 向上查找根 `.env`，注入 `QED_*` 与供应商密钥（已有环境变量不覆盖）。
+
+    独立启动 `qed-tracker serve` 时补上根仓库统一配置，保持与 `qed` 注入环境一致。
+    """
+    env_path = next((candidate / ".env" for candidate in [start, *start.parents] if (candidate / ".env").is_file()), None)
+    if env_path is None:
+        return None
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key.startswith("QED_") or key in ("QWEN_API_KEY", "DEEPSEEK_API_KEY", "GLM_API_KEY"):
+            os.environ.setdefault(key, value.strip().strip('"').strip("'"))
+    return env_path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "serve":
+            _load_root_env(Path.cwd())
         settings = _settings(args)
-        handlers = {"books": _books, "papers": _papers, "catalog": _catalog, "inventory": _inventory, "axiom": _axiom, "config": _config}
+        handlers = {"books": _books, "papers": _papers, "catalog": _catalog, "inventory": _inventory, "axiom": _axiom, "config": _config, "serve": _serve}
         return handlers[args.command](args, settings)
     except (ValueError, OSError, RuntimeError) as exc:
         if args.json:

@@ -1,7 +1,7 @@
 # 日常操作
 
 状态：Current
-最后更新：2026-07-30
+最后更新：2026-08-06
 
 ## 配置
 
@@ -13,12 +13,23 @@ qed-tracker config show
 ```
 
 配置直读根仓库 `.env` 的 `QED_*` 变量（`QWEN_API_KEY`、`QED_MODEL`、`QED_AXIOM_URL`、
-`QED_TRACKER_PORT`、`QED_DB_*` 等），本地 TOML 与 `QED_TRACKER_*` 环境变量已退役；无根
+`QED_TRACKER_PORT`、`QED_DB_*`、`QED_PROXY` 等），本地 TOML 与 `QED_TRACKER_*` 环境变量已退役；无根
 `.env` 时使用内置最小默认值，启动时输出尾注提醒。数据根默认 `dataset/qed-tracker/`，可用
 全局 `--data-root` 覆盖。
 
 TLS 校验默认开启。代理、超时、重试和 Axiom URL 由 `QED_*` 变量或内置默认值提供；密钥只
 经根 `.env` 提供，不得写入任何本地文件。
+
+## 工作台服务
+
+```powershell
+qed-tracker serve --port 8901
+```
+
+`serve` 启动工作台 API（默认 `127.0.0.1:8901`，即 `QED_TRACKER_PORT`）。独立启动时自动从
+当前目录向上查找根 `.env` 并注入 `QED_*` 与供应商密钥（不覆盖已显式设置的环境变量）；
+MySQL 迁移失败只警告、服务照常启动（任务会明确报错）。代理访问由 `QED_PROXY=http://127.0.0.1:7890`
+提供，用于绕开对 archive.org、openlibrary.org 等来源的 DNS 污染与限流。
 
 ## 教材与习题集
 

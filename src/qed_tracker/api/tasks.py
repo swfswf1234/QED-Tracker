@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
 import time
@@ -16,6 +17,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("qed_tracker.tasks")
 
 ProgressCallback = Callable[[int, str], None]
 TaskHandler = Callable[[dict[str, Any], ProgressCallback], dict[str, Any]]
@@ -134,6 +137,8 @@ class TaskManager:
         self.store.save(record)
 
     def _execute(self, record: TaskRecord) -> None:
+        started = time.monotonic()
+        logger.info("任务开始：%s（%s）", record.type, record.task_id)
         self._update(record, status="running", progress=5, message="已开始")
 
         def progress(value: int, message: str) -> None:
@@ -142,5 +147,7 @@ class TaskManager:
         try:
             result = self.handlers[record.type](record.params, progress)
             self._update(record, status="succeeded", progress=100, message="完成", result=result)
+            logger.info("任务成功：%s（%s）耗时 %.2fs", record.type, record.task_id, time.monotonic() - started)
         except Exception as exc:  # 任务失败不阻塞其他任务，错误原样落盘
             self._update(record, status="failed", message="失败", error=f"{type(exc).__name__}: {exc}")
+            logger.error("任务失败：%s（%s）耗时 %.2fs：%s", record.type, record.task_id, time.monotonic() - started, exc)

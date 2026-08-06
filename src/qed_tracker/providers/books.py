@@ -63,9 +63,11 @@ class InternetArchiveProvider(HttpProvider):
     name = "internet_archive"
 
     def search(self, query: str, limit: int = 10) -> list[Candidate]:
+        # archive.org Solr：`title:(a b c)` 对多词查询返回 0（默认 OR 语法），
+        # 必须全字段（title/creator/description…）查询，由调用方严格匹配把关质量。
         response = self.client.get(
             "https://archive.org/advancedsearch.php",
-            params={"q": f'title:({query}) AND mediatype:texts', "fl[]": ["identifier", "title", "creator", "year", "language"], "rows": limit, "output": "json"},
+            params={"q": f"{query} AND mediatype:texts", "fl[]": ["identifier", "title", "creator", "year", "language"], "rows": limit, "output": "json"},
             headers={"User-Agent": "QED-Tracker/0.5"},
         )
         response.raise_for_status()

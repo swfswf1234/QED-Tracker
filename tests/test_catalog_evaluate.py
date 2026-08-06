@@ -113,6 +113,69 @@ def _submit_evaluate(client, course_id: str | None = None) -> dict:
     return _wait_finished(client, response.json()["task_id"])
 
 
+class BrokenProvider:
+    """模拟 DNS 污染/连接黑洞：搜索抛连接错误。"""
+
+    name = "broken"
+
+    def search(self, query, limit=10):
+        raise ConnectionError("connect to 69.63.184.142:443 failed: timeout")
+
+    def resolve(self, candidate):
+        return candidate
+
+    def close(self):
+        return None
+
+
+def test_evaluate_reports_provider_failure_details(tmp_path, repository):
+    """来源失败 reason 必须包含每个 provider 的具体错误，便于定位卡点。"""
+    with make_client(tmp_path, provider=BrokenProvider(), advisor=None, repository=repository) as client:
+        task = _submit_evaluate(client, course_id="03")
+        assert task["status"] == "succeeded"
+        not_found = [item for item in task["result"]["not_found"] if item["target_id"] == "03-munkres"]
+        assert not_found
+        assert "broken" in not_found[0]["reason"]
+        assert "69.63.184.142" in not_found[0]["reason"]
+
+
+def test_evaluate_logs_provider_failure(tmp_path, repository, caplog):
+    """来源搜索失败必须输出 warning 日志（含 provider 名），联调时能直接看服务日志定位。"""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="qed_tracker"):
+        with make_client(tmp_path, provider=BrokenProvider(), advisor=None, repository=repository) as client:
+            task = _submit_evaluate(client, course_id="03")
+            assert task["status"] == "succeeded"
+    records = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert any("broken" in msg and "69.63.184.142" in msg for _, msg in records), f"无来源失败日志：{records}"
+
+
+def test_evaluate_progress_reports_targets(tmp_path, repository):
+    """进度回调按 target 推进并带目标标识，前端轮询可看到卡在哪个目标。"""
+    from dataclasses import replace
+
+    from qed_tracker.application.books import BookService
+    from qed_tracker.application.catalog_evaluate import CatalogEvaluator
+    from qed_tracker.application.resources import ResourceService
+    from qed_tracker.catalog import load_catalog
+    from qed_tracker.config import load_settings
+    from qed_tracker.downloader import DownloadManager
+    from qed_tracker.inventory import Inventory
+
+    settings = replace(load_settings(data_root=tmp_path), db_password="")
+    books = BookService([FakeProvider()], ResourceService(Inventory(settings.data_root), DownloadManager()))
+    evaluator = CatalogEvaluator(books, repository, advisor=FakeAdvisor())
+    messages: list[tuple[int, str]] = []
+    evaluator.evaluate(load_catalog("math-qe"), course="03", progress=lambda pct, msg: messages.append((pct, msg)))
+    assert messages, "progress 回调未被调用"
+    assert any("03-munkres" in msg for _, msg in messages), f"进度消息未含目标标识：{messages}"
+    assert messages[0][0] > 0
+    # 进度单调不减
+    percents = [pct for pct, _ in messages]
+    assert percents == sorted(percents)
+
+
 def _row_by_target(repository, target_id: str):
     return next((row for row in repository.list() if row.catalog_ref and row.catalog_ref.get("target_id") == target_id), None)
 

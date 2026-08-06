@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ from qed_tracker.catalog import Catalog
 from qed_tracker.matching import match_candidate
 from qed_tracker.models import Candidate, CatalogTarget, MatchResult, ResourceKind, ResourceRecord
 from qed_tracker.providers.books import BookProvider, ProviderError
+
+logger = logging.getLogger("qed_tracker.books")
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +51,7 @@ class BookService:
                 candidates = provider.search(query, limit)
             except Exception as exc:
                 self.failures.append((provider.name, str(exc)))
+                logger.warning("来源搜索失败：provider=%s query=%r error=%s", provider.name, query, exc)
                 continue
             for candidate in candidates:
                 key = (candidate.provider, candidate.provider_id, candidate.title.casefold())

@@ -58,9 +58,14 @@ updated_at, params, result, error}`；`result` 含 `resource_id`、`relative_pat
 ### 配置（`config.py`）
 
 - 直读根 `.env` 的 `QED_*` 变量：`QWEN_API_KEY`（百炼）、`QED_MODEL`、`QED_AXIOM_URL`
-  （默认 `http://127.0.0.1:8902`）、`QED_TRACKER_PORT`（默认 8901）。
+  （默认 `http://127.0.0.1:8902`）、`QED_TRACKER_PORT`（默认 8901）、`QED_PROXY`
+  （代理访问，绕开 archive.org/openlibrary.org 的 DNS 污染与限流）。
 - 本地 TOML 与 `QED_TRACKER_*` 环境变量退役；无配置时内置最小默认值 + 启动尾注提醒。
-- 根 `.env` 由统一 CLI `qed` 启动服务时注入；独立启动无 `.env` 时降级运行。
+- 根 `.env` 由统一 CLI `qed` 启动服务时注入；独立启动 `qed-tracker serve` 时自动从当前
+  目录向上查找根 `.env` 并注入 `QED_*` 与供应商密钥（不覆盖已显式设置的环境变量），
+  无 `.env` 时降级运行。
+- 服务入口：`qed-tracker serve [--host 127.0.0.1] [--port 8901]`；启动先执行
+  `upgrade_database()`，MySQL 迁移失败仅警告、服务照常启动（登记/任务明确报错）。
 
 ### 数据布局（数据根默认 `dataset/qed-tracker/`）
 
