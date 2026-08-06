@@ -24,6 +24,7 @@ class ResourceStatus(StrEnum):
     FAILED = "failed"
     PENDING_MANUAL = "pending_manual"
     NOT_FOUND = "not_found"
+    BACKUP = "backup"
 
 
 class Base(DeclarativeBase):

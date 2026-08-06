@@ -6,7 +6,7 @@
 - `GET /resources?status=&course_id=&kind=&language=`：MySQL 行 + 本地清单合并，
   MySQL 状态为权威（同 sha256 时本地记录不重复出现）；
 - `GET /resources/{id}/file`：仅 downloaded/approved 可访问（iframe 内嵌 PDF 预览），否则 404；
-- `POST /resources/{id}/confirm|approve`：非法迁移返回 409；
+- `POST /resources/{id}/confirm|backup|approve`：非法迁移返回 409；
 - `POST /resources/{id}/reject`：body `{reason}` 必填（缺 422）；downloaded 拒绝时硬删文件、
   DB 记录保留留痕。
 
@@ -353,6 +353,52 @@ def test_resource_file_forbidden_before_download(tmp_path, repository):
 def test_resource_file_unknown_returns_404(tmp_path, repository):
     with make_client(tmp_path, repository=repository) as client:
         assert client.get("/api/v1/resources/sha256:deadbeef/file").status_code == 404
+
+
+# ---- QED-017：人工评估三态（confirm / backup / reject） ----
+
+def test_backup_moves_candidate_to_backup(tmp_path, repository):
+    resource_id = _seed_candidate(repository)
+    with make_client(tmp_path, repository=repository) as client:
+        response = client.post(f"/api/v1/resources/{resource_id}/backup")
+        assert response.status_code == 200
+        assert response.json()["status"] == ResourceStatus.BACKUP.value
+        assert repository.get(resource_id).status == ResourceStatus.BACKUP.value
+
+
+def test_backup_unknown_resource_returns_404(tmp_path, repository):
+    with make_client(tmp_path, repository=repository) as client:
+        assert client.post("/api/v1/resources/cand_nope/backup").status_code == 404
+
+
+def test_backup_invalid_transition_returns_409(tmp_path, repository):
+    resource_id = _seed_candidate(repository)
+    with make_client(tmp_path, repository=repository) as client:
+        repository.confirm(resource_id)
+        assert client.post(f"/api/v1/resources/{resource_id}/backup").status_code == 409
+
+
+def test_backup_then_confirm_promotes(tmp_path, repository):
+    """备选转正：backup → confirm 进入下载流程。"""
+    resource_id = _seed_candidate(repository)
+    with make_client(tmp_path, repository=repository) as client:
+        assert client.post(f"/api/v1/resources/{resource_id}/backup").status_code == 200
+        response = client.post(f"/api/v1/resources/{resource_id}/confirm")
+        assert response.status_code == 200
+        assert repository.get(resource_id).status == ResourceStatus.CONFIRMED.value
+
+
+def test_backup_then_reject_records_reason(tmp_path, repository):
+    """放弃备选：backup → reject（原因必填）。"""
+    resource_id = _seed_candidate(repository)
+    with make_client(tmp_path, repository=repository) as client:
+        client.post(f"/api/v1/resources/{resource_id}/backup")
+        assert client.post(f"/api/v1/resources/{resource_id}/reject", json={}).status_code == 422
+        response = client.post(f"/api/v1/resources/{resource_id}/reject", json={"reason": "放弃备选"})
+        assert response.status_code == 200
+        row = repository.get(resource_id)
+        assert row.status == ResourceStatus.REJECTED.value
+        assert row.reject_reason == "放弃备选"
 
 
 # ---- QED-016：confirm / approve / reject ----

@@ -106,28 +106,36 @@ reject <id> --reason <原因>`、`resources approve <id>`、`books download <id>
   （book|exercise|paper）、`title`、`authors`（JSON 数组）、`language`（zh|en）、`year`、
   `edition`、`source`（JSON：provider / page_url / download_url）、`retrieved_at`（下载时间）、
   `relative_path`、`page_count`、`status`（candidate | confirmed | downloading | downloaded |
-  approved | rejected | failed | pending_manual | not_found）、`llm_evaluation`（JSON：score
+  approved | rejected | failed | pending_manual | not_found | backup）、`llm_evaluation`（JSON：score
   0-100 / verdict / summary / model / evaluated_at，模型只写评估不写事实）、`catalog_ref`
   （JSON：catalog_id / target_id / course_id）、`confirmed_at`、`downloaded_at`、
   `approved_at`、`rejected_at`、`reject_reason`、`rejected_by`（api|cli|web）、`created_at`。
-- 资源状态机（2026-08-05 用户裁决，人机协同闭环）：
+- 资源状态机（2026-08-05 用户裁决，人机协同闭环；2026-08-06 增补人工评估三态 QED-017）：
 
   ```text
   [catalog/evaluate 任务·按课程] 搜索源 → qwen 评估 → 候选落库
       ↓
-  candidate ──confirm──→ confirmed ──download 任务──→ downloading ──成功──→ downloaded
-      │                       │                             │失败→failed（可重新触发）
-      │──reject(原因)──→ rejected（候选级，无文件）
+  candidate ──confirm(确定)──→ confirmed ──download 任务──→ downloading ──成功──→ downloaded
+      │  │                        │                             │失败→failed（可重新触发）
+      │  │──backup(备选)──→ backup ──confirm──→ confirmed（转正下载）
+      │  │                    └──reject(原因)──→ rejected（放弃备选）
+      │  │
+      │──reject(否定,原因)──→ rejected（候选级，无文件）
   downloaded ──预览+approve──→ approved（待 Axiom-Flow 解析）
       │
       └──预览+reject(原因)──→ rejected（文件硬删，DB 记录保留）
   ```
 
+  - 人工评估三态（QED-017，2026-08-06 用户裁决）：**确定** = `confirm`（进入下载流程）、
+    **备选** = `backup`（新状态，不下载，可后续转正或放弃）、**否定** = `reject`（原因必填）。
+    评估与验收分离：下载完成后另经 `approve` 验收。中文教材候选确定优先；中文不可得时英文
+    候选由人工决定确定或备选（无中文 target 的课程如 11/12/13 直接评估英文）。
   - `pending_manual`：书单目标已确认但来源不可得（如中文教材），前端展示"待人工补充"；人工
     补书 = 文件放入目标目录后执行扫描登记，状态转 `confirmed` 并回填文件信息，经确认/下载链路
-    回归。
+    回归；也可先标记 `backup` 等待补书。
   - 非法迁移（如未 confirm 即下载、rejected 后再验收）返回 409；reject 缺 reason 返回 422。
-  - rejected 资源 DB 记录永不删除；后续评估任务按 catalog_ref + title/sha256 跳过同源已拒候选。
+  - rejected 资源 DB 记录永不删除；后续评估任务按 catalog_ref + title/sha256 跳过同源已拒候选
+    （backup/approved/rejected 行均视为已评估，评估任务跳过不重复推荐）。
 - 登记顺序：PDF 落盘 → 写资源 JSON → 写 MySQL（已实现：下载任务 progress 70 处经
   ResourceRegistry.register_downloaded 双写，同 sha256 幂等复用既有记录，主键由
   `cand_<md5>` 迁移为 `sha256:<digest>`）；任一步失败任务失败并保留可重放现场（重复
@@ -137,6 +145,18 @@ reject <id> --reason <原因>`、`resources approve <id>`、`books download <id>
   迁移应用入口 `upgrade_database()` 供服务启动与冒烟复用；「ORM 框架旧禁令」
   （`tests/test_documentation.py` LEGACY_PATTERNS 与 `tests/test_cli_architecture.py` 禁导入
   清单）随实现轮同步移除，并更新对应治理测试。
+
+### 表结构评估结论（2026-08-06，QED-017）
+
+人工评估三态引入时评估过表结构方案：**不需要重新设计/新增 DDL**。理由：
+
+- 三态决策用状态机表达（`status` 字符串列：candidate/confirmed/backup/rejected），
+  状态即决策，查询与前端映射简单；
+- 留痕列已覆盖：`confirmed_at`（确定）、`rejected_at/reject_reason/rejected_by`（否定）、
+  backup 迁移时间可查 `created_at/updated_at`；LLM 评估与人工评估天然分层
+  （`llm_evaluation` 只写模型结论，人工决策走状态迁移）；
+- 若后续需要「人工评估记录」审计视图（谁、何时、何种决策），再加 `assessed_at`/`assessed_by`
+  列（Alembic 迁移），不影响现有数据。
 
 ### 书单与 LLM 筛选评估（QED-013，新增）
 
@@ -154,6 +174,10 @@ reject <id> --reason <原因>`、`resources approve <id>`、`books download <id>
 - 下载后验收：8903 验收台经 `GET /resources/{id}/file` 预览；验收通过 `approve` 转 approved
   （待 Axiom-Flow 解析），不通过 `reject` 填原因（文件硬删，DB 记录保留留痕）。
 - 来源不可得的中文书登记 `status=pending_manual`；扫描补书后经确认下载链路回归。
+- 人工评估三态与中文优先（QED-017）：见上文状态机增补；评估动作均经 8901 同步轻量端点
+  （`confirm` / `backup` / `reject`），前端 8903 提供按课程评估视图（中文候选优先展示）。
+- 来源探索（QED-018）：合适下载路径的发现与淘汰是持续目标，评估矩阵与探索流程见
+  [来源探索与评估设计](source-discovery.md)；版权敏感源（libgen 类）不纳入。
 - 探索更优书籍：作为候选后置任务，不阻塞基础书单（见路线图"目录与批处理"）。
 
 ## 接口/契约影响

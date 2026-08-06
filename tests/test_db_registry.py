@@ -129,6 +129,35 @@ def test_duplicate_sha256_download_reuses_existing_row(repository):
     assert rows[0].resource_id == "sha256:" + digest
 
 
+def test_backup_transitions_are_legal(repository):
+    """人工评估三态（QED-017）：candidate→backup→{confirmed,rejected}，pending_manual→backup。"""
+    row = repository.upsert_candidate(**CANDIDATE)
+    repository.mark_backup(row.resource_id)
+    assert repository.get(row.resource_id).status == "backup"
+    # backup → confirmed（转正下载）
+    repository.confirm(row.resource_id)
+    assert repository.get(row.resource_id).status == "confirmed"
+    # 第二条链：backup → rejected（放弃备选，需原因）
+    second = repository.upsert_candidate(**{**CANDIDATE, "source": {"provider": "fake", "provider_id": "x2", "download_url": "https://example.test/b.pdf"}})
+    repository.mark_backup(second.resource_id)
+    repository.reject(second.resource_id, reason="备选放弃：已有更好版本", by="web")
+    assert repository.get(second.resource_id).status == "rejected"
+    # pending_manual → backup（来源不可得中文书先挂备选）
+    third = repository.upsert_candidate(title="点集拓扑学", authors=["熊金城"], language="zh", kind="book", source={"provider": "", "provider_id": ""}, catalog_ref={"catalog_id": "math-qe", "target_id": "03-xiong", "course_id": "03"})
+    repository.mark_pending_manual(third.resource_id)
+    repository.mark_backup(third.resource_id)
+    assert repository.get(third.resource_id).status == "backup"
+
+
+def test_backup_illegal_transitions_raise(repository):
+    row = repository.upsert_candidate(**CANDIDATE)
+    repository.mark_backup(row.resource_id)
+    with pytest.raises(InvalidTransition):
+        repository.start_download(row.resource_id)  # 备选未转正不可下载
+    with pytest.raises(InvalidTransition):
+        repository.approve(row.resource_id)  # 备选不可直接验收
+
+
 def test_list_filters_by_status_and_course(repository):
     repository.upsert_candidate(**CANDIDATE)
     repository.upsert_candidate(title="习题集", authors=["吉米多维奇"], language="zh", year="", edition="", kind="exercise", source={"provider": "fake", "provider_id": "x2", "download_url": "https://example.test/e.pdf"}, catalog_ref={"catalog_id": "math-qe", "target_id": "01-demidovich", "course_id": "01"})

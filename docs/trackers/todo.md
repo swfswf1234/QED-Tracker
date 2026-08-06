@@ -1,7 +1,7 @@
 # 待办列表
 
 状态：Current
-最后更新：2026-08-05
+最后更新：2026-08-06
 
 | ID | 类型 | 状态 | 事项 | 成功标准 |
 | --- | --- | --- | --- | --- |
@@ -14,6 +14,8 @@
 | QED-015 | Plan | 已实现 | [跨项目] 下载任务与预览端点：`POST /tasks/books/download {resource_id}` 仅 confirmed 可触发（下载中→downloaded，回填 sha256/relative_path/page_count）；`GET /resources/{id}/file` PDF 预览流（downloaded/approved 可访问）（需求方：QED-Engine REQ-013/REQ-014，设计：docs/design/tracker-service.md） | 状态迁移合法校验（非 confirmed 触发返回 409）；同 sha256 幂等复用；预览流 Content-Type/长度正确；前端可 iframe 内嵌预览。 |
 | QED-016 | Plan | 已实现 | [跨项目] 验收闭环与 CLI：`POST /resources/{id}/confirm`（candidate→confirmed）、`POST /resources/{id}/approve`（downloaded→approved）、`POST /resources/{id}/reject {reason}`（candidate 或 downloaded→rejected，reason 必填，后者硬删文件 + DB 留痕）；CLI 闭环命令 catalog evaluate / resources list|show|confirm|reject|approve / books download（需求方：QED-Engine REQ-011/REQ-013，设计：docs/design/tracker-service.md） | 状态机非法迁移返回 409；拒绝必填原因；已拒资源 DB 记录保留（reject_reason 非空）且同源候选不再推荐；CLI 无前端可走完整闭环。 |
 | QED-014 | Validation | 待开始 | 联调冒烟与回执：真实 8901 全链路（评估→确认→下载→验收/删除→登记→qed CLI/8903 前端展示） | 8901 服务 + qed CLI + QED-Engine 下载工作台数据贯通；根仓库 todo REQ-004/REQ-011/REQ-013/REQ-014 收到回执。 |
+| QED-017 | Plan | 实现就绪（待提交+重启验证） | 人工评估三态与中文优先：状态机新增 `backup`（备选），`POST /resources/{id}/backup`（candidate→backup，backup→confirmed/rejected）；前端候选卡片三态（确定/备选/否定）+ backup 卡片转正/放弃 + confirmed 开始下载按钮 + 按课程评估视图（中文候选优先展示）；evaluate 对已评估（backup/approved/rejected）目标跳过不重复推荐（设计：docs/design/tracker-service.md、docs/design/source-discovery.md） | 2026-08-06 实现完成（工作区 16 文件：main.py backup 端点、repository mark_backup+状态机、models BACKUP 枚举、catalog_evaluate 跳过已评估、测试）；配合请求：QED-Engine ARCH-004 Phase 0（根仓库 todo 登记）；待提交 dev 分支 + 重启 8901 + 三态冒烟（confirm/backup/reject 各 200） |
+| QED-018 | Plan | 待开始 | 来源探索与评估：候选源实测（连通性/中文覆盖/候选质量/下载成功率）→ 评估矩阵更新（docs/design/source-discovery.md）；合适的新源实现 provider 并注册；不合适的记录结论不落地；libgen/annas_archive/zlib 类版权敏感源不纳入（0.5 退役约束补记） | 「来源评估矩阵」含当前三源与已淘汰记录；至少 3 个候选源完成实测并有结论；保留类来源有 provider 实现与定向测试；新来源只搜解析下载地址，写入校验全走通用下载器。 |
 
 `QED-005` 当前阻塞证据：环境中未设置 `QED_TRACKER_LLM_API_KEY` 或 `DASHSCOPE_API_KEY`。恢复条件是设置其中之一并允许受限网络调用；责任位置为本地人工验收。注：QED-009（配置统一，直读根 `.env` `QWEN_API_KEY`）落地后自动满足恢复条件，无需再设 `DASHSCOPE_API_KEY`。
 

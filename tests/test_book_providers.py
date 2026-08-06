@@ -82,6 +82,31 @@ def test_internet_archive_multiword_query_searches_all_fields():
     assert "Munkres" in q and "Topology" in q
 
 
+def test_internet_archive_chinese_query_uses_phrase_query():
+    """中文（CJK）query 必须用 title 精确短语 + AND 组合查询（QED-018 实测：
+    全字段 OR 拆词对中文只返回 ChinaXiv 预印本噪音，`title:"数学分析" AND 陈纪修`
+    才能命中真实中文教材如 math_analysis_chenjixiu）。"""
+
+    captured = []
+
+    def handler(request):
+        captured.append(httpx.URL(str(request.url)).params["q"])
+        return httpx.Response(200, json={"response": {"docs": []}}, request=request)
+
+    provider = InternetArchiveProvider()
+    _replace_client(provider, handler)
+    try:
+        provider.search("数学分析 陈纪修", 8)
+        provider.search("Munkres Topology 2nd", 8)
+    finally:
+        provider.close()
+    zh_q, en_q = captured
+    assert zh_q.startswith('title:"数学分析"'), f"中文查询应取首词 title 短语：{zh_q}"
+    assert "陈纪修" in zh_q and "mediatype:texts" in zh_q
+    assert not en_q.startswith("title:("), f"英文多词查询保持全字段：{en_q}"
+    assert "Munkres" in en_q
+
+
 def test_retired_provider_has_actionable_migration_error():
     with pytest.raises(ValueError, match=r"0\.5.*core.*sources"):
         create_book_providers(("libgen",))

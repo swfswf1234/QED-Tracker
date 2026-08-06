@@ -1,7 +1,7 @@
 # QED-Tracker 文档索引
 
 状态：Current
-最后更新：2026-08-04
+最后更新：2026-08-06
 
 本文件只负责导航。项目定位和快速使用见[根 README](../README.md)，Agent 工作入口见 [AGENTS.md](../AGENTS.md)。
 

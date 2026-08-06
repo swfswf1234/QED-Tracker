@@ -242,6 +242,49 @@ def test_evaluate_skips_rejected_same_source(tmp_path, repository):
         assert _row_by_target(repository, "03-munkres").status == ResourceStatus.REJECTED.value
 
 
+def test_evaluate_skips_backup_and_approved_targets(tmp_path, repository):
+    """已评估目标（backup/approved）不得被重新评估重置回 candidate（QED-017）。"""
+    # backup 目标：03-munkres 被人工标为备选
+    row = repository.upsert_candidate(
+        title="Topology",
+        authors=["James Munkres"],
+        language="en",
+        kind="book",
+        source={"provider": "fake", "provider_id": "x3", "download_url": "https://example.test/t.pdf"},
+        catalog_ref={"catalog_id": "math-qe", "target_id": "03-munkres", "course_id": "03"},
+    )
+    repository.mark_backup(row.resource_id)
+    candidate = Candidate("fake", "x3", "Topology", ("James Munkres",), "en", download_url="https://example.test/t.pdf")
+    with make_client(tmp_path, provider=FakeProvider(candidate), advisor=FakeAdvisor(score=90), repository=repository) as client:
+        task = _submit_evaluate(client, course_id="03")
+        assert task["status"] == "succeeded"
+        skipped = [item for item in task["result"]["skipped"] if item["target_id"] == "03-munkres"]
+        assert skipped, "backup 目标应进入 skipped"
+        assert repository.get(row.resource_id).status == ResourceStatus.BACKUP.value  # 不被重置
+        assert repository.list(status="candidate") == []
+
+
+def test_evaluate_skips_downloaded_and_confirmed_targets(tmp_path, repository):
+    """已确认/已下载目标同样不被重置（此前 find_candidate_by_ref 只查 candidate，会漏判）。"""
+    row = repository.upsert_candidate(
+        title="Topology",
+        authors=["James Munkres"],
+        language="en",
+        kind="book",
+        source={"provider": "fake", "provider_id": "x3", "download_url": "https://example.test/t.pdf"},
+        catalog_ref={"catalog_id": "math-qe", "target_id": "03-munkres", "course_id": "03"},
+    )
+    repository.confirm(row.resource_id)
+    candidate = Candidate("fake", "x3", "Topology", ("James Munkres",), "en", download_url="https://example.test/t.pdf")
+    with make_client(tmp_path, provider=FakeProvider(candidate), advisor=FakeAdvisor(score=90), repository=repository) as client:
+        task = _submit_evaluate(client, course_id="03")
+        assert task["status"] == "succeeded"
+        skipped = [item for item in task["result"]["skipped"] if item["target_id"] == "03-munkres"]
+        assert skipped, "confirmed 目标应进入 skipped"
+        assert repository.get(row.resource_id).status == ResourceStatus.CONFIRMED.value
+        assert repository.list(status="candidate") == []
+
+
 def test_evaluate_without_advisor_still_registers_candidates(tmp_path, repository):
     candidate = Candidate("fake", "x3", "Topology", ("James Munkres",), "en", year="2000", edition="2nd", download_url="https://example.test/t.pdf")
     with make_client(tmp_path, provider=FakeProvider(candidate), advisor=None, repository=repository) as client:

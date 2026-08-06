@@ -62,12 +62,22 @@ def _archive_candidate(provider: str, item: dict) -> Candidate:
 class InternetArchiveProvider(HttpProvider):
     name = "internet_archive"
 
+    @staticmethod
+    def _build_solr_query(query: str) -> str:
+        # 中文（CJK）query：首词做 title 精确短语 + 其余词 AND（QED-018 实测：
+        # 全字段 OR 拆词对中文只返回 ChinaXiv 预印本噪音，`title:"数学分析" AND 陈纪修`
+        # 才能命中真实中文教材）。非 CJK 保持全字段（title:(a b c) 多词返回 0）。
+        if any("\u4e00" <= char <= "\u9fff" for char in query):
+            terms = query.split()
+            if len(terms) > 1:
+                return f'title:"{terms[0]}" AND ' + " AND ".join(terms[1:])
+            return f'title:"{query}"'
+        return query
+
     def search(self, query: str, limit: int = 10) -> list[Candidate]:
-        # archive.org Solr：`title:(a b c)` 对多词查询返回 0（默认 OR 语法），
-        # 必须全字段（title/creator/description…）查询，由调用方严格匹配把关质量。
         response = self.client.get(
             "https://archive.org/advancedsearch.php",
-            params={"q": f"{query} AND mediatype:texts", "fl[]": ["identifier", "title", "creator", "year", "language"], "rows": limit, "output": "json"},
+            params={"q": f"{self._build_solr_query(query)} AND mediatype:texts", "fl[]": ["identifier", "title", "creator", "year", "language"], "rows": limit, "output": "json"},
             headers={"User-Agent": "QED-Tracker/0.5"},
         )
         response.raise_for_status()

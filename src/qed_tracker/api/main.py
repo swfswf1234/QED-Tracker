@@ -323,6 +323,11 @@ def create_app(
     def confirm_resource(resource_id: str) -> dict[str, Any]:
         return _row_dict(_transition(app, resource_id, lambda repo, rid: repo.confirm(rid)))
 
+    @fastapi_app.post("/api/v1/resources/{resource_id}/backup")
+    def backup_resource(resource_id: str) -> dict[str, Any]:
+        """人工评估「备选」：candidate/pending_manual → backup（不下载，可转正/放弃）。"""
+        return _row_dict(_transition(app, resource_id, lambda repo, rid: repo.mark_backup(rid)))
+
     @fastapi_app.post("/api/v1/resources/{resource_id}/approve")
     def approve_resource(resource_id: str) -> dict[str, Any]:
         return _row_dict(_transition(app, resource_id, lambda repo, rid: repo.approve(rid)))

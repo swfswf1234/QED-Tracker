@@ -12,6 +12,8 @@
 
 内置教材来源为 Internet Archive、Open Library 和 Google Books。来源可以只返回元数据；只有 `availability=downloadable` 的候选能够进入下载器。单个来源的协议变化不得中断其他来源。
 
+版权敏感来源（libgen / annas_archive / zlib 类）已硬编码退役（`RETIRED_PROVIDERS`），不纳入实现；来源的持续探索、评估矩阵与合规边界见[来源探索与评估设计](source-discovery.md)。
+
 论文只使用 arXiv 客户端，支持关键词、分类、作者、arXiv ID 和 URL。arXiv ID 同时作为外部标识，并用于确定论文保存年份和文件名。
 
 基于研究目标的检索规划与排序属于[论文智能发现设计](paper-discovery.md)。它复用本设计的 arXiv 候选、通用下载和 Inventory，不改变资源 schema。

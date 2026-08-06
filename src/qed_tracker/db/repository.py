@@ -1,9 +1,9 @@
 """qt_resources 状态机与查询索引的数据访问。
 
-状态机（docs/design/tracker-service.md QED-012）：
+状态机（docs/design/tracker-service.md QED-012 + QED-017 人工评估三态）：
 candidate → confirmed → downloading → downloaded → approved/rejected
-            └──rejected（候选级）      └──failed → downloading（可重试）
-pending_manual → confirmed（人工补书扫描）；not_found 为评估判定终态。
+            └──backup（备选）→ confirmed / rejected     └──failed → downloading（可重试）
+pending_manual → confirmed（人工补书扫描）→ backup（挂备选）；not_found 为评估判定终态。
 
 同 sha256 幂等；reject 必填原因并留痕；rejected 行永不删除。
 """
@@ -31,12 +31,13 @@ class RejectedSameSource(RuntimeError):
 
 
 _TRANSITIONS: dict[ResourceStatus, set[ResourceStatus]] = {
-    ResourceStatus.CANDIDATE: {ResourceStatus.CONFIRMED, ResourceStatus.REJECTED, ResourceStatus.PENDING_MANUAL, ResourceStatus.NOT_FOUND},
+    ResourceStatus.CANDIDATE: {ResourceStatus.CONFIRMED, ResourceStatus.REJECTED, ResourceStatus.PENDING_MANUAL, ResourceStatus.NOT_FOUND, ResourceStatus.BACKUP},
     ResourceStatus.CONFIRMED: {ResourceStatus.DOWNLOADING, ResourceStatus.REJECTED},
     ResourceStatus.DOWNLOADING: {ResourceStatus.DOWNLOADED, ResourceStatus.FAILED},
     ResourceStatus.DOWNLOADED: {ResourceStatus.APPROVED, ResourceStatus.REJECTED},
     ResourceStatus.FAILED: {ResourceStatus.DOWNLOADING},
-    ResourceStatus.PENDING_MANUAL: {ResourceStatus.CONFIRMED},
+    ResourceStatus.PENDING_MANUAL: {ResourceStatus.CONFIRMED, ResourceStatus.BACKUP},
+    ResourceStatus.BACKUP: {ResourceStatus.CONFIRMED, ResourceStatus.REJECTED},
     ResourceStatus.APPROVED: set(),
     ResourceStatus.REJECTED: set(),
     ResourceStatus.NOT_FOUND: set(),
@@ -94,6 +95,21 @@ class ResourceRepository:
                 if row.catalog_ref and row.catalog_ref.get("catalog_id") == catalog_ref.get("catalog_id") and row.catalog_ref.get("target_id") == catalog_ref.get("target_id"):
                     return True
             return False
+
+    def find_by_ref(self, catalog_ref: dict | None) -> QtResource | None:
+        """按 catalog_ref（catalog_id + target_id + course_id）查找**任意状态**行。
+
+        评估任务据此判断目标是否已有人工决策（backup/approved/rejected/confirmed 等），
+        避免把已决策行重置回 candidate（QED-017）。
+        """
+        if not catalog_ref:
+            return None
+        with self._session_factory() as session:
+            rows = session.scalars(select(QtResource))
+            for row in rows:
+                if row.catalog_ref and row.catalog_ref.get("catalog_id") == catalog_ref.get("catalog_id") and row.catalog_ref.get("target_id") == catalog_ref.get("target_id"):
+                    return row
+            return None
 
     def find_candidate_by_ref(self, catalog_ref: dict | None) -> QtResource | None:
         """按 catalog_ref（catalog_id + target_id + course_id）查找候选行。"""
@@ -168,6 +184,10 @@ class ResourceRepository:
 
     def mark_not_found(self, resource_id: str) -> QtResource:
         return self._set_status(resource_id, ResourceStatus.NOT_FOUND)
+
+    def mark_backup(self, resource_id: str) -> QtResource:
+        """人工评估「备选」：不下载，可后续转正（confirm）或放弃（reject）。"""
+        return self._set_status(resource_id, ResourceStatus.BACKUP)
 
     def start_download(self, resource_id: str) -> QtResource:
         return self._set_status(resource_id, ResourceStatus.DOWNLOADING)

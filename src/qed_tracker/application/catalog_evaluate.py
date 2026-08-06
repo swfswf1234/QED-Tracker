@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from qed_tracker.application.books import BookService
 from qed_tracker.catalog import Catalog
+from qed_tracker.db.models import ResourceStatus
 from qed_tracker.db.repository import ResourceRepository
 from qed_tracker.models import BookAssessment, Candidate
 
@@ -85,8 +86,10 @@ class CatalogEvaluator:
         if self.repository.find_rejected_same_source(catalog_ref=ref, title=target.title):
             report["skipped"].append({"target_id": target.id, "reason": "同源候选此前已被拒绝"})
             return
-        existing = self.repository.find_candidate_by_ref(ref)
-        if existing is not None and existing.status != "candidate":
+        existing = self.repository.find_by_ref(ref)
+        if existing is not None and existing.status not in (ResourceStatus.PENDING_MANUAL.value, ResourceStatus.NOT_FOUND.value):
+            # 已有人工决策/进行中（backup/approved/rejected/confirmed/downloading/downloaded/failed）：
+            # 跳过不重复推荐，也不得重置回 candidate（QED-017）
             report["skipped"].append({"target_id": target.id, "reason": f"已有登记（{existing.status}）"})
             return
         ranked = self.books.search(target.query or target.title, limit=limit, target=target)

@@ -20,7 +20,7 @@ CONTRACT_FIELDS = [
 
 ALL_STATUSES = {
     "candidate", "confirmed", "downloading", "downloaded", "approved", "rejected",
-    "failed", "pending_manual", "not_found",
+    "failed", "pending_manual", "not_found", "backup",
 }
 
 
@@ -45,7 +45,7 @@ def _row(session, resource_id: str = "sha256:" + "a" * 64) -> QtResource:
     return row
 
 
-def test_status_enum_has_all_nine_states():
+def test_status_enum_has_all_ten_states():
     assert {status.value for status in ResourceStatus} == ALL_STATUSES
 
 
