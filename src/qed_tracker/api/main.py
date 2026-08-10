@@ -29,7 +29,7 @@ from qed_tracker.db.registry import ResourceRegistry
 from qed_tracker.db.repository import InvalidTransition, ResourceRepository
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
-from qed_tracker.models import Candidate, ResourceKind
+from qed_tracker.models import Candidate, CatalogTarget, ResourceKind
 from qed_tracker.providers import ArxivProvider, create_book_providers
 from qed_tracker.providers.book_advisor import BailianBookAdvisor
 
@@ -151,6 +151,7 @@ def _make_download_handler(app: Application):
             edition=row.edition or "",
             page_url=source.get("page_url", ""),
             download_url=source.get("download_url", ""),
+            file_keywords=tuple(source.get("file_keywords", []) or []),
         )
         if not candidate.download_url:
             progress(12, f"解析下载地址（{candidate.provider}）")
@@ -164,7 +165,25 @@ def _make_download_handler(app: Application):
         progress(15, f"开始下载：{candidate.title}（{candidate.download_url}）")
         app.repository.start_download(row.resource_id)
         try:
-            record = app.books.download(candidate, kind=ResourceKind(row.kind))
+            # 2026-08-09：从 catalog_ref 构造 CatalogTarget，下载落盘到课程目录
+            # raw/books/<catalog_id>/<course_id>/（此前落 inbox；命名已带 target_id 前缀防并发冲突）
+            ref = row.catalog_ref or {}
+            target = CatalogTarget(
+                id=ref.get("target_id", ""),
+                course_id=ref.get("course_id", ""),
+                course_name=ref.get("course_id", ""),
+                kind=ResourceKind(row.kind),
+                title=row.title,
+                authors=tuple(row.authors or ()),
+                language=row.language or "",
+                edition=row.edition or "",
+            )
+            record = app.books.download(
+                candidate,
+                kind=ResourceKind(row.kind),
+                catalog_target=target,
+                catalog_id=ref.get("catalog_id", ""),
+            )
         except Exception:
             app.repository.fail(row.resource_id)
             raise
@@ -280,6 +299,7 @@ def create_app(
                 continue
             value = record.to_dict()
             value["status"] = ResourceStatus.DOWNLOADED.value
+            value["review_note"] = ""  # 本地清单行无人工评估建议，统一补空
             merged.append(value)
         return merged
 
@@ -319,14 +339,58 @@ def create_app(
             raise HTTPException(status_code=404, detail="资源文件缺失")
         return FileResponse(path, media_type="application/pdf", filename=path.name)
 
+    @fastapi_app.post("/api/v1/resources/{resource_id}/register")
+    def register_resource(resource_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        """人工下载登记（QED-021）：用户按 libgen 等方案下载后把文件放进数据根，
+        提交相对路径 → PDF 校验 + SHA-256 去重 → pending_manual → downloaded。"""
+        if app.repository is None:
+            raise HTTPException(status_code=409, detail="数据库未配置：登记需 qt_resources 行")
+        relative = str(payload.get("relative_path", "")).strip()
+        if not relative:
+            raise HTTPException(status_code=422, detail="必须提供数据根内相对路径（relative_path）")
+        row = app.repository.get(resource_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="资源不存在")
+        path = (app.resources.inventory.data_root / relative).resolve()
+        try:
+            path.relative_to(app.resources.inventory.data_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="路径必须在数据根目录内") from exc
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail=f"文件不存在：{relative}")
+        try:
+            record = app.resources.inventory.register(
+                path,
+                kind=ResourceKind(row.kind),
+                title=row.title,
+                authors=row.authors,
+                language=row.language,
+                year=row.year,
+                source=dict(row.source or {}),
+            )
+        except Exception as exc:  # noqa: BLE001 - PDF 校验失败（含 DownloadError）统一 400
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        try:
+            final = app.repository.complete_download(
+                resource_id,
+                sha256=record.sha256,
+                relative_path=record.file["relative_path"],
+                page_count=record.file["page_count"],
+            )
+        except InvalidTransition as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return _row_dict(final)
+
     @fastapi_app.post("/api/v1/resources/{resource_id}/confirm")
-    def confirm_resource(resource_id: str) -> dict[str, Any]:
-        return _row_dict(_transition(app, resource_id, lambda repo, rid: repo.confirm(rid)))
+    def confirm_resource(resource_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        note = str(payload.get("note", "")).strip()
+        return _row_dict(_transition(app, resource_id, lambda repo, rid: repo.confirm(rid, note=note)))
 
     @fastapi_app.post("/api/v1/resources/{resource_id}/backup")
-    def backup_resource(resource_id: str) -> dict[str, Any]:
+    def backup_resource(resource_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
         """人工评估「备选」：candidate/pending_manual → backup（不下载，可转正/放弃）。"""
-        return _row_dict(_transition(app, resource_id, lambda repo, rid: repo.mark_backup(rid)))
+        note = str(payload.get("note", "")).strip()
+        return _row_dict(_transition(app, resource_id, lambda repo, rid: repo.mark_backup(rid, note=note)))
 
     @fastapi_app.post("/api/v1/resources/{resource_id}/approve")
     def approve_resource(resource_id: str) -> dict[str, Any]:
@@ -346,7 +410,8 @@ def create_app(
             # 验收级拒绝：硬删文件，DB 记录保留留痕
             _remove_resource_file(app, row.relative_path, row.sha256)
         try:
-            return _row_dict(app.repository.reject(resource_id, reason=reason, by="web"))
+            note = str(payload.get("note", "")).strip()
+            return _row_dict(app.repository.reject(resource_id, reason=reason, by="web", note=note))
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except InvalidTransition as exc:

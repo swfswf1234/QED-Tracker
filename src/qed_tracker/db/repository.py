@@ -97,19 +97,38 @@ class ResourceRepository:
             return False
 
     def find_by_ref(self, catalog_ref: dict | None) -> QtResource | None:
-        """按 catalog_ref（catalog_id + target_id + course_id）查找**任意状态**行。
+        """按 catalog_ref（catalog_id + target_id + course_id）查找行，已决策行优先。
 
         评估任务据此判断目标是否已有人工决策（backup/approved/rejected/confirmed 等），
-        避免把已决策行重置回 candidate（QED-017）。
+        避免把已决策行重置回 candidate（QED-017）。2026-08-09：同一目标可能存在
+        旧的 pending_manual 行 + 新的已决策行（如 fikhtengolts-v2/v3），必须优先返回
+        已决策行，否则评估会把 confirmed 行 upsert 降级回 candidate。
         """
         if not catalog_ref:
             return None
+        decided = (
+            ResourceStatus.CONFIRMED.value, ResourceStatus.APPROVED.value,
+            ResourceStatus.DOWNLOADING.value, ResourceStatus.DOWNLOADED.value,
+            ResourceStatus.BACKUP.value, ResourceStatus.REJECTED.value, ResourceStatus.FAILED.value,
+        )
         with self._session_factory() as session:
             rows = session.scalars(select(QtResource))
-            for row in rows:
-                if row.catalog_ref and row.catalog_ref.get("catalog_id") == catalog_ref.get("catalog_id") and row.catalog_ref.get("target_id") == catalog_ref.get("target_id"):
-                    return row
-            return None
+            matches = [
+                row for row in rows
+                if row.catalog_ref and row.catalog_ref.get("catalog_id") == catalog_ref.get("catalog_id")
+                and row.catalog_ref.get("target_id") == catalog_ref.get("target_id")
+            ]
+            if not matches:
+                return None
+
+            def _priority(row: QtResource) -> int:
+                if row.status in decided:
+                    return 0
+                if row.status == ResourceStatus.CANDIDATE.value:
+                    return 1
+                return 2  # pending_manual / not_found（评估应重试并允许升级为 candidate）
+
+            return min(matches, key=_priority)
 
     def find_candidate_by_ref(self, catalog_ref: dict | None) -> QtResource | None:
         """按 catalog_ref（catalog_id + target_id + course_id）查找候选行。"""
@@ -176,8 +195,8 @@ class ResourceRepository:
             session.commit()
             return row
 
-    def confirm(self, resource_id: str) -> QtResource:
-        return self._set_status(resource_id, ResourceStatus.CONFIRMED, confirmed_at=utc_now())
+    def confirm(self, resource_id: str, *, note: str = "") -> QtResource:
+        return self._set_status(resource_id, ResourceStatus.CONFIRMED, confirmed_at=utc_now(), review_note=note.strip())
 
     def mark_pending_manual(self, resource_id: str) -> QtResource:
         return self._set_status(resource_id, ResourceStatus.PENDING_MANUAL)
@@ -185,9 +204,9 @@ class ResourceRepository:
     def mark_not_found(self, resource_id: str) -> QtResource:
         return self._set_status(resource_id, ResourceStatus.NOT_FOUND)
 
-    def mark_backup(self, resource_id: str) -> QtResource:
+    def mark_backup(self, resource_id: str, *, note: str = "") -> QtResource:
         """人工评估「备选」：不下载，可后续转正（confirm）或放弃（reject）。"""
-        return self._set_status(resource_id, ResourceStatus.BACKUP)
+        return self._set_status(resource_id, ResourceStatus.BACKUP, review_note=note.strip())
 
     def start_download(self, resource_id: str) -> QtResource:
         return self._set_status(resource_id, ResourceStatus.DOWNLOADING)
@@ -198,10 +217,17 @@ class ResourceRepository:
     def approve(self, resource_id: str) -> QtResource:
         return self._set_status(resource_id, ResourceStatus.APPROVED, approved_at=utc_now())
 
-    def reject(self, resource_id: str, *, reason: str, by: str) -> QtResource:
+    def reject(self, resource_id: str, *, reason: str, by: str, note: str = "") -> QtResource:
         if not reason.strip():
             raise ValueError("拒绝必须提供原因（reject_reason 必填）")
-        return self._set_status(resource_id, ResourceStatus.REJECTED, rejected_at=utc_now(), reject_reason=reason.strip(), rejected_by=by)
+        return self._set_status(
+            resource_id,
+            ResourceStatus.REJECTED,
+            rejected_at=utc_now(),
+            reject_reason=reason.strip(),
+            rejected_by=by,
+            review_note=note.strip(),
+        )
 
     def promote_from_manual(self, resource_id: str, *, sha256: str, relative_path: str, page_count: int) -> QtResource:
         return self._set_status(resource_id, ResourceStatus.CONFIRMED, sha256=sha256, relative_path=relative_path, page_count=page_count, confirmed_at=utc_now())
@@ -231,7 +257,12 @@ class ResourceRepository:
             if row is None:
                 raise KeyError(f"资源不存在：{resource_id}；直接下载请用 upsert_downloaded")
             current = ResourceStatus(row.status)
-            if current not in (ResourceStatus.DOWNLOADING, ResourceStatus.CONFIRMED, ResourceStatus.CANDIDATE):
+            if current not in (
+                ResourceStatus.DOWNLOADING,
+                ResourceStatus.CONFIRMED,
+                ResourceStatus.CANDIDATE,
+                ResourceStatus.PENDING_MANUAL,  # QED-021：人工下载后登记直转 downloaded
+            ):
                 raise InvalidTransition(f"状态迁移非法：{current.value} → downloaded")
             if row.resource_id != final_id:
                 # 主键迁移（无外键，直接 UPDATE 主键）

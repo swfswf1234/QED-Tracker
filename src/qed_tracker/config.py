@@ -15,6 +15,7 @@ DEFAULT_SOURCES = (
     "internet_archive",
     "open_library",
     "google_books",
+    "libgen_li",  # QED-021：发现专用来源（metadata_only + 人工下载 links，无直链不落盘）
 )
 
 _DASH_SCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"

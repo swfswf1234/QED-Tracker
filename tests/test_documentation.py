@@ -17,6 +17,7 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/design/axiom-handoff.md"),
     Path("docs/design/paper-discovery.md"),
     Path("docs/design/source-discovery.md"),
+    Path("docs/design/review-round-dedup.md"),
     Path("docs/design/tracker-service.md"),
     Path("docs/standards/index.md"),
     Path("docs/standards/documentation.md"),
@@ -54,6 +55,7 @@ DESIGN_DOCS = {
     Path("docs/design/axiom-handoff.md"),
     Path("docs/design/paper-discovery.md"),
     Path("docs/design/source-discovery.md"),
+    Path("docs/design/review-round-dedup.md"),
     Path("docs/design/tracker-service.md"),
 }
 LINK_PATTERN = re.compile(r"\[[^]]+\]\(([^)]+)\)")

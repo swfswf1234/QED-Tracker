@@ -61,6 +61,7 @@ class QtResource(Base):
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
     reject_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     rejected_by: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    review_note: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
 
     def to_dict(self) -> dict[str, Any]:

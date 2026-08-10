@@ -175,8 +175,8 @@ def test_download_task_submits_and_polls_to_success(tmp_path, pdf_bytes):
         task_id = response.json()["task_id"]
         data = _wait_finished(client, task_id)
         assert data["status"] == "succeeded"
-        assert (tmp_path / "raw" / "books" / "inbox").exists()
-        assert list((tmp_path / "raw" / "books" / "inbox").glob("*.pdf"))
+        assert (tmp_path / "raw" / "books" / "math-qe" / "03_topology").exists()
+        assert list((tmp_path / "raw" / "books" / "math-qe" / "03_topology").glob("*.pdf"))
 
 
 def test_task_records_are_persisted_under_meta_tasks(tmp_path, pdf_bytes):
@@ -217,7 +217,7 @@ def test_duplicate_download_is_idempotent(tmp_path, pdf_bytes):
         _wait_finished(client, first_id)
         second = client.post("/api/v1/tasks/books/download", json={"resource_id": resource_id})
         assert second.status_code == 409  # 下载后已非 confirmed，不可重复触发
-        pdfs = list((tmp_path / "raw" / "books" / "inbox").glob("*.pdf"))
+        pdfs = list((tmp_path / "raw" / "books" / "math-qe" / "03_topology").glob("*.pdf"))
         assert len(pdfs) == 1
 
 

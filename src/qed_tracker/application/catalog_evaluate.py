@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -42,12 +43,20 @@ def _catalog_ref(catalog: Catalog, target) -> dict[str, str]:
 
 
 def _source_dict(candidate: Candidate) -> dict[str, str]:
-    return {
+    source = {
         "provider": candidate.provider,
         "provider_id": candidate.provider_id,
         "page_url": candidate.page_url,
         "download_url": candidate.download_url,
     }
+    if candidate.file_keywords:
+        source["file_keywords"] = list(candidate.file_keywords)
+    if candidate.links:
+        # QED-021：metadata_only 来源的人工下载方案（torrent/IPFS/ed2k）随 source 落库
+        from dataclasses import asdict
+
+        source["links"] = [asdict(link) for link in candidate.links]
+    return source
 
 
 class CatalogEvaluator:
@@ -69,20 +78,21 @@ class CatalogEvaluator:
         }
         targets = [target for target in catalog.targets if not course or target.course_id.startswith(course.zfill(2))]
         total = len(targets)
+        seen_provider_ids: dict[str, str] = {}  # QED-020：单次评估内同来源只收录首个目标（provider_id → 首次目标 id）
         for index, target in enumerate(targets, start=1):
             report["targets"] += 1
             ref = _catalog_ref(catalog, target)
             if progress is not None:
                 progress(int(30 + (index - 1) / total * 60), f"评估 {index}/{total}：{target.id}（{target.title}）搜索中")
             try:
-                self._evaluate_target(target, ref, limit, report)
+                self._evaluate_target(target, ref, limit, report, seen_provider_ids)
             except Exception as exc:  # noqa: BLE001 - 单目标失败不中断整个任务
                 report["errors"].append({"target_id": target.id, "error": str(exc)[:300]})
                 if progress is not None:
                     progress(int(30 + index / total * 60), f"评估 {index}/{total}：{target.id} 失败：{str(exc)[:120]}")
         return report
 
-    def _evaluate_target(self, target, ref: dict[str, str], limit: int, report: dict[str, Any]) -> None:
+    def _evaluate_target(self, target, ref: dict[str, str], limit: int, report: dict[str, Any], seen_provider_ids: dict[str, str]) -> None:
         if self.repository.find_rejected_same_source(catalog_ref=ref, title=target.title):
             report["skipped"].append({"target_id": target.id, "reason": "同源候选此前已被拒绝"})
             return
@@ -114,6 +124,22 @@ class CatalogEvaluator:
                 report["not_found"].append({"target_id": target.id, "reason": reason})
             return
         candidate = strict.candidate
+        if candidate.provider_id and candidate.provider_id in seen_provider_ids and not target.file_hint:
+            # QED-020：单次评估内同一来源（provider_id）只收录首个目标，避免重复推荐；
+            # file_hint 目标例外（QED-021 裁决）：同一条目多个 PDF（上/下/答案）按
+            # 文件名关键词分别收录，各自 resolve 选对应文件，不受同源去重限制。
+            report["skipped"].append({"target_id": target.id, "reason": f"同来源已由首次目标覆盖（{seen_provider_ids[candidate.provider_id]}）"})
+            return
+        if target.file_hint:
+            # QED-019：同条目多 PDF（教材 + 配套习题答案）时按文件名关键词精确下载
+            candidate = replace(candidate, file_keywords=(target.file_hint,))
+        if candidate.availability == "metadata_only":
+            # QED-021：libgen 等发现专用来源 resolve 填充人工下载方案（links），
+            # 随候选落库供前端展示；resolve 失败不阻断收录（仍可后续按 page_url 人工处理）
+            try:
+                candidate = self.books.resolve(candidate)
+            except Exception as exc:  # noqa: BLE001 - 方案解析失败降级为无 links 候选
+                report["errors"].append({"target_id": target.id, "error": f"解析下载方案失败：{str(exc)[:200]}"})
         evaluation = None
         if self.advisor is not None:
             try:
@@ -142,4 +168,6 @@ class CatalogEvaluator:
             llm_evaluation=evaluation,
             catalog_ref=ref,
         )
+        if candidate.provider_id:
+            seen_provider_ids[candidate.provider_id] = target.id
         report["candidates"].append({"target_id": target.id, "resource_id": row.resource_id, "title": row.title})

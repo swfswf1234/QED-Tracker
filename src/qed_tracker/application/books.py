@@ -60,7 +60,18 @@ class BookService:
                 seen.add(key)
                 results.append(RankedCandidate(candidate, match_candidate(candidate, target) if target else None))
         if target:
-            results.sort(key=lambda item: (not bool(item.match and item.match.strict), -(item.match.score if item.match else 0), item.candidate.title.casefold()))
+            def _rank(item: RankedCandidate) -> tuple:
+                strict = bool(item.match and item.match.strict)
+                score = -(item.match.score if item.match else 0)
+                if target.file_hint:
+                    # QED-019/021 file_hint 语义依赖 archive 条目真实文件名选文件；
+                    # 2026-08-09：libgen 等 metadata_only 命中同样 strict，但 resolve 只有
+                    # links 无 download_url、也无法按 file_hint 选文件（下载必然失败），
+                    # 故 strict 组内优先 internet_archive。
+                    return (not strict, strict and item.candidate.provider != "internet_archive", score, item.candidate.title.casefold())
+                return (not strict, score, item.candidate.title.casefold())
+
+            results.sort(key=_rank)
         else:
             results.sort(key=lambda item: (item.candidate.availability != "downloadable", item.candidate.title.casefold()))
         return results

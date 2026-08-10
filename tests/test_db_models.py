@@ -15,7 +15,7 @@ CONTRACT_FIELDS = [
     "resource_id", "sha256", "kind", "title", "authors", "language", "year", "edition",
     "source", "retrieved_at", "relative_path", "page_count", "status", "llm_evaluation",
     "catalog_ref", "confirmed_at", "downloaded_at", "approved_at", "rejected_at",
-    "reject_reason", "rejected_by", "created_at",
+    "reject_reason", "rejected_by", "review_note", "created_at",
 ]
 
 ALL_STATUSES = {

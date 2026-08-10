@@ -36,7 +36,9 @@ def repository(tmp_path):
 class FakeProvider:
     name = "fake"
 
-    def __init__(self, candidate: Candidate | None = None, candidates: list[Candidate] | None = None):
+    def __init__(self, candidate: Candidate | None = None, candidates: list[Candidate] | None = None, name: str | None = None):
+        if name is not None:  # 显式传名才设实例属性，避免遮蔽子类类属性（如 LinksProvider.name="libgen_li"）
+            self.name = name
         self.candidates = candidates if candidates is not None else ([candidate] if candidate else [])
 
     def search(self, query, limit=10):
@@ -75,7 +77,7 @@ class FakeAdvisor:
         return None
 
 
-def make_client(tmp_path: Path, *, provider: FakeProvider | None = None, advisor=None, repository=None):
+def make_client(tmp_path: Path, *, provider: FakeProvider | None = None, providers: list[FakeProvider] | None = None, advisor=None, repository=None):
     from dataclasses import replace
 
     from fastapi.testclient import TestClient
@@ -86,7 +88,7 @@ def make_client(tmp_path: Path, *, provider: FakeProvider | None = None, advisor
     settings = replace(load_settings(data_root=tmp_path), db_password="")
     app = create_app(
         settings,
-        book_providers=[provider] if provider else None,
+        book_providers=providers if providers is not None else ([provider] if provider else None),
         papers_provider=None,
         repository=repository,
         advisor=advisor,
@@ -285,6 +287,70 @@ def test_evaluate_skips_downloaded_and_confirmed_targets(tmp_path, repository):
         assert repository.list(status="candidate") == []
 
 
+def test_evaluate_keeps_confirmed_when_older_pending_manual_row_exists(tmp_path, repository):
+    """2026-08-09 回归：同一目标存在旧 pending_manual 行 + 新 confirmed 行（如 fikhtengolts-v2/v3）
+    时，evaluate 不得因 find_by_ref 返回 pending 行而把 confirmed 行 upsert 降级回 candidate。"""
+    # 旧轮次：无来源收录 → pending_manual（provider 为空行）
+    stale = repository.upsert_candidate(
+        title="Topology",
+        authors=["James Munkres"],
+        language="en",
+        kind="book",
+        source={"provider": "", "provider_id": ""},
+        catalog_ref={"catalog_id": "math-qe", "target_id": "03-munkres", "course_id": "03"},
+    )
+    repository.mark_pending_manual(stale.resource_id)
+    # 新轮次：真实候选 → candidate → 人工 confirm
+    confirmed = repository.upsert_candidate(
+        title="Topology",
+        authors=["James Munkres"],
+        language="en",
+        kind="book",
+        source={"provider": "fake", "provider_id": "x3", "download_url": "https://example.test/t.pdf"},
+        catalog_ref={"catalog_id": "math-qe", "target_id": "03-munkres", "course_id": "03"},
+    )
+    repository.confirm(confirmed.resource_id)
+    candidate = Candidate("fake", "x3", "Topology", ("James Munkres",), "en", download_url="https://example.test/t.pdf")
+    with make_client(tmp_path, provider=FakeProvider(candidate), advisor=FakeAdvisor(score=90), repository=repository) as client:
+        task = _submit_evaluate(client, course_id="03")
+        assert task["status"] == "succeeded"
+        skipped = [item for item in task["result"]["skipped"] if item["target_id"] == "03-munkres"]
+        assert skipped, "存在 confirmed 行时目标应进入 skipped"
+        assert repository.get(confirmed.resource_id).status == ResourceStatus.CONFIRMED.value, "confirmed 行不得被降级"
+        assert repository.get(stale.resource_id).status == ResourceStatus.PENDING_MANUAL.value
+
+
+def test_evaluate_file_hint_prefers_archive_over_libgen(tmp_path, repository):
+    """2026-08-09 回归：file_hint 目标（archive 条目内按真实文件名选文件）同时有
+    libgen 与 archive strict 命中时，必须收录 internet_archive。
+    libgen 等 metadata_only 源 resolve 无 download_url（只有 links），且无法按 file_hint
+    选文件——套三曾因此下载失败（候选 provider=libgen_li 144906313）。"""
+
+    from qed_tracker.models import Availability
+
+    libgen = FakeProvider(
+        candidates=[Candidate(
+            "libgen_li", "144906313", "数学分析 陈纪修 第三版 上册", ("陈纪修",), "zh",
+            availability=Availability.METADATA_ONLY,
+            page_url="https://libgen.li/edition.php?id=144906313",
+        )],
+        name="libgen_li",
+    )
+    archive = FakeProvider(
+        candidates=[Candidate(
+            "internet_archive", "math_analysis_chenjixiu", "数学分析陈纪修 第三版 课本及答案", ("陈纪修",), "zh",
+            availability=Availability.DOWNLOADABLE,
+        )],
+        name="internet_archive",
+    )
+    with make_client(tmp_path, providers=[libgen, archive], advisor=FakeAdvisor(score=90), repository=repository) as client:
+        task = _submit_evaluate(client, course_id="01")
+        assert task["status"] == "succeeded"
+    row = _row_by_target(repository, "01-chenjixiu-v1")
+    assert row.status == ResourceStatus.CANDIDATE.value
+    assert (row.source or {}).get("provider") == "internet_archive", "file_hint 目标应优先收录 archive 候选"
+
+
 def test_evaluate_without_advisor_still_registers_candidates(tmp_path, repository):
     candidate = Candidate("fake", "x3", "Topology", ("James Munkres",), "en", year="2000", edition="2nd", download_url="https://example.test/t.pdf")
     with make_client(tmp_path, provider=FakeProvider(candidate), advisor=None, repository=repository) as client:
@@ -312,3 +378,86 @@ def test_evaluate_without_database_fails_task(tmp_path):
         task = _wait_finished(client, response.json()["task_id"])
         assert task["status"] == "failed"
         assert "数据库" in task["error"]
+
+
+def test_evaluate_dedupes_same_source_without_file_hint(tmp_path, repository):
+    """QED-020：单次 evaluate 内同一 provider_id 且目标无 file_hint 时，
+    只收录首个目标，后续目标跳过（同来源去重，如两门课同教材）。"""
+    from qed_tracker.catalog import Catalog
+    from qed_tracker.models import CatalogTarget, ResourceKind
+
+    catalog = Catalog(
+        id="dedup-test", name="去重测试", description="", status="frozen",
+        targets=(
+            CatalogTarget("99-a", "99_test", "测试", ResourceKind.BOOK, "数学分析", authors=("陈纪修",), language="zh", query="数学分析 陈纪修"),
+            CatalogTarget("99-b", "99_test", "测试", ResourceKind.BOOK, "数学分析", authors=("陈纪修",), language="zh", query="数学分析 陈纪修"),
+        ),
+    )
+    candidate = Candidate(
+        "fake", "math_analysis_chenjixiu", "数学分析 陈纪修 大学教材", ("陈纪修",), "chi",
+        download_url="https://example.test/t.pdf",
+    )
+    from qed_tracker.application.books import BookService
+    from qed_tracker.application.catalog_evaluate import CatalogEvaluator
+    from qed_tracker.application.resources import ResourceService
+    from qed_tracker.config import load_settings
+    from qed_tracker.downloader import DownloadManager
+    from qed_tracker.inventory import Inventory
+
+    settings = load_settings(data_root=tmp_path)
+    books = BookService([FakeProvider(candidate)], ResourceService(Inventory(settings.data_root), DownloadManager()))
+    report = CatalogEvaluator(books, repository, advisor=FakeAdvisor(score=90)).evaluate(catalog)
+    skipped = [item for item in report["skipped"] if item["target_id"] == "99-b"]
+    assert skipped, "无 file_hint 的同源目标应被去重跳过"
+    assert any("同来源" in item["reason"] and "99-a" in item["reason"] for item in skipped), f"跳过原因不明：{skipped}"
+    rows = [row for row in repository.list() if row.status == ResourceStatus.CANDIDATE.value]
+    assert len(rows) == 1
+
+
+def test_evaluate_file_hint_target_bypasses_same_source_dedup(tmp_path, repository):
+    """QED-021 裁决：同一条目多 PDF（教材上/下 + 习题答案）时，file_hint 目标
+    不受同源去重限制——按文件名关键词分别收录（各自 resolve 选对应文件）。"""
+    candidate = Candidate(
+        "fake", "math_analysis_chenjixiu", "数学分析 陈纪修 大学教材", ("陈纪修",), "chi",
+        download_url="https://example.test/t.pdf",
+    )
+    with make_client(tmp_path, provider=FakeProvider(candidate), advisor=FakeAdvisor(score=95), repository=repository) as client:
+        task = _submit_evaluate(client, course_id="01")
+        assert task["status"] == "succeeded"
+        # 01-chenjixiu-v1（无 hint）与 01-chenjixiu-answers（file_hint=习题答案）都收录
+        textbook = _row_by_target(repository, "01-chenjixiu-v1")
+        exercises = _row_by_target(repository, "01-chenjixiu-answers")
+        assert textbook is not None and textbook.status == ResourceStatus.CANDIDATE.value
+        assert exercises is not None and exercises.status == ResourceStatus.CANDIDATE.value
+        assert exercises.source["file_keywords"] == ["习题答案"]
+        assert not any(item["target_id"] == "01-chenjixiu-answers" for item in task["result"]["skipped"])
+
+
+def test_evaluate_resolves_metadata_only_links_into_source(tmp_path, repository):
+    """QED-021：libgen 等 metadata_only 来源候选 strict 收录时同步 resolve，
+    落库 source.links（人工下载方案），前端候选卡片可展示。"""
+    from dataclasses import replace
+
+    from qed_tracker.models import Availability, DownloadLink
+
+    class LinksProvider(FakeProvider):
+        name = "libgen_li"
+
+        def resolve(self, candidate):
+            return replace(
+                candidate,
+                links=(DownloadLink("Torrent", "magnet:?xt=urn:btih:abc", "torrent"),),
+            )
+
+    candidate = Candidate(
+        "libgen_li", "138177644", "微积分学教程 第一卷", ("菲赫金哥尔茨",), "chi",
+        availability=Availability.METADATA_ONLY,
+        page_url="https://libgen.li/edition.php?id=138177644",
+    )
+    with make_client(tmp_path, provider=LinksProvider(candidate), advisor=FakeAdvisor(score=90), repository=repository) as client:
+        task = _submit_evaluate(client, course_id="01")
+        assert task["status"] == "succeeded"
+        row = _row_by_target(repository, "01-fikhtengolts-v1")
+        assert row is not None and row.status == ResourceStatus.CANDIDATE.value
+        assert row.source["provider"] == "libgen_li"
+        assert row.source["links"] == [{"label": "Torrent", "url": "magnet:?xt=urn:btih:abc", "kind": "torrent"}]

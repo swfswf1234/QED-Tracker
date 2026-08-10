@@ -2,7 +2,8 @@
 
 契约（docs/design/tracker-service.md）：
 - `POST /tasks/books/download`：body `{resource_id}`，仅 confirmed 可触发否则 409；
-  任务成功后文件落 raw/books/inbox、MySQL 行迁移为 sha256:<digest> 且 status=downloaded；
+  任务成功后文件落 raw/books/<catalog_id>/<course_id>/（无目录引用时 inbox）、
+  MySQL 行迁移为 sha256:<digest> 且 status=downloaded；
 - `GET /resources?status=&course_id=&kind=&language=`：MySQL 行 + 本地清单合并，
   MySQL 状态为权威（同 sha256 时本地记录不重复出现）；
 - `GET /resources/{id}/file`：仅 downloaded/approved 可访问（iframe 内嵌 PDF 预览），否则 404；
@@ -167,6 +168,50 @@ def test_download_resolves_missing_url_before_fetch(tmp_path, repository, pdf_by
     assert row.source["download_url"] == "https://example.test/t.pdf"
 
 
+def test_download_passes_file_keywords_to_resolve(tmp_path, repository, pdf_bytes):
+    """source.file_keywords（QED-019 习题答案 file_hint）必须在下载 resolve 时传递给 provider，
+    否则同条目多 PDF 会选错文件（默认取最大 PDF=教材本体）。"""
+
+    from dataclasses import replace
+
+    from qed_tracker.api.main import Application, _make_download_handler
+    from qed_tracker.config import load_settings
+
+    seen_keywords = {}
+
+    class HintResolvingProvider(FakeProvider):
+        def resolve(self, candidate):
+            seen_keywords["keywords"] = candidate.file_keywords
+            return replace(candidate, download_url="https://example.test/answers.pdf")
+
+    row = repository.upsert_candidate(
+        title="数学分析 陈纪修 大学教材",
+        authors=["陈纪修"],
+        language="chi",
+        kind="exercise",
+        source={
+            "provider": "fake",
+            "provider_id": "math_analysis_chenjixiu",
+            "download_url": "",
+            "file_keywords": ["习题答案"],
+        },
+        catalog_ref={"catalog_id": "math-qe", "target_id": "01-chenjixiu-exercises", "course_id": "01_math_analysis"},
+    )
+    candidate = Candidate("fake", "math_analysis_chenjixiu", "数学分析 陈纪修 大学教材", ("陈纪修",), "chi", download_url="")
+    settings = replace(load_settings(data_root=tmp_path), db_password="")
+    container = Application(
+        settings,
+        book_providers=[HintResolvingProvider(candidate)],
+        papers_provider=None,
+        downloader=mock_downloader(pdf_bytes),
+        repository=repository,
+    )
+    repository.confirm(row.resource_id)
+    handler = _make_download_handler(container)
+    handler({"resource_id": row.resource_id}, lambda pct, msg: None)
+    assert seen_keywords["keywords"] == ("习题答案",)
+
+
 def _seed_candidate(repository, *, title="Topology", resource_id=None, download_url="https://example.test/t.pdf"):
     row = repository.upsert_candidate(
         title=title,
@@ -212,9 +257,10 @@ def test_download_confirmed_resource_succeeds_and_migrates(tmp_path, repository,
         assert response.status_code == 202
         task = _wait_finished(client, response.json()["task_id"])
         assert task["status"] == "succeeded"
-        # 文件落盘
-        pdfs = list((tmp_path / "raw" / "books" / "inbox").glob("*.pdf"))
+        # 文件落盘到课程目录（catalog_ref 派生），文件名带 target_id 前缀
+        pdfs = list((tmp_path / "raw" / "books" / "math-qe" / "03_topology").glob("*.pdf"))
         assert len(pdfs) == 1
+        assert pdfs[0].name.startswith("03-munkres_")
         # MySQL 行迁移为 sha256: 主键且 downloaded
         rows = repository.list()
         assert len(rows) == 1
@@ -475,7 +521,7 @@ def test_reject_downloaded_removes_file_keeps_record(tmp_path, repository, pdf_b
         task_id = client.post("/api/v1/tasks/books/download", json={"resource_id": resource_id}).json()["task_id"]
         _wait_finished(client, task_id)
         final_id = repository.list()[0].resource_id
-        pdfs = list((tmp_path / "raw" / "books" / "inbox").glob("*.pdf"))
+        pdfs = list((tmp_path / "raw" / "books" / "math-qe" / "03_topology").glob("*.pdf"))
         assert len(pdfs) == 1
         pdf_path = pdfs[0]
         response = client.post(f"/api/v1/resources/{final_id}/reject", json={"reason": "内容错误"})
@@ -484,3 +530,125 @@ def test_reject_downloaded_removes_file_keeps_record(tmp_path, repository, pdf_b
         row = repository.get(final_id)
         assert row.status == ResourceStatus.REJECTED.value  # DB 记录保留留痕
         assert row.reject_reason == "内容错误"
+
+
+# ---- QED-020：人工评估建议（review_note） ----
+
+def test_confirm_with_note_persists_review_note(tmp_path, repository):
+    """confirm 可携带建议 note，落库 review_note 供 Axiom-Flow 参考。"""
+    resource_id = _seed_candidate(repository)
+    with make_client(tmp_path, repository=repository) as client:
+        response = client.post(f"/api/v1/resources/{resource_id}/confirm", json={"note": "版本较新，采用"})
+        assert response.status_code == 200
+        row = repository.get(resource_id)
+        assert row.status == ResourceStatus.CONFIRMED.value
+        assert row.review_note == "版本较新，采用"
+
+
+def test_backup_with_note_persists_review_note(tmp_path, repository):
+    resource_id = _seed_candidate(repository)
+    with make_client(tmp_path, repository=repository) as client:
+        response = client.post(f"/api/v1/resources/{resource_id}/backup", json={"note": "与英文版重复，仅备选"})
+        assert response.status_code == 200
+        assert repository.get(resource_id).review_note == "与英文版重复，仅备选"
+
+
+def test_reject_with_note_persists_review_note(tmp_path, repository):
+    """拒绝留痕同时支持 reason（必填）与建议 note（可选）。"""
+    resource_id = _seed_candidate(repository)
+    with make_client(tmp_path, repository=repository) as client:
+        response = client.post(
+            f"/api/v1/resources/{resource_id}/reject",
+            json={"reason": "版本过旧", "note": "已有第 3 版"},
+        )
+        assert response.status_code == 200
+        row = repository.get(resource_id)
+        assert row.reject_reason == "版本过旧"
+        assert row.review_note == "已有第 3 版"
+
+
+def test_review_note_absent_when_not_provided(tmp_path, repository):
+    """不传 note 时 review_note 保持空字符串（不破坏既有调用）。"""
+    resource_id = _seed_candidate(repository)
+    with make_client(tmp_path, repository=repository) as client:
+        response = client.post(f"/api/v1/resources/{resource_id}/confirm")
+        assert response.status_code == 200
+        assert repository.get(resource_id).review_note == ""
+
+
+def test_resources_list_returns_review_note(tmp_path, repository):
+    resource_id = _seed_candidate(repository)
+    repository.confirm(resource_id, note="版本较新，采用")
+    with make_client(tmp_path, repository=repository) as client:
+        response = client.get("/api/v1/resources?status=confirmed")
+        assert response.status_code == 200
+        assert response.json()[0]["review_note"] == "版本较新，采用"
+
+
+# ---- QED-021：人工下载登记（register 端点） ----
+
+def _seed_pending_manual(repository, *, target_id="01-fikhtengolts-v1"):
+    row = repository.upsert_candidate(
+        title="微积分学教程 第一卷",
+        authors=["菲赫金哥尔茨"],
+        language="zh",
+        kind="book",
+        source={"provider": "libgen_li", "provider_id": "138660986", "links": [{"label": "Torrent", "url": "magnet:?xt=urn:btih:abc", "kind": "torrent"}]},
+        catalog_ref={"catalog_id": "math-qe", "target_id": target_id, "course_id": "01_math_analysis"},
+    )
+    repository.mark_pending_manual(row.resource_id)
+    return row.resource_id
+
+
+def test_register_manual_file_promotes_to_downloaded(tmp_path, repository, pdf_bytes):
+    """人工按 libgen 方案下载后放置文件，register 登记：pending_manual → downloaded，
+    sha256 回填 + 主键迁移 + 本地清单落库（QED-021）。"""
+    resource_id = _seed_pending_manual(repository)
+    manual_dir = tmp_path / "raw" / "books" / "math-qe" / "01_math_analysis"
+    manual_dir.mkdir(parents=True)
+    path = manual_dir / "fikhtengolts_v1.pdf"
+    path.write_bytes(pdf_bytes)
+    with make_client(tmp_path, repository=repository) as client:
+        response = client.post(
+            f"/api/v1/resources/{resource_id}/register",
+            json={"relative_path": "raw/books/math-qe/01_math_analysis/fikhtengolts_v1.pdf"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == ResourceStatus.DOWNLOADED.value
+        assert data["resource_id"].startswith("sha256:")
+        assert data["sha256"]
+        # 同 sha256 在 MySQL 索引中唯一
+        rows = repository.list(status="downloaded")
+        assert len(rows) == 1
+        assert rows[0].relative_path == "raw/books/math-qe/01_math_analysis/fikhtengolts_v1.pdf"
+
+
+def test_register_requires_path_inside_data_root(tmp_path, repository, pdf_bytes):
+    resource_id = _seed_pending_manual(repository)
+    with make_client(tmp_path, repository=repository) as client:
+        response = client.post(
+            f"/api/v1/resources/{resource_id}/register",
+            json={"relative_path": "../outside.pdf"},
+        )
+        assert response.status_code == 400
+        assert repository.get(resource_id).status == ResourceStatus.PENDING_MANUAL.value  # 状态不变
+
+
+def test_register_unknown_resource_returns_404(tmp_path, repository):
+    with make_client(tmp_path, repository=repository) as client:
+        assert client.post("/api/v1/resources/cand_nope/register", json={"relative_path": "x.pdf"}).status_code == 404
+
+
+def test_register_rejects_non_pdf_file(tmp_path, repository):
+    resource_id = _seed_pending_manual(repository)
+    manual_dir = tmp_path / "raw" / "books" / "math-qe" / "01_math_analysis"
+    manual_dir.mkdir(parents=True)
+    (manual_dir / "note.txt").write_text("not a pdf", encoding="utf-8")
+    with make_client(tmp_path, repository=repository) as client:
+        response = client.post(
+            f"/api/v1/resources/{resource_id}/register",
+            json={"relative_path": "raw/books/math-qe/01_math_analysis/note.txt"},
+        )
+        assert response.status_code == 400
+        assert repository.get(resource_id).status == ResourceStatus.PENDING_MANUAL.value
