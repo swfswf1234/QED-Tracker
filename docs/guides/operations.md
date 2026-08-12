@@ -113,7 +113,7 @@ qed-tracker axiom push sha256:<digest> --parse --page-start 1 --page-end 20
 
 默认 `push` 只执行健康检查和 PDF 上传。`--parse` 才会创建解析任务；页码参数必须与它一起使用。也可以传入数据根内的 PDF 路径，工具会先将文件登记为资源。
 
-上传成功而解析提交失败时，Axiom 中的文档会保留，本地传输记录会保存错误；工具不会自动删除文档或重试解析任务。完整协议见[Axiom-Flow 交接设计](../design/axiom-handoff.md)。
+上传成功而解析提交失败时，Axiom 中的文档会保留，本地传输记录会保存错误；工具不会自动删除文档或重试解析任务。完整协议见[服务与外部接口设计](../design/tracker-service.md)「外部接口：Axiom-Flow 消费面」。
 
 ## 输出与失败
 

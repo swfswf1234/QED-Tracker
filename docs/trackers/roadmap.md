@@ -9,7 +9,7 @@
 
 - 8901 服务接口（后台任务 + 轮询）与统一 CLI `qed` 承接后，评估任务并发、进度上报与前端展示
   的扩展（见 [ADR 0001](../adr/0001-tracker-service-architecture.md) 与
-  [服务接口设计](../design/tracker-service.md)）。
+  [服务与外部接口设计](../design/tracker-service.md)）。
 - 重复下载链路与幂等行为在 Phase 2 冒烟后按真实使用反馈完善。
 
 ## 来源可靠性

@@ -1,4 +1,4 @@
-import re
+﻿import re
 import shlex
 from pathlib import Path
 
@@ -17,7 +17,6 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/architecture/main-line.md"),
     Path("docs/design/index.md"),
     Path("docs/design/acquisition-and-inventory.md"),
-    Path("docs/design/axiom-handoff.md"),
     Path("docs/design/paper-discovery.md"),
     Path("docs/design/source-discovery.md"),
     Path("docs/design/review-round-dedup.md"),
@@ -60,7 +59,6 @@ DESIGN_DOCS = {
     Path("docs/architecture/system-overview.md"),
     Path("docs/architecture/main-line.md"),
     Path("docs/design/acquisition-and-inventory.md"),
-    Path("docs/design/axiom-handoff.md"),
     Path("docs/design/paper-discovery.md"),
     Path("docs/design/source-discovery.md"),
     Path("docs/design/review-round-dedup.md"),

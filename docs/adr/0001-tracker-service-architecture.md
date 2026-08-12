@@ -29,7 +29,7 @@ QED-Tracker 是纯 CLI（不运行常驻服务、不维护数据库），配置�
    > 勘误（2026-08-12，W3 文档一致性深扫）：决定原文「写操作一律创建后台任务」过强。
    > 已实现事实为——**长操作**（下载、评估、推荐、目录批处理、扫描、Axiom 推送）走后台任务；
    > **轻量状态迁移**（`confirm` / `backup` / `approve` / `reject` / `register`）同步执行
-   > （见 [服务接口设计](../design/tracker-service.md) 端点表的「同步轻写」与
+   > （见 [服务与外部接口设计](../design/tracker-service.md) 端点表的「同步轻写」与
    > [系统总览](../architecture/system-overview.md) 不变量 8）。
 2. **CLI 转 HTTP 客户端**：`qed-tracker` 命令改为调用本地 8901 服务（默认等待完成，
    `--no-wait` 输出 task_id 供前端场景）；独立脚本入口保留至统一 CLI `qed` 承接后退役。
@@ -54,7 +54,7 @@ QED-Tracker 是纯 CLI（不运行常驻服务、不维护数据库），配置�
 ## 关联
 
 - 关联标准：[文档规范](../standards/documentation.md)、[ADR 治理](../standards/adr-governance.md)
-- 关联设计：[服务接口设计](../design/tracker-service.md)（Accepted，需求方 QED-Engine）、
+- 关联设计：[服务与外部接口设计](../design/tracker-service.md)（Accepted，需求方 QED-Engine）、
   [下载与清单](../design/acquisition-and-inventory.md)
 - 关联架构：[系统总览](../architecture/system-overview.md)（实现后更新实现状态）
 - 关联 ADR（根仓库）：[ADR 0002](../../../docs/adr/0002-frontend-and-port-centralization.md)

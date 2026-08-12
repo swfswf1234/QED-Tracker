@@ -5,8 +5,8 @@
 最后更新：2026-08-05
 关联 ADR：[ADR 0001 服务化架构](../adr/0001-tracker-service-architecture.md)；跨仓库决策见
 QED-Engine [ADR 0002](../../../docs/adr/0002-frontend-and-port-centralization.md)
-关联设计：[服务接口设计](../design/tracker-service.md)、[下载与清单](../design/acquisition-and-inventory.md)、
-[arXiv 论文智能发现](../design/paper-discovery.md)、[Axiom-Flow 交接](../design/axiom-handoff.md)；跨项目契约见
+关联设计：[服务与外部接口设计](../design/tracker-service.md)、[下载与清单](../design/acquisition-and-inventory.md)、
+[arXiv 论文智能发现](../design/paper-discovery.md)；跨项目契约见
 QED-Engine [service-contracts.md](../../../docs/design/service-contracts.md)、
 [dataset-conventions.md](../../../docs/design/dataset-conventions.md)、
 [configuration-and-secrets.md](../../../docs/design/configuration-and-secrets.md)

@@ -15,4 +15,4 @@
 | [项目状态快照](project-status.md) | Accepted | Implemented | QED-Tracker 当前实现状态与当前主线（Agent 进场入口） |
 | [主链路架构](main-line.md) | Draft | Not Started | 领域课程梳理 → 教材寻找 → 下载 → 人工验收的主链路体系（与 evaluate 平行） |
 
-具体来源协议和持久化字段属于[下载与清单设计](../design/acquisition-and-inventory.md)，Axiom HTTP 细节属于[Axiom-Flow 交接设计](../design/axiom-handoff.md)。
+具体来源协议和持久化字段属于[下载与清单设计](../design/acquisition-and-inventory.md)，Axiom HTTP 细节属于[服务与外部接口设计](../design/tracker-service.md)「外部接口：Axiom-Flow 消费面」。

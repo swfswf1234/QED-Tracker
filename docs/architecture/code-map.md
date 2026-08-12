@@ -35,8 +35,8 @@
 | `src/qed_tracker/profiles.py` | 论文目标档案加载与校验 | Current | `docs/design/paper-discovery.md` | `tests/test_profiles_and_selections.py` | 内置 + 自定义 JSON。 |
 | `src/qed_tracker/paper_profiles/`（llm-engineering.json、math-research.json） | 内置论文目标档案 | Current | `docs/design/paper-discovery.md` | `tests/test_profiles_and_selections.py` | 包数据。 |
 | `src/qed_tracker/selection_store.py` | 论文选择报告原子存储（`meta/selections/`） | Current | `docs/design/paper-discovery.md` | `tests/test_profiles_and_selections.py`、`tests/test_paper_selection_cli.py` | sel- 前缀 ID 校验。 |
-| `src/qed_tracker/axiom.py` | Axiom-Flow HTTP 客户端（健康检查/上传/可选解析） | Current | `docs/design/axiom-handoff.md` | `tests/test_axiom.py` | 默认不解析，不自动重试。 |
-| `src/qed_tracker/cli.py` | 唯一用户入口：命令树、机器输出、稳定退出码、serve | Current | `docs/design/tracker-service.md`、`docs/design/axiom-handoff.md` | `tests/test_cli_architecture.py` | 闭环命令属 QED-010 未实现（见 tracker-service.md）。 |
+| `src/qed_tracker/axiom.py` | Axiom-Flow HTTP 客户端（健康检查/上传/可选解析） | Current | `docs/design/tracker-service.md`（外部接口：Axiom-Flow 消费面） | `tests/test_axiom.py` | 默认不解析，不自动重试。 |
+| `src/qed_tracker/cli.py` | 唯一用户入口：命令树、机器输出、稳定退出码、serve | Current | `docs/design/tracker-service.md` | `tests/test_cli_architecture.py` | 闭环命令属 QED-010 未实现（见 tracker-service.md）。 |
 | `src/qed_tracker/database.py` | SQLAlchemy 引擎与会话工厂（按 `QED_DB_*`） | Current | `docs/design/tracker-service.md` | `tests/test_db_models.py` | 服务启动与冒烟复用。 |
 | `src/qed_tracker/db/models.py` | qt_resources ORM 与状态枚举 | Current | `docs/design/tracker-service.md` | `tests/test_db_models.py` | 10 状态 + review_note 列。 |
 | `src/qed_tracker/db/repository.py` | 状态机仓库与查询索引数据访问 | Current | `docs/design/tracker-service.md`、`docs/design/review-round-dedup.md` | `tests/test_resources_api.py`、`tests/test_db_registry.py` | confirm/backup/reject 带 note。 |
@@ -60,8 +60,8 @@
 | `tests/test_profiles_and_selections.py` | 档案与选择存储 | `docs/design/paper-discovery.md` |
 | `tests/test_download_inventory.py` | 下载器/清单/scan/verify | `docs/design/acquisition-and-inventory.md` |
 | `tests/test_config_catalog_matching.py` | 配置/目录/匹配边界 | `docs/design/tracker-service.md`、`docs/design/acquisition-and-inventory.md` |
-| `tests/test_cli_architecture.py` | CLI 命令树与退出码 | `docs/design/tracker-service.md`、`docs/design/axiom-handoff.md` |
-| `tests/test_axiom.py` | Axiom 客户端 | `docs/design/axiom-handoff.md` |
+| `tests/test_cli_architecture.py` | CLI 命令树与退出码 | `docs/design/tracker-service.md` |
+| `tests/test_axiom.py` | Axiom 客户端 | `docs/design/tracker-service.md`（外部接口：Axiom-Flow 消费面） |
 | `tests/test_db_models.py` | ORM 模型与状态枚举 | `docs/design/tracker-service.md` |
 | `tests/test_db_registry.py` | 双写登记与重放 | `docs/design/tracker-service.md` |
 | `tests/test_db_mysql_smoke.py` | 真实 MySQL 冒烟（QED_DB_SMOKE=1） | `docs/design/tracker-service.md` |

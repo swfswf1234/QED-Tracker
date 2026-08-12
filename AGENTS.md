@@ -26,7 +26,7 @@ QED-Tracker 是 QED 的前置 PDF 获取组件。它负责发现、下载、校�
 | 下载、PDF 校验、清单 | `src/qed_tracker/downloader.py`、`src/qed_tracker/inventory.py`、`src/qed_tracker/application/resources.py` | `docs/design/acquisition-and-inventory.md` | `tests/test_download_inventory.py`、`tests/test_services.py` |
 | 服务与 API（8901、后台任务、MySQL 登记索引） | `src/qed_tracker/api/main.py`、`src/qed_tracker/db/`（models/repository/registry/migrations） | `docs/design/tracker-service.md`、`docs/adr/0001-tracker-service-architecture.md` | `tests/test_api.py`、`tests/test_resources_api.py`、`tests/test_db_models.py`、`tests/test_cli_architecture.py` |
 | 配置、目录和 CLI | `src/qed_tracker/config.py`、`src/qed_tracker/catalog.py`、`src/qed_tracker/cli.py` | `docs/architecture/system-overview.md` | `tests/test_config_catalog_matching.py`、`tests/test_cli_architecture.py` |
-| Axiom-Flow 交付 | `src/qed_tracker/axiom.py`、`src/qed_tracker/cli.py` | `docs/design/axiom-handoff.md` | `tests/test_axiom.py` |
+| Axiom-Flow 交付 | `src/qed_tracker/axiom.py`、`src/qed_tracker/cli.py` | `docs/design/tracker-service.md`（外部接口：Axiom-Flow 消费面） | `tests/test_axiom.py` |
 | 文档与仓库结构 | `README.md`、`docs/` | `docs/index.md` | `tests/test_documentation.py` |
 
 ## 强制约束
