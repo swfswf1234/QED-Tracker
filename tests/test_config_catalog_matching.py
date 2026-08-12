@@ -84,6 +84,50 @@ def test_supplement_kind_is_supported():
     assert ResourceKind("supplement") is ResourceKind.SUPPLEMENT
 
 
+def test_target_roles_follow_kind_and_allow_multi_role():
+    """方案 A（2026-08-12）：catalog target 增加 roles 多值字段——一套书可同时是教材与习题集。
+    未显式指定时按 kind 推导（book→[textbook]、exercise→[exercises]、supplement→[solutions]）。"""
+    from qed_tracker.models import BookRole
+
+    catalog = load_catalog("math-qe")
+    targets = {target.id: target for target in catalog.targets}
+    # 谢惠民《习题课讲义》明确双重角色（textbook + exercises）
+    assert targets["01-xiehuimin-v1"].roles == (BookRole.TEXTBOOK, BookRole.EXERCISES)
+    assert targets["01-xiehuimin-v2"].roles == (BookRole.TEXTBOOK, BookRole.EXERCISES)
+    # 普通 book 按 kind 推导
+    assert targets["01-rudin-zh"].roles == (BookRole.TEXTBOOK,)
+    assert targets["01-demidovich"].roles == (BookRole.EXERCISES,)
+    assert targets["01-chenjixiu-answers"].roles == (BookRole.SOLUTIONS,)
+    assert BookRole.TEXTBOOK.value == "textbook"
+
+
+def test_resource_record_roles_roundtrip():
+    """方案 A：ResourceRecord.roles 从 catalog target 继承（可选字段，schema v1 向后兼容）。"""
+    from qed_tracker.models import ResourceRecord
+
+    record = ResourceRecord(
+        resource_id="sha256:abc",
+        kind="book",
+        title="数学分析",
+        authors=["陈纪修"],
+        language="zh",
+        year="",
+        identifiers={},
+        source={},
+        file={"relative_path": "raw/x.pdf", "sha256": "abc", "size_bytes": 1, "mime_type": "application/pdf", "page_count": 1},
+        catalog_ref={"catalog_id": "math-qe", "course_id": "01_math_analysis", "target_id": "01-chenjixiu-v1"},
+        roles=["textbook"],
+    )
+    payload = record.to_dict()
+    assert payload["roles"] == ["textbook"]
+    restored = ResourceRecord.from_dict(payload)
+    assert restored.roles == ["textbook"]
+    # 无 roles 时向后兼容（旧 JSON 无该字段）
+    del payload["roles"]
+    legacy = ResourceRecord.from_dict(payload)
+    assert legacy.roles is None
+
+
 def test_candidate_links_serialize_for_json_api():
     """QED-021：Candidate.links 携带人工下载方案（libgen 等 metadata_only 来源），
     asdict 后必须 JSON 可序列化（FastAPI 响应与 source 落库）。"""

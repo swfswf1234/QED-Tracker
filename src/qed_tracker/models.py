@@ -21,6 +21,31 @@ class Availability(StrEnum):
     METADATA_ONLY = "metadata_only"
 
 
+class BookRole(StrEnum):
+    """书籍角色（多值，方案 A 2026-08-12）：一套书可同时是教材与习题集。
+
+    取值：textbook（教材）/ exercises（习题集）/ solutions（题解/答案）/ reference（参考）。
+    kind 保留单值主分类（存储/统计），roles 表达真实使用角色（评审/成套判定）。
+    """
+
+    TEXTBOOK = "textbook"
+    EXERCISES = "exercises"
+    SOLUTIONS = "solutions"
+    REFERENCE = "reference"
+
+
+def default_roles(kind: ResourceKind) -> tuple[BookRole, ...]:
+    """按 kind 推导默认角色（未显式指定时）：book→[textbook]、exercise→[exercises]、
+    supplement→[solutions]、paper→[]。"""
+    mapping: dict[ResourceKind, tuple[BookRole, ...]] = {
+        ResourceKind.BOOK: (BookRole.TEXTBOOK,),
+        ResourceKind.EXERCISE: (BookRole.EXERCISES,),
+        ResourceKind.SUPPLEMENT: (BookRole.SOLUTIONS,),
+        ResourceKind.PAPER: (),
+    }
+    return mapping.get(kind, ())
+
+
 @dataclass(frozen=True, slots=True)
 class DownloadLink:
     """人工下载方案（metadata_only 来源无直链时给用户的指引，如 torrent/IPFS/ed2k）。"""
@@ -112,6 +137,8 @@ class CatalogTarget:
     required: bool = True
     file_hint: str = ""
     """下载时优先匹配的文件名关键词（archive 同条目多 PDF 时按此选文件，如「习题答案」）。"""
+    roles: tuple[BookRole, ...] = ()
+    """书籍角色（多值，方案 A）：空时按 kind 推导（default_roles）。一套书可同时是教材与习题集。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +160,8 @@ class ResourceRecord:
     source: dict[str, Any]
     file: dict[str, Any]
     catalog_ref: dict[str, str] | None = None
+    roles: list[str] | None = None
+    """书籍角色（方案 A，多值）：从 catalog target 继承；空时按 kind 推导。资源 JSON schema 保持 v1（可选字段向后兼容）。"""
     schema_version: int = 1
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 

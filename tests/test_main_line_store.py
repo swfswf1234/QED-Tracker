@@ -72,6 +72,25 @@ def test_missing_entry_returns_none(tmp_path: Path) -> None:
     assert store.get("01_math_analysis", "nope") is None
 
 
+def test_entry_roles_roundtrip(tmp_path: Path) -> None:
+    """方案 A（2026-08-12）：主链路条目 roles 多值字段持久化。"""
+    store = EntryStore(tmp_path)
+    data = _entry()
+    data["roles"] = ["textbook", "exercises"]
+    store.create(data)
+    entry = store.get("01_math_analysis", "01-rudin-zh")
+    assert entry is not None
+    assert entry.roles == ("textbook", "exercises")
+    raw = json.loads((tmp_path / "meta" / "main-line" / "01_math_analysis" / "01-rudin-zh.json").read_text(encoding="utf-8"))
+    assert raw["roles"] == ["textbook", "exercises"]
+    # 无 roles 的旧 JSON 向后兼容
+    del raw["roles"]
+    legacy_path = tmp_path / "meta" / "main-line" / "01_math_analysis" / "01-rudin-zh.json"
+    legacy_path.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+    legacy = store.get("01_math_analysis", "01-rudin-zh")
+    assert legacy is not None and legacy.roles == ()
+
+
 def test_create_preserves_channels_resource_and_path(tmp_path: Path) -> None:
     data = _entry()
     channel = {"kind": "book", "url": "https://example.com/book.pdf"}

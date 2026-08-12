@@ -45,6 +45,8 @@ class MainLineEntry:
     advice: dict[str, str]
     channels: tuple[dict[str, Any], ...] = ()
     status: str = "draft"
+    roles: tuple[str, ...] = ()
+    """书籍角色（方案 A，多值）：textbook/exercises/solutions/reference；空时按 kind 推导。"""
     resource_id: str = ""
     final_path: str = ""
     reject_reason: str = ""
@@ -62,6 +64,7 @@ class MainLineEntry:
             "advice": self.advice,
             "channels": list(self.channels),
             "status": self.status,
+            "roles": list(self.roles),
             "resource_id": self.resource_id,
             "final_path": self.final_path,
             "reject_reason": self.reject_reason,
@@ -103,6 +106,7 @@ class EntryStore:
             advice=raw.get("advice", {}),
             channels=tuple(raw.get("channels", [])),
             status=raw.get("status", "draft"),
+            roles=tuple(raw.get("roles", [])),
             resource_id=raw.get("resource_id", ""),
             final_path=raw.get("final_path", ""),
             reject_reason=raw.get("reject_reason", ""),
@@ -137,6 +141,7 @@ class EntryStore:
             advice=data.get("advice", {}),
             channels=tuple(data.get("channels", [])),
             status=status,
+            roles=tuple(data.get("roles", [])),
             resource_id=data.get("resource_id", ""),
             final_path=data.get("final_path", ""),
             reject_reason=data.get("reject_reason", ""),
@@ -174,6 +179,7 @@ class EntryStore:
             advice=entry.advice,
             channels=entry.channels,
             status=new_status.value,
+            roles=entry.roles,
             resource_id=entry.resource_id,
             final_path=entry.final_path,
             reject_reason=reason if new_status == MainLineStatus.REJECTED else entry.reject_reason,
@@ -196,6 +202,7 @@ class EntryStore:
             advice=changes.get("advice", entry.advice),
             channels=changes.get("channels", entry.channels),
             status=entry.status,
+            roles=changes.get("roles", entry.roles),
             resource_id=changes.get("resource_id", entry.resource_id),
             final_path=changes.get("final_path", entry.final_path),
             reject_reason=changes.get("reject_reason", entry.reject_reason),
