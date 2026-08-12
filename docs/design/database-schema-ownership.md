@@ -1,7 +1,7 @@
 # 数据库设计确认：qt_* 表结构事实源（QED-023，承接根仓库 REQ-026）
 
 设计状态：Accepted
-实现状态：Pending
+实现状态：Not Started
 最后更新：2026-08-10
 关联代码：`src/qed_tracker/db/`（模型与迁移）
 关联测试：`tests/test_resources_api.py` 等库相关测试

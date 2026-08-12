@@ -19,6 +19,9 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/design/source-discovery.md"),
     Path("docs/design/review-round-dedup.md"),
     Path("docs/design/tracker-service.md"),
+    Path("docs/design/database-schema-ownership.md"),
+    Path("docs/design/governance-contract-alignment.md"),
+    Path("docs/design/catalog-set-field.md"),
     Path("docs/standards/index.md"),
     Path("docs/standards/documentation.md"),
     Path("docs/standards/adr-governance.md"),
@@ -57,6 +60,9 @@ DESIGN_DOCS = {
     Path("docs/design/source-discovery.md"),
     Path("docs/design/review-round-dedup.md"),
     Path("docs/design/tracker-service.md"),
+    Path("docs/design/database-schema-ownership.md"),
+    Path("docs/design/governance-contract-alignment.md"),
+    Path("docs/design/catalog-set-field.md"),
 }
 LINK_PATTERN = re.compile(r"\[[^]]+\]\(([^)]+)\)")
 COMMAND_PATTERN = re.compile(r"^\s*(qed-tracker(?:\s+.+)?)\s*$", re.MULTILINE)

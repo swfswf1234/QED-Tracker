@@ -48,7 +48,7 @@ QED-Tracker 是纯 CLI（不运行常驻服务、不维护数据库），配置�
 ## 关联
 
 - 关联标准：[文档规范](../standards/documentation.md)、[ADR 治理](../standards/adr-governance.md)
-- 关联设计：[服务接口设计](../design/tracker-service.md)（Draft，需求方 QED-Engine）、
+- 关联设计：[服务接口设计](../design/tracker-service.md)（Accepted，需求方 QED-Engine）、
   [下载与清单](../design/acquisition-and-inventory.md)
 - 关联架构：[系统总览](../architecture/system-overview.md)（实现后更新实现状态）
 - 关联 ADR（根仓库）：[ADR 0002](../../../docs/adr/0002-frontend-and-port-centralization.md)

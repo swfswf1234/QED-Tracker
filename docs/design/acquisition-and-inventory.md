@@ -5,6 +5,7 @@
 最后更新：2026-08-07
 关联代码：`src/qed_tracker/providers/`、`src/qed_tracker/application/`、`src/qed_tracker/downloader.py`、`src/qed_tracker/inventory.py`
 关联测试：`tests/test_book_providers.py`、`tests/test_arxiv_provider.py`、`tests/test_download_inventory.py`、`tests/test_services.py`
+关联 ADR：—
 
 ## 来源协议
 

@@ -6,6 +6,7 @@
 外部契约：Axiom-Flow 0.3 HTTP API
 关联代码：`src/qed_tracker/axiom.py`、`src/qed_tracker/cli.py`
 关联测试：`tests/test_axiom.py`、`tests/test_cli_architecture.py`
+关联 ADR：—
 
 ## 边界
 

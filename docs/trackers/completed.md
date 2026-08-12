@@ -1,7 +1,7 @@
 # 完成台账
 
 状态：Current
-最后更新：2026-07-30
+最后更新：2026-08-12
 
 本文件只追加已关闭任务的简短结果、提交或本地验证证据。
 
@@ -13,3 +13,12 @@
 | QED-004 | 2026-07-30 | 0.4 CLI、配置、文档治理和分发元数据完成。 | Python 3.12 wheel 构建成功并包含目录及两套论文档案；`git diff --check` 通过。 |
 | QED-006 | 2026-07-30 | 0.5 收缩为三个开放教材来源，删除 Range 续传、重复 PDF 检查、两个冗余命令和 BeautifulSoup 依赖。 | 离线全量回归 `48 passed`，Ruff 与 diff 门禁通过；Python 3.12 wheel 包数据和依赖元数据验证通过。 |
 | QED-007 | 2026-07-30 | 完成 0.5 发布一致性审计，修正文档代码路由并统一本地与 GitHub Actions 门禁。 | `49 passed`、Ruff、diff、Python 3.12 wheel、包数据和 CLI 冒烟通过。 |
+| QED-008 | 2026-08-05 | 服务化：8901 API（/api/v1）+ 后台任务与轮询完成。 | 提交 `cbc841c`；`GET /health`、任务落盘、并发上限与 sha256 幂等；API/客户端单元测试通过。 |
+| QED-009 | 2026-08-05 | 配置与数据迁移：直读根 .env `QED_*`，TOML 与 `QED_TRACKER_*` 退役，数据根 dataset/qed-tracker/（raw/meta/tmp）布局完成。 | 提交 `cbc841c`；无根 .env 时最小默认值 + 尾注提醒；新下载落 raw/ 对应类型目录。 |
+| QED-012 | 2026-08-05 | MySQL qt_resources 登记索引与状态机完成：双写、状态机 candidate→…→approved/rejected、llm_evaluation/catalog_ref/留痕字段。 | 提交 `47b636d`；先落盘后登记、失败可重放、同 sha256 幂等、无密码降级运行；db 测试通过。 |
+| QED-013 | 2026-08-05 | 书单 math-qe-v2 与 LLM 筛选评估完成：13 门课程 54 目标、qwen 辅助、按课程批量评估。 | 提交 `21aad7d`、`4405a87`；catalog 落 catalogs/；evaluate 产出 candidate 含可审阅 llm_evaluation，不写资源事实。 |
+| QED-015 | 2026-08-05 | 下载任务与预览端点完成：POST /tasks/books/download（仅 confirmed）+ GET /resources/{id}/file 预览流。 | 提交 `21aad7d`；非法触发 409、sha256 幂等复用、预览 Content-Type/长度正确。 |
+| QED-016 | 2026-08-05 | 验收闭环与 CLI 完成：confirm/approve/reject 端点 + CLI catalog evaluate / resources / books download。 | 提交 `21aad7d`；非法迁移 409、拒绝必填原因、已拒记录保留且同源候选不再推荐。 |
+| QED-017 | 2026-08-06 | 人工评估三态与中文优先完成：状态机 backup、backup 端点、前端三态卡片 + 按课程评估视图、evaluate 跳过已评估目标。 | 提交 `5f7c015`（17 文件 316+/23-，含 docs/design/source-discovery.md）；8901 重启后三态冒烟通过；QED-Engine ARCH-004 Phase 0 回执。 |
+| QED-020 | 2026-08-10 | 人工评审优化完成：evaluate 同源去重（file_hint 例外）、qt_resources.review_note（Alembic 0002）、存量重复清理流程。 | 提交 `8693ca2`；全量 `145 passed + 3 skipped` + ruff；定向测试覆盖同源去重/file_hint/review_note；设计 review-round-dedup.md 同步。 |
+| QED-021 | 2026-08-10 | LibgenProvider（发现专用）与人工登记闭环完成：libgen_li 解析、RETIRED_PROVIDERS 移除 libgen、POST /resources/{id}/register、ResourceKind.SUPPLEMENT。 | 提交 `8693ca2`；libgen 10 测试、register 37 测试、前端 46 测试全绿；libgen 候选永不自动写文件。 |

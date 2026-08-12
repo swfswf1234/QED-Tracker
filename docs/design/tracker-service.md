@@ -1,7 +1,7 @@
 # QED-Tracker 服务接口设计（tracker-service）
 
 设计状态：Accepted
-实现状态：Partial（服务骨架、任务层、只读端点、下载任务与 MySQL 资源登记索引已落地；评估、验收闭环与 CLI 客户端随 2026-08 计划推进）
+实现状态：In Progress
 最后更新：2026-08-05
 需求方：QED-Engine
 关联代码：src/qed_tracker/api/（FastAPI 服务与后台任务层，服务化轮已实现）、src/qed_tracker/db/ 与

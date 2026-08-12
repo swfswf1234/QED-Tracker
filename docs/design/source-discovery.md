@@ -1,7 +1,7 @@
 # 来源探索与评估
 
 设计状态：Accepted
-实现状态：Ongoing
+实现状态：In Progress
 最后更新：2026-08-07
 关联代码：`src/qed_tracker/providers/books.py`、`tests/test_book_providers.py`
 关联测试：`tests/test_book_providers.py`

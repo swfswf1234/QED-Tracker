@@ -5,6 +5,7 @@
 最后更新：2026-07-30
 关联代码：`src/qed_tracker/application/papers.py`、`src/qed_tracker/providers/bailian.py`、`src/qed_tracker/selection_store.py`
 关联测试：`tests/test_paper_application.py`、`tests/test_bailian_advisor.py`、`tests/test_paper_selection_cli.py`
+关联 ADR：—
 
 ## 事实边界
 
@@ -30,7 +31,7 @@ arXiv 提供标题、作者、分类、时间和摘要等候选事实。百炼�
 
 ## 百炼边界
 
-默认使用 DashScope OpenAI-compatible `chat/completions` 和 `qwen-plus`，`temperature=0`。任务最多调用 6 次，单次默认超时 60 秒；密钥只从 `QED_TRACKER_LLM_API_KEY` 或 `DASHSCOPE_API_KEY` 读取，不进入 Settings 表示、TOML、日志或报告。
+默认使用 DashScope OpenAI-compatible `chat/completions` 和 `qwen-plus`，`temperature=0`。任务最多调用 6 次，单次默认超时 60 秒；密钥直读根 `.env` 的 `QWEN_API_KEY`（`QED_TRACKER_LLM_API_KEY` 与 `DASHSCOPE_API_KEY` 读取路径已退役），不进入 Settings 表示、TOML、日志或报告。
 
 自动测试只能使用假顾问或 `httpx.MockTransport`，不得访问真实模型或 arXiv。
 
