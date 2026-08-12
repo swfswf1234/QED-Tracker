@@ -449,9 +449,121 @@ def _load_curriculum(subject_or_course_id: str) -> Curriculum:
         raise ValueError(f"未知学科课程体系：{subject_or_course_id}") from None
 
 
+def _mainline_advisor(*, api_key: str, model: str, base_url: str, timeout: float, call_budget: int, max_tokens: int):
+    from qed_tracker.main_line.advisor import MainLineAdvisor
+    return MainLineAdvisor(
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        timeout=timeout,
+        call_budget=call_budget,
+        max_tokens=max_tokens,
+    )
+
+
+def _entry_slug(title: str) -> str:
+    """从标题生成稳定 ASCII slug（课程前缀由调用方拼）。"""
+    import re
+    text = re.sub(r"[^a-zA-Z0-9]+", "-", title).strip("-").lower()
+    if not text:
+        text = "entry"
+    return text[:48]
+
+
 def _mainline(args, settings: Settings) -> int:
+    from qed_tracker.courses import load_course
+    from qed_tracker.main_line.store import EntryStore, MainLineStatus
+
+    store = EntryStore(settings.data_root)
+
+    if args.mainline_command == "list":
+        entries = store.list_course(args.course)
+        if args.json:
+            _print([e.to_dict() for e in entries], True)
+        else:
+            for entry in entries:
+                print(f"{entry.entry_id} [{entry.status}] {entry.title}（{entry.evaluation.get('authority', '-')}）")
+        return 0
+
+    if args.mainline_command == "channels":
+        _print_channel_summary(store, args.json)
+        return 0
+
+    if args.mainline_command == "new":
+        try:
+            curriculum = load_course("math")
+            course = next(c for c in curriculum.courses if c.course_id == args.course)
+        except (ValueError, StopIteration):
+            _print({"error": f"未知课程：{args.course}"}, True) if args.json else print(f"ERROR: 未知课程：{args.course}", file=sys.stderr)
+            return 2
+        advisor = _mainline_advisor(
+            api_key=llm_api_key(),
+            model=settings.llm_model,
+            base_url=settings.llm_base_url,
+            timeout=settings.llm_timeout_seconds,
+            call_budget=settings.llm_call_budget,
+            max_tokens=settings.llm_max_tokens,
+        )
+        try:
+            prefilled = advisor.prefill(
+                course={"course_id": course.course_id, "name": course.name, "stage": course.stage},
+                title=args.title,
+                authors=args.author,
+            )
+        except ValueError as exc:
+            _print({"error": f"LLM 预填失败：{exc}"}, True) if args.json else print(f"ERROR: LLM 预填失败：{exc}", file=sys.stderr)
+            return 2
+        finally:
+            advisor.close()
+        entry_id = _entry_slug(args.title)
+        data = {
+            "entry_id": entry_id,
+            "course_id": args.course,
+            "title": args.title,
+            "authors": tuple(args.author),
+            "evaluation": prefilled["evaluation"],
+            "advice": prefilled["advice"],
+        }
+        try:
+            entry = store.create(data)
+        except ValueError as exc:
+            _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        _print(entry.to_dict(), True) if args.json else print(f"已创建条目 {entry.entry_id}（{entry.status}），请 review 定稿")
+        return 0
+
+    if args.mainline_command == "review":
+        entry = store.get(args.course_id, args.entry_id)
+        if entry is None:
+            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr)
+            return 2
+        try:
+            updated = store.transition(args.course_id, args.entry_id, MainLineStatus.REVIEWED)
+        except ValueError as exc:
+            _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        _print(updated.to_dict(), True) if args.json else print(f"已评审定稿：{updated.entry_id} → {updated.status}")
+        return 0
+
+    if args.mainline_command == "reject":
+        try:
+            updated = store.transition(args.course_id, args.entry_id, MainLineStatus.REJECTED)
+        except ValueError as exc:
+            _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        _print(updated.to_dict(), True) if args.json else print(f"已否定：{updated.entry_id}（{args.reason}）")
+        return 0
+
     print(f"ERROR: 未实现的 mainline 命令：{args.mainline_command}", file=sys.stderr)
     return 2
+
+
+def _print_channel_summary(store, json_output: bool) -> None:
+    """按渠道聚合 success/fail（实现见任务 6；先输出空汇总）。"""
+    if json_output:
+        _print({"channels": {}}, True)
+    else:
+        print("渠道有效性汇总（实现中）")
 
 
 def _serve(args, settings: Settings) -> int:
