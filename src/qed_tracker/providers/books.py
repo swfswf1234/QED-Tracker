@@ -276,8 +276,8 @@ def create_book_providers(names: tuple[str, ...], **kwargs) -> list[BookProvider
     retired = sorted(set(names) & RETIRED_PROVIDERS)
     if retired:
         raise ValueError(
-            f"教材来源已在 0.5 移除：{', '.join(retired)}；"
-            "请从 [core].sources 或 QED_TRACKER_SOURCES 中删除"
+            f"教材来源已退役：{', '.join(retired)}；"
+            "请从根 .env 的 QED_SOURCES 中删除，或改用内置来源（internet_archive/open_library/google_books/libgen_li）"
         )
     unknown = sorted(set(names) - PROVIDER_TYPES.keys())
     if unknown:

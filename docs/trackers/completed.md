@@ -22,3 +22,6 @@
 | QED-017 | 2026-08-06 | 人工评估三态与中文优先完成：状态机 backup、backup 端点、前端三态卡片 + 按课程评估视图、evaluate 跳过已评估目标。 | 提交 `5f7c015`（17 文件 316+/23-，含 docs/design/source-discovery.md）；8901 重启后三态冒烟通过；QED-Engine ARCH-004 Phase 0 回执。 |
 | QED-020 | 2026-08-10 | 人工评审优化完成：evaluate 同源去重（file_hint 例外）、qt_resources.review_note（Alembic 0002）、存量重复清理流程。 | 提交 `8693ca2`；全量 `145 passed + 3 skipped` + ruff；定向测试覆盖同源去重/file_hint/review_note；设计 review-round-dedup.md 同步。 |
 | QED-021 | 2026-08-10 | LibgenProvider（发现专用）与人工登记闭环完成：libgen_li 解析、RETIRED_PROVIDERS 移除 libgen、POST /resources/{id}/register、ResourceKind.SUPPLEMENT。 | 提交 `8693ca2`；libgen 10 测试、register 37 测试、前端 46 测试全绿；libgen 候选永不自动写文件。 |
+| QED-018 | 2026-08-12 | 来源探索与评估完成（三轮实测）：archive 中文 CJK 策略、open_library/gutenberg/OTL/libretexts/sciencep/pressbooks 连通性结论、libgen.li 中文全覆盖实测并裁决「发现专用 + 人工下载指引」。 | 评估矩阵与可达链路结论落 docs/design/source-discovery.md；libgen 恢复发现专用（RETIRED_PROVIDERS 移除）；剩余「libgen 人工下载通道」作为持续目标并入路线图。 |
+| QED-023 | 2026-08-12 | 数据库设计确认完成：qt_* 表结构事实源文档升级（表清单/表结构/迁移），根仓库只做指引与规划（2026-08-09 用户裁决）。 | database-schema-ownership.md 转 Accepted/Implemented（含 qt_resources DDL/状态机/迁移管理）；根仓库 REQ-026 回执并入 QED-014 联调。 |
+| QED-025 | 2026-08-12 | 提示文案修复：books.py 退役来源报错改为指向根 .env 的 QED_SOURCES。 | 提交（本轮）；定向测试断言新文案（`退役.*QED_SOURCES`）；全量门禁全绿。 |

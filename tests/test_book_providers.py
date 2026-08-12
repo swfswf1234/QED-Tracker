@@ -188,7 +188,7 @@ def test_internet_archive_chinese_query_uses_phrase_query():
 
 
 def test_retired_provider_has_actionable_migration_error():
-    with pytest.raises(ValueError, match=r"0\.5.*core.*sources"):
+    with pytest.raises(ValueError, match=r"退役.*QED_SOURCES"):
         create_book_providers(("annas_archive",))
     assert "libgen" not in RETIRED_PROVIDERS, "libgen 已恢复为发现专用来源（QED-021）"
 
