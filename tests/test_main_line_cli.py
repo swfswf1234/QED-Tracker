@@ -61,7 +61,7 @@ def test_mainline_list_empty_returns_0(tmp_path, capsys) -> None:
     assert capsys.readouterr().out == ""
 
 
-def _run_mainline_new(tmp_path: Path, monkeypatch, handler) -> dict:
+def _run_mainline_new(tmp_path: Path, monkeypatch, handler, title: str = "数学分析原理") -> int:
     import qed_tracker.cli as cli_module
     from qed_tracker.cli import main as cli_main
 
@@ -76,11 +76,17 @@ def _run_mainline_new(tmp_path: Path, monkeypatch, handler) -> dict:
         )
 
     monkeypatch.setattr(cli_module, "_mainline_advisor", fake_advisor)
-    result = cli_main(
+    return cli_main(
         ["--data-root", str(tmp_path), "mainline", "new",
-         "--course", "01_math_analysis", "--title", "数学分析原理"],
+         "--course", "01_math_analysis", "--title", title],
     )
-    return result
+
+
+def _prefill_response() -> dict:
+    return {
+        "evaluation": {"text": "经典教材", "authority": "高", "set_candidate": "套一"},
+        "advice": {"download": "recommended", "reason": "MIT 指定"},
+    }
 
 
 def test_mainline_new_creates_entry_with_llm_prefill(tmp_path: Path, monkeypatch) -> None:
@@ -102,6 +108,35 @@ def test_mainline_new_creates_entry_with_llm_prefill(tmp_path: Path, monkeypatch
     assert entry.status == "draft"
 
 
+def test_mainline_new_chinese_title_unique_slug(tmp_path: Path, monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(_prefill_response(), ensure_ascii=False)}, "finish_reason": "stop"}]})
+
+    result = _run_mainline_new(tmp_path, monkeypatch, handler, title="数学分析原理")
+    assert result == 0
+    result = _run_mainline_new(tmp_path, monkeypatch, handler, title="数学分析教程")
+    assert result == 0
+    store = EntryStore(tmp_path)
+    entries = store.list_course("01_math_analysis")
+    assert len(entries) == 2
+    assert entries[0].entry_id != entries[1].entry_id
+
+
+def test_mainline_new_duplicate_entry_no_llm_call(tmp_path: Path, monkeypatch) -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(_prefill_response(), ensure_ascii=False)}, "finish_reason": "stop"}]})
+
+    result = _run_mainline_new(tmp_path, monkeypatch, handler)
+    assert result == 0
+    assert len(calls) == 1
+    result = _run_mainline_new(tmp_path, monkeypatch, handler)
+    assert result == 2
+    assert len(calls) == 1
+
+
 def test_mainline_review_transitions_to_reviewed(tmp_path: Path) -> None:
     from qed_tracker.cli import main as cli_main
 
@@ -113,7 +148,7 @@ def test_mainline_review_transitions_to_reviewed(tmp_path: Path) -> None:
     assert entry.status == "reviewed"
 
 
-def test_mainline_reject_with_reason(tmp_path: Path) -> None:
+def test_mainline_reject_persists_reason(tmp_path: Path) -> None:
     from qed_tracker.cli import main as cli_main
 
     store = EntryStore(tmp_path)
@@ -122,3 +157,4 @@ def test_mainline_reject_with_reason(tmp_path: Path) -> None:
     assert result == 0
     entry = store.get("01_math_analysis", "e1")
     assert entry.status == "rejected"
+    assert entry.reject_reason == "非经典"

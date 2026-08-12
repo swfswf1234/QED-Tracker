@@ -86,6 +86,8 @@
 
 **存储**：数据根 `meta/main-line/<course_id>/<entry_id>.json`（独立于资源清单 `meta/resources/`）。
 `entry_id` = 稳定 slug（如 `01-rudin-zh`），人工或工具生成，可重名不同版本。
+`mainline new` 自动生成 `<course_prefix>-<slug>`：slug 取标题 ASCII 部分；纯中文标题
+用标题 UTF-8 哈希前 8 位兜底（确定性、同课程内唯一），重复标题在调用 LLM 前即拒绝。
 
 ### 五要素 schema
 
@@ -123,6 +125,7 @@
     }
   ],
   "status": "draft",
+  "reject_reason": "",
   "updated_at": "2026-08-12T10:00:00+00:00"
 }
 ```

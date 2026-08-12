@@ -461,13 +461,16 @@ def _mainline_advisor(*, api_key: str, model: str, base_url: str, timeout: float
     )
 
 
-def _entry_slug(title: str) -> str:
-    """从标题生成稳定 ASCII slug（课程前缀由调用方拼）。"""
+def _entry_slug(title: str, course_id: str) -> str:
+    """生成稳定条目标识：课程前缀 + 标题 slug；无 ASCII 时用标题哈希短值兜底，保证中文标题唯一。"""
+    import hashlib
     import re
+
+    course_prefix = re.sub(r"[^a-zA-Z0-9]+", "-", course_id).strip("-").lower()
     text = re.sub(r"[^a-zA-Z0-9]+", "-", title).strip("-").lower()
     if not text:
-        text = "entry"
-    return text[:48]
+        text = hashlib.sha256(title.encode("utf-8")).hexdigest()[:8]
+    return f"{course_prefix}-{text[:48]}"
 
 
 def _mainline(args, settings: Settings) -> int:
@@ -496,6 +499,10 @@ def _mainline(args, settings: Settings) -> int:
         except (ValueError, StopIteration):
             _print({"error": f"未知课程：{args.course}"}, True) if args.json else print(f"ERROR: 未知课程：{args.course}", file=sys.stderr)
             return 2
+        entry_id = _entry_slug(args.title, args.course)
+        if store.get(args.course, entry_id) is not None:
+            _print({"error": f"教材条目已存在：{entry_id}"}, True) if args.json else print(f"ERROR: 教材条目已存在：{entry_id}", file=sys.stderr)
+            return 2
         advisor = _mainline_advisor(
             api_key=llm_api_key(),
             model=settings.llm_model,
@@ -515,7 +522,6 @@ def _mainline(args, settings: Settings) -> int:
             return 2
         finally:
             advisor.close()
-        entry_id = _entry_slug(args.title)
         data = {
             "entry_id": entry_id,
             "course_id": args.course,
@@ -533,10 +539,6 @@ def _mainline(args, settings: Settings) -> int:
         return 0
 
     if args.mainline_command == "review":
-        entry = store.get(args.course_id, args.entry_id)
-        if entry is None:
-            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr)
-            return 2
         try:
             updated = store.transition(args.course_id, args.entry_id, MainLineStatus.REVIEWED)
         except ValueError as exc:
@@ -547,7 +549,7 @@ def _mainline(args, settings: Settings) -> int:
 
     if args.mainline_command == "reject":
         try:
-            updated = store.transition(args.course_id, args.entry_id, MainLineStatus.REJECTED)
+            updated = store.transition(args.course_id, args.entry_id, MainLineStatus.REJECTED, reason=args.reason)
         except ValueError as exc:
             _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
             return 2

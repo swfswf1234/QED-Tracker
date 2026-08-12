@@ -47,6 +47,7 @@ class MainLineEntry:
     status: str = "draft"
     resource_id: str = ""
     final_path: str = ""
+    reject_reason: str = ""
     updated_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,6 +64,7 @@ class MainLineEntry:
             "status": self.status,
             "resource_id": self.resource_id,
             "final_path": self.final_path,
+            "reject_reason": self.reject_reason,
             "updated_at": self.updated_at,
         }
 
@@ -103,6 +105,7 @@ class EntryStore:
             status=raw.get("status", "draft"),
             resource_id=raw.get("resource_id", ""),
             final_path=raw.get("final_path", ""),
+            reject_reason=raw.get("reject_reason", ""),
             updated_at=raw.get("updated_at", ""),
         )
 
@@ -136,6 +139,7 @@ class EntryStore:
             status=status,
             resource_id=data.get("resource_id", ""),
             final_path=data.get("final_path", ""),
+            reject_reason=data.get("reject_reason", ""),
             updated_at=data.get("updated_at", now),
         )
         if self._path(course_id, entry_id).exists():
@@ -153,7 +157,7 @@ class EntryStore:
         entries = [self._from_dict(json.loads(path.read_text(encoding="utf-8"))) for path in sorted(directory.glob("*.json"))]
         return entries
 
-    def transition(self, course_id: str, entry_id: str, new_status: MainLineStatus) -> MainLineEntry:
+    def transition(self, course_id: str, entry_id: str, new_status: MainLineStatus, reason: str = "") -> MainLineEntry:
         entry = self._read(course_id, entry_id)
         if entry is None:
             raise ValueError(f"教材条目不存在：{entry_id}")
@@ -172,6 +176,7 @@ class EntryStore:
             status=new_status.value,
             resource_id=entry.resource_id,
             final_path=entry.final_path,
+            reject_reason=reason if new_status == MainLineStatus.REJECTED else entry.reject_reason,
             updated_at=datetime.now(UTC).isoformat(),
         )
         self._write(updated)
@@ -193,6 +198,7 @@ class EntryStore:
             status=entry.status,
             resource_id=changes.get("resource_id", entry.resource_id),
             final_path=changes.get("final_path", entry.final_path),
+            reject_reason=changes.get("reject_reason", entry.reject_reason),
             updated_at=datetime.now(UTC).isoformat(),
         )
         self._write(updated)

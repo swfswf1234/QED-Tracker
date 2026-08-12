@@ -89,6 +89,35 @@ def test_create_preserves_channels_resource_and_path(tmp_path: Path) -> None:
     assert raw["final_path"] == "books/01-rudin-zh.pdf"
 
 
+def test_transition_rejected_persists_reason(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    store.create(_entry())
+    entry = store.transition("01_math_analysis", "01-rudin-zh", MainLineStatus.REJECTED, reason="非经典")
+    assert entry.reject_reason == "非经典"
+    reloaded = store.get("01_math_analysis", "01-rudin-zh")
+    assert reloaded is not None
+    assert reloaded.reject_reason == "非经典"
+
+
+def test_transition_non_rejected_ignores_reason(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    store.create(_entry())
+    entry = store.transition("01_math_analysis", "01-rudin-zh", MainLineStatus.REVIEWED, reason="不应保留")
+    assert entry.reject_reason == ""
+
+
+def test_reject_reason_roundtrip(tmp_path: Path) -> None:
+    data = _entry()
+    data["reject_reason"] = "非经典教材"
+    store = EntryStore(tmp_path)
+    store.create(data)
+    entry = store.get("01_math_analysis", "01-rudin-zh")
+    assert entry is not None
+    assert entry.reject_reason == "非经典教材"
+    raw = json.loads((tmp_path / "meta" / "main-line" / "01_math_analysis" / "01-rudin-zh.json").read_text(encoding="utf-8"))
+    assert raw["reject_reason"] == "非经典教材"
+
+
 def test_rejected_to_draft_retry(tmp_path: Path) -> None:
     store = EntryStore(tmp_path)
     store.create(_entry())
