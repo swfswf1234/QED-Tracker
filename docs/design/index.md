@@ -18,5 +18,7 @@
   清单与结构由本仓库确认并维护。
 - [套标记字段 set_no](catalog-set-field.md)（Draft 待评审，QED-024）：catalog target 增加
   可选 `set_no` 字段支持按「套」展示课程完成判定。
+- [主链路设计](main-line-curriculum.md)（Draft 待评审）：课程体系数据模型（courses/math.json）、
+  教材条目五要素（版本/评价/建议/渠道/状态）、渠道记录与 CLI 流程；与 evaluate 平行。
 
 用户命令查[日常操作](../guides/operations.md)，系统级边界查[系统总览](../architecture/system-overview.md)。跨项目契约（端口、环境变量、dataset 布局）以 QED-Engine 根仓库 `docs/` 为准。

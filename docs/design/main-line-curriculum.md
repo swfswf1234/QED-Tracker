@@ -1,0 +1,220 @@
+# 主链路设计：课程体系、教材条目、渠道记录与 CLI 流程
+
+设计状态：Draft
+实现状态：Not Started
+最后更新：2026-08-12
+关联代码：规划模块 src/qed_tracker/courses/、src/qed_tracker/main_line/（未实现）
+关联测试：—（设计 Draft）
+关联 ADR：—
+需求方：QED-Engine（8903 前端知识链路；根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md) 五阶段对齐）
+执行方：QED-Tracker
+上承架构：[主链路架构](../architecture/main-line.md)（Draft）
+
+> 本文是主链路的 design 层设计（Draft）：课程体系数据模型、教材条目五要素、渠道记录与 CLI
+> 流程。实现前需完成用户评审并拆解任务。
+
+## 1. 课程体系数据模型（courses/math.json）
+
+**绝对路径**：`D:\coding\QED-Engine\QED-Tracker\src\qed_tracker\courses\math.json`
+（与 catalogs/math-qe.json 同级；`pyproject.toml` `package-data` 增加 `courses/*.json`）
+
+### schema
+
+```json
+{
+  "schema_version": 1,
+  "subject": "math",
+  "name": "数学",
+  "description": "本科-研究生基础课程体系（依据《突破朗道位垒》梳理，用户 2026-08-12 审理）",
+  "stages": ["本科基础", "本科进阶", "研究生基础", "QE冲刺"],
+  "courses": [
+    {
+      "course_id": "01_math_analysis",
+      "name": "数学分析",
+      "aliases": ["高等数学（工科称呼）"],
+      "stage": "本科基础",
+      "prerequisites": [],
+      "related_targets": ["01-rudin-zh", "01-rudin-en", "01-demidovich", "01-feidinghui",
+                          "01-fikhtengolts-v1", "01-fikhtengolts-v2", "01-fikhtengolts-v3",
+                          "01-xiehuimin-v1", "01-xiehuimin-v2", "01-chenjixiu-v1",
+                          "01-chenjixiu-v2", "01-chenjixiu-answers", "01-polya"],
+      "note": "三大基础课之一"
+    }
+  ]
+}
+```
+
+### 字段
+
+| 字段 | 内容 |
+| --- | --- |
+| `schema_version` / `subject` / `name` / `description` | 体系元信息；`subject=math` 预留其他学科扩展（计算机等） |
+| `stages` | 学习阶段顺序（本科基础/本科进阶/研究生基础/QE冲刺） |
+| `courses[]` | 课程清单，**数组顺序即学习顺序**（主知识链路 DAG 拓扑序） |
+| `course_id` | 与 `catalogs/math-qe.json` 对齐；新增课程（如概率论与数理统计）用独立 id |
+| `name` / `aliases` | 规范名 + 别名（同一课程不同名称：高等代数/线性代数） |
+| `stage` | 所属阶段（`stages` 之一） |
+| `prerequisites` | 先修课程 id 数组（空 = 基础课；构成主知识链路 DAG） |
+| `related_targets` | 关联 catalog 目标 id（`math-qe.json` 内），供 8903 展示与跳转 |
+| `note` | 备注（选书依据等） |
+
+### 课程清单（14 门，用户 2026-08-12 审理）
+
+| course_id | 名称 | stage | prerequisites | 说明 |
+| --- | --- | --- | --- | --- |
+| 00_probability_stats | 概率论与数理统计 | 本科基础 | — | **新增课程**（无前置基础课）；catalog 无独立课程，related_targets 暂空或关联 11 下本科向 target（待定） |
+| 01_math_analysis | 数学分析 | 本科基础 | — | 三大基础课之一 |
+| 02_linear_algebra | 高等代数 | 本科基础 | — | aliases: 线性代数（catalog 02 显示名） |
+| 03_topology | 点集拓扑 | 本科基础 | 01, 02 | 泛函与流形先修 |
+| 04_real_analysis | 实分析 | 研究生基础 | 03 | 测度论 |
+| 05_complex_analysis | 复分析 | 研究生基础 | 03 | — |
+| 06_functional_analysis | 泛函分析 | 研究生基础 | 04, 05 | — |
+| 07_ode | 常微分方程 | 本科进阶 | 01 | — |
+| 08_pde | 偏微分方程 | 研究生基础 | 01, 07 | — |
+| 09_abstract_algebra | 抽象代数 | 研究生基础 | 02 | — |
+| 10_qe_prep | QE 冲刺 | QE冲刺 | 01,03,04,05,06,07,08,09,11,13 | 汇总冲刺 |
+| 11_probability | 测度论概率 | 研究生基础 | 04 | catalog 11（研究生课，与 00 不同） |
+| 12_stochastic_processes | 随机过程 | 研究生基础 | 11 | — |
+| 13_high_dim_prob | 高维概率论 | 研究生基础 | 11 | — |
+
+### 第一阶段验证范围
+
+只对 **00 概率论与数理统计、01 数学分析、02 高等代数** 三门（无前置基础课）跑通主链路闭环；
+其余课程待用户正式确认后逐门扩展。
+
+## 2. 主链路教材条目（meta/main-line/）
+
+**存储**：数据根 `meta/main-line/<course_id>/<entry_id>.json`（独立于资源清单 `meta/resources/`）。
+`entry_id` = 稳定 slug（如 `01-rudin-zh`），人工或工具生成，可重名不同版本。
+
+### 五要素 schema
+
+```json
+{
+  "schema_version": 1,
+  "entry_id": "01-rudin-zh",
+  "course_id": "01_math_analysis",
+  "title": "数学分析原理",
+  "authors": ["Rudin"],
+  "version": {
+    "edition": "第3版",
+    "publisher": "机械工业出版社",
+    "year": "2003",
+    "language": "zh",
+    "detail": "中译本；译自 Principles of Mathematical Analysis 3rd"
+  },
+  "evaluation": {
+    "source": "llm",
+    "text": "经典中的经典，数学分析中文首选教材之一",
+    "authority": "高",
+    "set_candidate": "套一"
+  },
+  "advice": {
+    "download": "recommended",
+    "reason": "经典教材中文翻译版，与吉米多维奇习题集配对；archive 可自动下载"
+  },
+  "channels": [
+    {
+      "channel": "internet_archive",
+      "attempted_at": "2026-08-12T10:00:00+00:00",
+      "ok": true,
+      "file_sha256": "730d8220...",
+      "note": ""
+    }
+  ],
+  "status": "draft",
+  "updated_at": "2026-08-12T10:00:00+00:00"
+}
+```
+
+### 字段说明
+
+| 要素 | 字段 | 内容 |
+| --- | --- | --- |
+| 课程 | `course_id` | 课程体系 id |
+| 版本 | `version` | 版次/出版社/年份/语言/详细描述（回答「什么版本的什么教材」） |
+| 评价 | `evaluation` | LLM 预填（`source=llm`）+ 人工可修改（`source=manual`）；文本 + 权威性等级 + 套候选 |
+| 建议 | `advice` | 下载建议（recommended / optional / not_recommended）+ 理由 |
+| 渠道 | `channels[]` | 渠道尝试记录（自动生成，见下） |
+| 状态 | `status` | 状态机（见下） |
+
+### 状态机
+
+```
+draft（LLM 预填/人工新建）
+  → reviewed（人工评审通过：版本/评价/建议定稿）
+  → downloading（触发渠道下载）
+  → downloaded（文件已落临时区）
+  → approved（人工验收通过 → 移交根仓库）
+  → rejected（人工否定：候选或文件硬删，记录保留留痕）
+```
+
+- `draft → reviewed`：人工评审（CLI 交互或编辑 JSON）；评价/建议允许人工覆盖 LLM 预填。
+- `reviewed → downloading`：CLI 显式触发下载；尝试各渠道（archive 自动 / libgen 发现专用 →
+  人工下载指引 → register 登记）。
+- `downloading → downloaded`：文件经通用下载器/登记端点落临时区。
+- `downloaded → approved`：人工验收（预览 PDF + 给出绝对路径）；通过后文件与登记**移交根仓库
+  `dataset/qed-tracker/`**（正式落地），条目记录 `final_path`。
+- `downloaded → rejected`：人工验收不通过，按建议重下或换渠道（可回 `draft` 改建议后重试）。
+
+### 与现有资源体系的关系
+
+- 下载文件仍走现有通用下载器（PDF 校验/哈希/原子落盘）+ 资源登记（`meta/resources/` +
+  `qt_resources`），**不新建下载实现**；主链路条目在验收后记录 `resource_id` 引用。
+- `evaluate` 任务不动（渠道评估工具）；主链路条目独立生成。
+
+## 3. 渠道记录（渠道有效性表）
+
+- **运行时数据**：每条目 `channels[]` 自动记录每次渠道尝试（来源、时间、成功/失败、文件哈希、
+  备注）。汇总视图 = 按渠道聚合的成功/失败次数与成功率。
+- **与 source-discovery.md 互补**：文档矩阵 = 人工评估结论（连通性/覆盖/质量）；主链路渠道记录
+  = 实际下载尝试（运行时事实）。两者共同支撑「剔除无效渠道」决策。
+- **人工可标注**：渠道尝试可附人工备注（如「libgen torrent 需人工下载」），供评审。
+
+## 4. CLI 流程（先 CLI 跑通 3 门课验证）
+
+> 以下命令为**规划命令**（设计 Draft，未实现，不进入当前 parser）。实现时新增命令组
+> `courses` 与 `mainline`（风格沿用 argparse + `--json` + 稳定退出码）。
+
+| 规划命令 | 说明 |
+| --- | --- |
+| `qed-tracker courses list` | 列出学科课程体系（--subject math 默认） |
+| `qed-tracker courses show <course_id>` | 查看单门课（含前置/后续/关联 target） |
+| `qed-tracker mainline list --course <course_id>` | 列出课程教材条目（五要素视图） |
+| `qed-tracker mainline new --course <id> --title ...` | 新建条目（LLM 预填评价，需 QWEN_API_KEY） |
+| `qed-tracker mainline review <entry_id>` | 人工评审：确认/修改版本、评价、建议 |
+| `qed-tracker mainline download <entry_id>` | 触发渠道下载（自动源或人工下载指引） |
+| `qed-tracker mainline verify <entry_id>` | 校验已下载文件（PDF 结构/SHA-256/页数） |
+| `qed-tracker mainline approve <entry_id>` | 验收通过 → 移交根仓库 dataset/qed-tracker/ |
+| `qed-tracker mainline reject <entry_id>` | 验收不通过（填原因 → 重下/换渠道） |
+| `qed-tracker mainline channels` | 渠道有效性汇总表（成功率视图） |
+
+**第一阶段验证闭环**（00/01/02 三门）：
+1. `courses list` 确认课程体系加载（14 门，含新增 00）
+2. 每门课 `mainline new` 生成教材条目（LLM 预填评价/建议）
+3. `mainline review` 人工定稿（版本/评价/建议）
+4. `mainline download` 下载（archive 自动或 libgen 人工指引 → register）
+5. `mainline verify` 校验 → `mainline approve` 验收通过，文件移交根仓库
+6. `mainline channels` 查看渠道有效性，剔除无效渠道
+
+## 5. 乱码修复与存量清理（本轮一并执行）
+
+- **修复**：来源解析与任务/资源 JSON 写入链路强制 UTF-8（定位 `_text()` 解码 / `json.dumps`
+  编码处）；新增回归测试守护（写入内容含中文断言可读）。
+- **存量清理**：本仓库数据根为临时中转（用户已确认可删可重建）——乱码任务/资源 JSON 清理或
+  重建；《突破朗道位垒》txt 重编码为 UTF-8（保留原 GBK 到历史基线或直接修复）。
+
+## 6. 待确认（评审后实现）
+
+- `00_probability_stats` 的 `related_targets`：暂空（catalog 无独立课程），或关联 11 下严士健
+  等本科向 target（跨课程关联，需评审）。
+- LLM 预填评价的模型/提示词与「权威性等级」取值（高/中/低？）。
+- `mainline new` 是否复用 catalog target 生成（related_targets 驱动）还是纯自由搜索。
+- 移交根仓库的物理动作：复制 + 登记同步（先复制再删临时，或移动）；qed CLI 触发方式。
+
+## 关联文档
+
+- [主链路架构](../architecture/main-line.md)（Draft）
+- [下载与清单设计](acquisition-and-inventory.md)（下载/登记链路复用）
+- [来源探索与评估](source-discovery.md)（渠道矩阵）
+- 根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md)（五阶段对齐）

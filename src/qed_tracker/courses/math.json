@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "subject": "math",
+  "name": "数学",
+  "description": "本科-研究生基础课程体系（依据《突破朗道位垒》梳理，用户 2026-08-12 审理）：三大无前置基础课（数学分析/高等代数/概率论与数理统计）为起点，后续课程按先修关系递进；QE 冲刺为汇总终点。",
+  "stages": ["本科基础", "本科进阶", "研究生基础", "QE冲刺"],
+  "courses": [
+    {
+      "course_id": "00_probability_stats",
+      "name": "概率论与数理统计",
+      "aliases": [],
+      "stage": "本科基础",
+      "prerequisites": [],
+      "related_targets": [],
+      "note": "三大基础课之一（新增课程，catalog 无独立课程；11 测度论概率为后续研究生课，先修 04 实分析）"
+    },
+    {
+      "course_id": "01_math_analysis",
+      "name": "数学分析",
+      "aliases": ["高等数学（工科称呼）"],
+      "stage": "本科基础",
+      "prerequisites": [],
+      "related_targets": ["01-rudin-zh", "01-rudin-en", "01-demidovich", "01-feidinghui", "01-fikhtengolts-v1", "01-fikhtengolts-v2", "01-fikhtengolts-v3", "01-xiehuimin-v1", "01-xiehuimin-v2", "01-chenjixiu-v1", "01-chenjixiu-v2", "01-chenjixiu-answers", "01-polya"],
+      "note": "三大基础课之一；Rudin/Tao（突破朗道位垒本科支柱 2）"
+    },
+    {
+      "course_id": "02_linear_algebra",
+      "name": "高等代数",
+      "aliases": ["线性代数"],
+      "stage": "本科基础",
+      "prerequisites": [],
+      "related_targets": ["02-axler-zh", "02-axler-en", "02-soviet-exercises", "02-axler-solutions"],
+      "note": "三大基础课之一；catalog 02 显示名=高等代数（同一课程不同名称，用户审理）；Axler（本科支柱 1）"
+    },
+    {
+      "course_id": "03_topology",
+      "name": "点集拓扑",
+      "aliases": [],
+      "stage": "本科基础",
+      "prerequisites": ["01_math_analysis", "02_linear_algebra"],
+      "related_targets": ["03-xiong", "03-munkres"],
+      "note": "泛函分析与流形先修（本科支柱 3：Munkres）"
+    },
+    {
+      "course_id": "04_real_analysis",
+      "name": "实分析",
+      "aliases": ["实变函数"],
+      "stage": "研究生基础",
+      "prerequisites": ["03_topology"],
+      "related_targets": ["04-zhou", "04-stein-en", "04-stein-zh", "04-zhou-exercises"],
+      "note": "测度论/收敛定理/Lp 空间（分析核心，Stein/Folland）"
+    },
+    {
+      "course_id": "05_complex_analysis",
+      "name": "复分析",
+      "aliases": ["复变函数"],
+      "stage": "研究生基础",
+      "prerequisites": ["03_topology"],
+      "related_targets": ["05-ahlfors-zh", "05-ahlfors-en", "05-stein-en", "05-stein-zh", "05-ahlfors-exercises"],
+      "note": "柯西积分/留数/共形映射（分析核心，Stein/Ahlfors）"
+    },
+    {
+      "course_id": "06_functional_analysis",
+      "name": "泛函分析",
+      "aliases": [],
+      "stage": "研究生基础",
+      "prerequisites": ["04_real_analysis", "05_complex_analysis"],
+      "related_targets": ["06-zhang", "06-stein", "06-lax", "06-exercises"],
+      "note": "Hilbert/Banach/谱理论（分析核心，Stein/Lax）"
+    },
+    {
+      "course_id": "07_ode",
+      "name": "常微分方程",
+      "aliases": ["微分方程"],
+      "stage": "本科进阶",
+      "prerequisites": ["01_math_analysis"],
+      "related_targets": ["07-ding", "07-tenenbaum", "07-arnold", "07-exercises"],
+      "note": "存在唯一性/稳定性（Tenenbaum 为极佳基础习题）"
+    },
+    {
+      "course_id": "08_pde",
+      "name": "偏微分方程",
+      "aliases": ["数理方程"],
+      "stage": "研究生基础",
+      "prerequisites": ["01_math_analysis", "07_ode"],
+      "related_targets": ["08-evans-zh", "08-evans-en", "08-exercises"],
+      "note": "特征线/调和函数/热波方程（Evans 为 QE 必备）"
+    },
+    {
+      "course_id": "09_abstract_algebra",
+      "name": "抽象代数",
+      "aliases": ["近世代数"],
+      "stage": "研究生基础",
+      "prerequisites": ["02_linear_algebra"],
+      "related_targets": ["09-feng", "09-dummit", "09-artin", "09-feng-exercises"],
+      "note": "群/环/域/Galois（Dummit 为研究生标准参考）"
+    },
+    {
+      "course_id": "10_qe_prep",
+      "name": "QE 冲刺",
+      "aliases": [],
+      "stage": "QE冲刺",
+      "prerequisites": ["01_math_analysis", "03_topology", "04_real_analysis", "05_complex_analysis", "06_functional_analysis", "07_ode", "08_pde", "09_abstract_algebra", "11_probability", "13_high_dim_prob"],
+      "related_targets": ["10-berkeley-zh", "10-berkeley-en"],
+      "note": "综合冲刺（Berkeley Problems：独立做出 80% 即达顶尖 QE 最低标准）"
+    },
+    {
+      "course_id": "11_probability",
+      "name": "测度论概率",
+      "aliases": ["概率论（研究生课）"],
+      "stage": "研究生基础",
+      "prerequisites": ["04_real_analysis"],
+      "related_targets": ["11-durrett", "11-billingsley", "11-yan", "11-song-solutions", "11-yan-exercises"],
+      "note": "catalog 11（研究生课）；与 00 概率论与数理统计（本科基础）为不同课程"
+    },
+    {
+      "course_id": "12_stochastic_processes",
+      "name": "随机过程",
+      "aliases": [],
+      "stage": "研究生基础",
+      "prerequisites": ["11_probability"],
+      "related_targets": ["12-karatzas-shreve", "12-ross", "12-asmussen"],
+      "note": "Brownian 运动/随机积分"
+    },
+    {
+      "course_id": "13_high_dim_prob",
+      "name": "高维概率论",
+      "aliases": [],
+      "stage": "研究生基础",
+      "prerequisites": ["11_probability"],
+      "related_targets": ["13-vershynin"],
+      "note": "Vershynin"
+    }
+  ]
+}
