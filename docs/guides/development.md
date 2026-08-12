@@ -49,7 +49,6 @@ python -m pip install -e ".[dev]"
 ```powershell
 python -m pytest tests -q
 python -m ruff check src tests
-python -m pip wheel . --no-deps --no-build-isolation --wheel-dir dist
 qed-tracker --version
 qed-tracker --json catalog list
 git diff --check
@@ -57,5 +56,7 @@ git diff --cached --check
 ```
 
 测试覆盖配置优先级、目录唯一性和匹配边界、来源归一化、可靠下载、资源登记与校验、论文推荐与报告重放、CLI 命令树和退出码，以及 Axiom 的上传与可选解析。真实来源和模型在线可用性不作为 CI 门禁；人工检查应记录运行时间、来源、模型、结果和错误摘要。
+
+wheel 打包验证由 GitHub Actions 执行（本地不构建，避免产生 build/、dist/、egg-info 等产物）。
 
 GitHub Actions 在 `release` 和 `main` 上执行相同的 Python 3.12 测试、Ruff、wheel、CLI 冒烟与 diff 门禁；任一分支失败都必须停止后续晋级。
