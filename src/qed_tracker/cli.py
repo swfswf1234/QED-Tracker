@@ -414,7 +414,7 @@ def _courses(args, settings: Settings) -> int:
     try:
         curriculum = _load_curriculum(args.course_id)
     except ValueError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if args.json:
         _print(
@@ -435,18 +435,18 @@ def _courses(args, settings: Settings) -> int:
     return 0
 
 
-def _load_curriculum(course_id: str) -> Curriculum:
+def _load_curriculum(subject_or_course_id: str) -> Curriculum:
     """按学科名或课程 ID 定位课程体系（课程 ID 需在某个学科内解析）。"""
     from qed_tracker.courses import list_courses, load_course
 
     try:
-        return load_course(course_id)
+        return load_course(subject_or_course_id)
     except ValueError:
         for subject in list_courses():
             curriculum = load_course(subject)
-            if any(course.course_id == course_id for course in curriculum.courses):
+            if any(course.course_id == subject_or_course_id for course in curriculum.courses):
                 return curriculum
-        raise ValueError(f"未知学科课程体系：{course_id}") from None
+        raise ValueError(f"未知学科课程体系：{subject_or_course_id}") from None
 
 
 def _mainline(args, settings: Settings) -> int:
