@@ -9,6 +9,8 @@ htmlcov/
 dist/
 build/
 *.egg
+.pytest_cache/
+.ruff_cache/
 
 # IDE
 .idea/
@@ -20,11 +22,6 @@ build/
 # Environment
 .env
 *.env
-
-# Personal config
-qed-tracker.local.toml
-setting.ini
-setting.local.ini
 
 # Temp test files & downloads
 _test_*.py
@@ -43,3 +40,10 @@ data/
 # macOS
 .DS_Store
 Thumbs.db
+
+# local service logs
+tracker8901*.log
+/logs/
+
+# export artifacts
+/exports/

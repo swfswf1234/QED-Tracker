@@ -12,6 +12,12 @@ dependencies = [
   "arxiv>=2.1.0",
   "httpx>=0.28.0",
   "pypdf>=5.0.0",
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "pydantic>=2.9.0",
+  "sqlalchemy>=2.0.0",
+  "alembic>=1.13.0",
+  "pymysql>=1.1.0",
 ]
 
 [project.optional-dependencies]
