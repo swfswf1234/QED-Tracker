@@ -9,17 +9,26 @@ REQUIRED_CURRENT_DOCS = {
     Path("README.md"),
     Path("AGENTS.md"),
     Path("docs/index.md"),
-    Path("docs/roadmap.md"),
+    Path("docs/trackers/roadmap.md"),
     Path("docs/architecture/index.md"),
     Path("docs/architecture/system-overview.md"),
     Path("docs/design/index.md"),
     Path("docs/design/acquisition-and-inventory.md"),
     Path("docs/design/axiom-handoff.md"),
     Path("docs/design/paper-discovery.md"),
+    Path("docs/design/source-discovery.md"),
+    Path("docs/design/review-round-dedup.md"),
+    Path("docs/design/tracker-service.md"),
+    Path("docs/standards/index.md"),
+    Path("docs/standards/documentation.md"),
+    Path("docs/standards/adr-governance.md"),
+    Path("docs/adr/index.md"),
+    Path("docs/adr/0001-tracker-service-architecture.md"),
     Path("docs/guides/index.md"),
     Path("docs/guides/operations.md"),
     Path("docs/guides/development.md"),
     Path("docs/plans/index.md"),
+    Path("docs/plans/2026-08-service-and-book-download.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
     Path("docs/trackers/completed.md"),
@@ -35,6 +44,8 @@ INDEX_DOCS = {
     Path("docs/index.md"),
     Path("docs/architecture/index.md"),
     Path("docs/design/index.md"),
+    Path("docs/standards/index.md"),
+    Path("docs/adr/index.md"),
     Path("docs/guides/index.md"),
     Path("docs/history/index.md"),
 }
@@ -43,6 +54,9 @@ DESIGN_DOCS = {
     Path("docs/design/acquisition-and-inventory.md"),
     Path("docs/design/axiom-handoff.md"),
     Path("docs/design/paper-discovery.md"),
+    Path("docs/design/source-discovery.md"),
+    Path("docs/design/review-round-dedup.md"),
+    Path("docs/design/tracker-service.md"),
 }
 LINK_PATTERN = re.compile(r"\[[^]]+\]\(([^)]+)\)")
 COMMAND_PATTERN = re.compile(r"^\s*(qed-tracker(?:\s+.+)?)\s*$", re.MULTILINE)
@@ -50,7 +64,6 @@ CODE_REFERENCE_PATTERN = re.compile(r"`((?:src|tests)/[^`]+)`")
 LEGACY_PATTERNS = {
     "legacy application path": re.compile(r"(?:^|[`\s(])app/"),
     "legacy documentation path": re.compile(r"docs/(?:discuss|worklogs|knowledge_base)/"),
-    "retired framework": re.compile(r"\b(?:FastAPI|SQLAlchemy)\b"),
     "retired version": re.compile(r"\b0\.2\b"),
 }
 

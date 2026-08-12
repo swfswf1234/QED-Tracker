@@ -12,12 +12,22 @@ from typing import Any
 class ResourceKind(StrEnum):
     BOOK = "book"
     EXERCISE = "exercise"
+    SUPPLEMENT = "supplement"
     PAPER = "paper"
 
 
 class Availability(StrEnum):
     DOWNLOADABLE = "downloadable"
     METADATA_ONLY = "metadata_only"
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadLink:
+    """人工下载方案（metadata_only 来源无直链时给用户的指引，如 torrent/IPFS/ed2k）。"""
+
+    label: str
+    url: str
+    kind: str = "http"  # torrent | ipfs | ed2k | http
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +49,10 @@ class Candidate:
     subjects: tuple[str, ...] = ()
     published_at: str = ""
     updated_at: str = ""
+    file_keywords: tuple[str, ...] = ()
+    """下载时优先匹配的文件名关键词（如「习题答案」；无匹配回退最大 PDF，见 providers/books.py resolve）。"""
+    links: tuple[DownloadLink, ...] = ()
+    """人工下载方案清单（libgen_li 等发现专用来源：torrent/IPFS/ed2k 指引）。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +89,16 @@ class PaperAssessment:
 
 
 @dataclass(frozen=True, slots=True)
+class BookAssessment:
+    """教材候选评估（QED-013）：LLM 只生成可审阅评分，不写资源事实。"""
+
+    provider_id: str
+    score: int  # 0-100
+    verdict: str  # recommend | uncertain
+    summary: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class CatalogTarget:
     id: str
     course_id: str
@@ -86,6 +110,8 @@ class CatalogTarget:
     edition: str = ""
     query: str = ""
     required: bool = True
+    file_hint: str = ""
+    """下载时优先匹配的文件名关键词（archive 同条目多 PDF 时按此选文件，如「习题答案」）。"""
 
 
 @dataclass(frozen=True, slots=True)

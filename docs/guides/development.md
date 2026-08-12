@@ -22,7 +22,7 @@ Python 版本和依赖以 `pyproject.toml` 为唯一事实源：
 python -m pip install -e ".[dev]"
 ```
 
-根目录 `requirements.txt` 只提供兼容安装入口，不得重复维护依赖版本。本地配置使用被忽略的 `qed-tracker.local.toml` 或 `QED_TRACKER_*` 环境变量。
+配置直读根仓库 `.env` 的 `QED_*` 变量，无根 `.env` 时使用内置最小默认值。
 
 ## 分支与提交
 

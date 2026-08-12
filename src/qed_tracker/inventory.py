@@ -16,8 +16,8 @@ from qed_tracker.models import Candidate, CatalogTarget, ResourceKind, ResourceR
 class Inventory:
     def __init__(self, data_root: Path):
         self.data_root = data_root.resolve()
-        self.resources_dir = self.data_root / ".qed-tracker" / "resources"
-        self.transfers_dir = self.data_root / ".qed-tracker" / "transfers" / "axiom"
+        self.resources_dir = self.data_root / "meta" / "resources"
+        self.transfers_dir = self.data_root / "meta" / "transfers" / "axiom"
 
     def _record_path(self, digest: str) -> Path:
         return self.resources_dir / f"{digest}.json"
@@ -132,6 +132,14 @@ class Inventory:
         if not path.exists():
             return None
         return ResourceRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+    def remove(self, resource_id: str) -> bool:
+        """删除本地清单记录（调用方负责文件删除；供验收级拒绝硬删留痕）。"""
+        path = self._record_path(resource_id.removeprefix("sha256:"))
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
 
     def find_by_catalog_target(self, catalog_id: str, target_id: str) -> ResourceRecord | None:
         for record in self.list():

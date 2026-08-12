@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ from qed_tracker.catalog import Catalog
 from qed_tracker.matching import match_candidate
 from qed_tracker.models import Candidate, CatalogTarget, MatchResult, ResourceKind, ResourceRecord
 from qed_tracker.providers.books import BookProvider, ProviderError
+
+logger = logging.getLogger("qed_tracker.books")
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +51,7 @@ class BookService:
                 candidates = provider.search(query, limit)
             except Exception as exc:
                 self.failures.append((provider.name, str(exc)))
+                logger.warning("来源搜索失败：provider=%s query=%r error=%s", provider.name, query, exc)
                 continue
             for candidate in candidates:
                 key = (candidate.provider, candidate.provider_id, candidate.title.casefold())
@@ -56,7 +60,18 @@ class BookService:
                 seen.add(key)
                 results.append(RankedCandidate(candidate, match_candidate(candidate, target) if target else None))
         if target:
-            results.sort(key=lambda item: (not bool(item.match and item.match.strict), -(item.match.score if item.match else 0), item.candidate.title.casefold()))
+            def _rank(item: RankedCandidate) -> tuple:
+                strict = bool(item.match and item.match.strict)
+                score = -(item.match.score if item.match else 0)
+                if target.file_hint:
+                    # QED-019/021 file_hint 语义依赖 archive 条目真实文件名选文件；
+                    # 2026-08-09：libgen 等 metadata_only 命中同样 strict，但 resolve 只有
+                    # links 无 download_url、也无法按 file_hint 选文件（下载必然失败），
+                    # 故 strict 组内优先 internet_archive。
+                    return (not strict, strict and item.candidate.provider != "internet_archive", score, item.candidate.title.casefold())
+                return (not strict, score, item.candidate.title.casefold())
+
+            results.sort(key=_rank)
         else:
             results.sort(key=lambda item: (item.candidate.availability != "downloadable", item.candidate.title.casefold()))
         return results
@@ -76,10 +91,13 @@ class BookService:
         catalog_id: str = "",
     ) -> ResourceRecord:
         resolved = self.resolve(candidate)
-        if catalog_target:
-            destination = self.resources.inventory.data_root / "books" / catalog_id / catalog_target.course_id
+        root = self.resources.inventory.data_root
+        if kind == ResourceKind.EXERCISE:
+            destination = root / "raw" / "exercises" / "inbox"
+        elif catalog_target:
+            destination = root / "raw" / "books" / catalog_id / catalog_target.course_id
         else:
-            destination = self.resources.inventory.data_root / "books" / "inbox"
+            destination = root / "raw" / "books" / "inbox"
         return self.resources.download_candidate(resolved, kind=kind, destination_dir=destination, catalog_target=catalog_target)
 
     def run_catalog(self, catalog: Catalog, *, course: str = "", download: bool = False, limit: int = 8) -> list[CatalogAttempt]:

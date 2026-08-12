@@ -19,7 +19,7 @@ class SelectionStoreError(RuntimeError):
 
 class SelectionStore:
     def __init__(self, data_root: Path):
-        self.root = data_root.resolve() / ".qed-tracker" / "paper-selections"
+        self.root = data_root.resolve() / "meta" / "selections"
 
     @staticmethod
     def new_id(now: datetime | None = None) -> str:

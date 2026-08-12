@@ -1,27 +1,35 @@
 # 日常操作
 
 状态：Current
-最后更新：2026-07-30
+最后更新：2026-08-06
 
 ## 配置
 
-安装开发版本并生成本地配置：
+安装开发版本并查看生效配置：
 
 ```powershell
 python -m pip install -e ".[dev]"
-qed-tracker config init --data-root E:/qed/dataset
 qed-tracker config show
 ```
 
-配置按“命令行、`QED_TRACKER_*` 环境变量、TOML、内置默认值”的顺序覆盖。可以用全局 `--config` 指定 TOML；未指定时依次查找 `QED_TRACKER_CONFIG`、当前目录的 `qed-tracker.local.toml` 和用户配置目录下的 `.qed-tracker/config.toml`。
+配置直读根仓库 `.env` 的 `QED_*` 变量（`QWEN_API_KEY`、`QED_MODEL`、`QED_AXIOM_URL`、
+`QED_TRACKER_PORT`、`QED_DB_*`、`QED_PROXY` 等），本地 TOML 与 `QED_TRACKER_*` 环境变量已退役；无根
+`.env` 时使用内置最小默认值，启动时输出尾注提醒。数据根默认 `dataset/qed-tracker/`，可用
+全局 `--data-root` 覆盖。
 
-TLS 校验默认开启。代理、超时、重试、来源列表、数据根和 Axiom URL 均可在 TOML 中配置；个人配置不得提交到仓库。
+TLS 校验默认开启。代理、超时、重试和 Axiom URL 由 `QED_*` 变量或内置默认值提供；密钥只
+经根 `.env` 提供，不得写入任何本地文件。
 
-百炼论文推荐的模型、端点、超时、调用预算和输出上限位于 `[llm]`。密钥只能通过环境变量提供，不得写入 TOML：
+## 工作台服务
 
 ```powershell
-$env:QED_TRACKER_LLM_API_KEY = "<secret>"
+qed-tracker serve --port 8901
 ```
+
+`serve` 启动工作台 API（默认 `127.0.0.1:8901`，即 `QED_TRACKER_PORT`）。独立启动时自动从
+当前目录向上查找根 `.env` 并注入 `QED_*` 与供应商密钥（不覆盖已显式设置的环境变量）；
+MySQL 迁移失败只警告、服务照常启动（任务会明确报错）。代理访问由 `QED_PROXY=http://127.0.0.1:7890`
+提供，用于绕开对 archive.org、openlibrary.org 等来源的 DNS 污染与限流。
 
 ## 教材与习题集
 
@@ -34,7 +42,7 @@ qed-tracker books fetch-url https://example.org/book.pdf --title "Book Title"
 
 `books get` 汇总启用来源，并将可下载结果排在只有元数据的结果之前。没有 `--pick` 时只预览；显式提供序号才下载，因此终端和脚本行为一致。只有元数据的结果不能下载。
 
-0.5 只内置 Internet Archive、Open Library 和 Google Books。升级后应从本地 TOML 或 `QED_TRACKER_SOURCES` 删除 `libgen`、`annas_archive` 和 `zlib`；工具会对遗留来源返回明确配置错误，不会自动修改个人配置。
+内置来源固定为 Internet Archive、Open Library 和 Google Books 三个开放来源，不再支持配置来源列表。
 
 已知 PDF 地址可使用 `fetch-url`，但仍会经过统一的下载、校验、哈希和登记流程。单个来源失败会输出来源名和错误摘要，并继续处理其他来源。
 
@@ -69,7 +77,7 @@ qed-tracker papers selections download <selection-id> --pick 1 --pick 3
 
 `--profile` 接受内置名称或自定义 JSON 路径；默认是 `llm-engineering`。可重复的 `--category` 只扩展本次允许分类。模型只根据 arXiv 标题、作者、分类、时间和摘要初筛，不能代替人工质量判断。
 
-选择报告位于 `.qed-tracker/paper-selections/`。模型或 arXiv 失败会保存有限错误摘要，但不会写入 PDF；报告下载只能选择达到门槛的固定序号。完整契约见[论文智能发现设计](../design/paper-discovery.md)。
+选择报告位于 `meta/selections/`。模型或 arXiv 失败会保存有限错误摘要，但不会写入 PDF；报告下载只能选择达到门槛的固定序号。完整契约见[论文智能发现设计](../design/paper-discovery.md)。
 
 ## 冻结目录
 
@@ -90,7 +98,7 @@ qed-tracker inventory list --kind paper
 qed-tracker inventory verify
 ```
 
-`scan` 递归登记指定目录中的 PDF；路径必须位于数据根内。省略路径时扫描整个数据根。它不移动或删除文件。`verify` 重新检查文件结构、哈希、大小和页数。`.qed-tracker/resources/` 中的单资源 JSON 是唯一清单事实源。
+`scan` 递归登记指定目录中的 PDF；路径必须位于数据根内。省略路径时扫描整个数据根。它不移动或删除文件。`verify` 重新检查文件结构、哈希、大小和页数。`meta/resources/` 中的单资源 JSON 是唯一清单事实源。
 
 ## 交付给 Axiom-Flow
 

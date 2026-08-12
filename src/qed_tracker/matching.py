@@ -69,4 +69,6 @@ def match_candidate(candidate: Candidate, target: CatalogTarget) -> MatchResult:
             reasons.append("版次不匹配或缺失")
 
     score = 0.55 * title_score + 0.25 * author_score + 0.1 * language_score + 0.1 * edition_score
-    return MatchResult(round(score, 4), not reasons and candidate.availability == "downloadable", tuple(reasons))
+    # strict = 元数据严格匹配 + 来源可交付（可直链下载，或 metadata_only 人工下载方案如 libgen）
+    deliverable = candidate.availability in {"downloadable", "metadata_only"}
+    return MatchResult(round(score, 4), not reasons and deliverable, tuple(reasons))
