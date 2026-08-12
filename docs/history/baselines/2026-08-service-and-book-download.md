@@ -1,15 +1,17 @@
 # 2026-08 QED-Tracker 服务化与教材下载计划（service-and-book-download）
 
-状态：Accepted
+状态：Historical（2026-08-12 归档：计划承接的 QED-008/009/012/013/015/016/017/020/021 已完成
+并写入完成台账；剩余 QED-010/011/014 为独立待办，各自在 todo 中跟踪。本基线保留作跨仓库
+联调审计证据，不提供当前操作依据）
 任务类型：B
 最后更新：2026-08-05
-关联 ADR：[ADR 0001 服务化架构](../adr/0001-tracker-service-architecture.md)；跨仓库决策见
-QED-Engine [ADR 0002](../../../docs/adr/0002-frontend-and-port-centralization.md)
-关联设计：[服务与外部接口设计](../design/tracker-service.md)、[下载与清单](../design/acquisition-and-inventory.md)、
-[arXiv 论文智能发现](../design/paper-discovery.md)；跨项目契约见
-QED-Engine [service-contracts.md](../../../docs/design/service-contracts.md)、
-[dataset-conventions.md](../../../docs/design/dataset-conventions.md)、
-[configuration-and-secrets.md](../../../docs/design/configuration-and-secrets.md)
+关联 ADR：[ADR 0001 服务化架构](../../adr/0001-tracker-service-architecture.md)；跨仓库决策见
+QED-Engine [ADR 0002](../../../../docs/adr/0002-frontend-and-port-centralization.md)
+关联设计：[服务与外部接口设计](../../design/tracker-service.md)、[下载与清单](../../design/acquisition-and-inventory.md)、
+[arXiv 论文智能发现](../../design/paper-discovery.md)；跨项目契约见
+QED-Engine [service-contracts.md](../../../../docs/design/service-contracts.md)、
+[dataset-conventions.md](../../../../docs/design/dataset-conventions.md)、
+[configuration-and-secrets.md](../../../../docs/design/configuration-and-secrets.md)
 关联 Tracker：`docs/trackers/todo.md`（QED-008~016；需求方 QED-Engine REQ-004/REQ-011/REQ-013/REQ-014）
 归档判定：全部门禁与冒烟通过、联调回执完成后 Completed，Retain 归档至 `docs/history/`
 
