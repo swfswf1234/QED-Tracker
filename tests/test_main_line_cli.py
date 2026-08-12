@@ -436,3 +436,108 @@ def test_approve_copies_file_to_root(tmp_path: Path, monkeypatch, pdf_bytes: byt
     entry = store.get("01_math_analysis", "e1")
     assert entry.status == "approved"
     assert entry.final_path == str(target)
+
+
+def test_approve_non_downloaded_status_returns_2(tmp_path: Path, capsys) -> None:
+    from qed_tracker.cli import main as cli_main
+
+    store = EntryStore(tmp_path)
+    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
+    result = cli_main(["--data-root", str(tmp_path), "mainline", "approve", "01_math_analysis", "e1"])
+    assert result == 2
+    assert "只有 downloaded" in capsys.readouterr().err
+
+
+def test_approve_missing_final_path_returns_2(tmp_path: Path, capsys) -> None:
+    from qed_tracker.cli import main as cli_main
+    from qed_tracker.main_line.store import MainLineStatus
+
+    store = EntryStore(tmp_path)
+    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
+    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
+    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADING)
+    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADED)
+    result = cli_main(["--data-root", str(tmp_path), "mainline", "approve", "01_math_analysis", "e1"])
+    assert result == 2
+    assert "final_path" in capsys.readouterr().err
+
+
+def test_approve_missing_source_file_returns_3(tmp_path: Path, capsys) -> None:
+    from qed_tracker.cli import main as cli_main
+    from qed_tracker.main_line.store import MainLineStatus
+
+    store = EntryStore(tmp_path)
+    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
+    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
+    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADING)
+    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADED)
+    store.update("01_math_analysis", "e1", final_path=str(tmp_path / "missing.pdf"))
+    result = cli_main(["--data-root", str(tmp_path), "mainline", "approve", "01_math_analysis", "e1"])
+    assert result == 3
+    assert "文件不存在" in capsys.readouterr().err
+
+
+def test_approve_handoff_failure_returns_2(tmp_path: Path, monkeypatch, capsys, pdf_bytes: bytes) -> None:
+    import shutil
+
+    import qed_tracker.cli as cli_module
+    from qed_tracker.cli import main as cli_main
+    from qed_tracker.main_line.store import MainLineStatus
+
+    source_dir = tmp_path / "dataset" / "qed-tracker" / "raw" / "books" / "math-qe" / "01_math_analysis"
+    source_dir.mkdir(parents=True)
+    source = source_dir / "math-analysis.pdf"
+    source.write_bytes(pdf_bytes)
+    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(tmp_path / "root-dataset"))
+
+    store = EntryStore(tmp_path / "dataset" / "qed-tracker")
+    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
+    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
+    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADING)
+    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADED)
+    store.update("01_math_analysis", "e1", final_path=str(source))
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(shutil, "copy2", boom)
+    result = cli_main(
+        ["--data-root", str(tmp_path / "dataset" / "qed-tracker"), "--json", "mainline", "approve", "01_math_analysis", "e1"]
+    )
+    assert result == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert "移交失败" in payload["error"]
+    entry = store.get("01_math_analysis", "e1")
+    assert entry.status == "downloaded"
+    assert entry.final_path == str(source)
+
+
+def test_approve_existing_target_returns_2(tmp_path: Path, monkeypatch, capsys, pdf_bytes: bytes) -> None:
+    import qed_tracker.cli as cli_module
+    from qed_tracker.cli import main as cli_main
+    from qed_tracker.main_line.store import MainLineStatus
+
+    source_dir = tmp_path / "dataset" / "qed-tracker" / "raw" / "books" / "math-qe" / "01_math_analysis"
+    source_dir.mkdir(parents=True)
+    source = source_dir / "math-analysis.pdf"
+    source.write_bytes(pdf_bytes)
+
+    root_dataset = tmp_path / "root-dataset"
+    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(root_dataset))
+    target = root_dataset / "raw" / "books" / "math-qe" / "01_math_analysis" / "math-analysis.pdf"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"other bytes")
+
+    store = EntryStore(tmp_path / "dataset" / "qed-tracker")
+    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
+    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
+    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADING)
+    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADED)
+    store.update("01_math_analysis", "e1", final_path=str(source))
+
+    result = cli_main(["--data-root", str(tmp_path / "dataset" / "qed-tracker"), "mainline", "approve", "01_math_analysis", "e1"])
+    assert result == 2
+    assert "移交目标已存在" in capsys.readouterr().err
+    assert target.read_bytes() == b"other bytes"
+    entry = store.get("01_math_analysis", "e1")
+    assert entry.status == "downloaded"

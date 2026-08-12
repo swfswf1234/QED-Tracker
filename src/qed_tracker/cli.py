@@ -646,13 +646,20 @@ def _mainline(args, settings: Settings) -> int:
             _print({"error": f"PDF 校验失败：{exc}"}, True) if args.json else print(f"ERROR: PDF 校验失败：{exc}", file=sys.stderr)
             return 2
         # 复制 + 登记同步：目标 = 根仓库 dataset/raw/books/math-qe/<course>/
-        target_dir = Path(_MAINLINE_ROOT_DATASET) / "raw" / "books" / "math-qe" / args.course_id
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / source.name
-        import shutil
-        shutil.copy2(source, target)
-        store.update(args.course_id, args.entry_id, final_path=str(target))
-        store.transition(args.course_id, args.entry_id, MainLineStatus.APPROVED)
+        try:
+            target_dir = Path(_MAINLINE_ROOT_DATASET) / "raw" / "books" / "math-qe" / args.course_id
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / source.name
+            if target.exists() and target.resolve() != source.resolve():
+                _print({"error": f"移交目标已存在：{target}"}, True) if args.json else print(f"ERROR: 移交目标已存在：{target}", file=sys.stderr)
+                return 2
+            import shutil
+            shutil.copy2(source, target)
+            store.update(args.course_id, args.entry_id, final_path=str(target))
+            store.transition(args.course_id, args.entry_id, MainLineStatus.APPROVED)
+        except Exception as exc:  # noqa: BLE001 - CLI 顶层兜底
+            _print({"error": f"移交失败：{exc}"}, True) if args.json else print(f"ERROR: 移交失败：{exc}", file=sys.stderr)
+            return 2
         _print({"final_path": str(target)}, True) if args.json else print(f"验收通过，已移交根仓库：{target}")
         print("提示：课程 related_targets 回填待二次确认评估后人工执行（courses/math.json）", file=sys.stderr)
         return 0
