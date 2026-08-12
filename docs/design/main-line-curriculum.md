@@ -8,7 +8,7 @@
 关联 ADR：—
 需求方：QED-Engine（8903 前端知识链路；根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md) 五阶段对齐）
 执行方：QED-Tracker
-上承架构：[主链路架构](../architecture/main-line.md)（Draft→Accepted 随实现轮，见[实现计划](../plans/2026-08-main-line-curriculum.md)）
+上承架构：[主链路架构](../architecture/main-line.md)（Accepted，QED-026 已实现，见[实现计划](../plans/2026-08-main-line-curriculum.md)）
 
 ## 1. 课程体系数据模型（courses/math.json）
 
@@ -180,23 +180,37 @@ draft（LLM 预填/人工新建）
   = 实际下载尝试（运行时事实）。两者共同支撑「剔除无效渠道」决策。
 - **人工可标注**：渠道尝试可附人工备注（如「libgen torrent 需人工下载」），供评审。
 
-## 4. CLI 流程（先 CLI 跑通 3 门课验证）
+## 4. CLI 流程（已实现，QED-026）
 
-> 以下命令为**规划命令**（设计 Draft，未实现，不进入当前 parser）。实现时新增命令组
-> `courses` 与 `mainline`（风格沿用 argparse + `--json` + 稳定退出码）。
+> 以下命令已实现（提交链 948fa88~ea905b9，全量 221 passed + 3 skipped）。风格沿用
+> argparse + `--json` + 稳定退出码（0 成功 / 2 错误 / 3 无结果）。
 
-| 规划命令 | 说明 |
+| 命令 | 说明 |
 | --- | --- |
-| `qed-tracker courses list` | 列出学科课程体系（--subject math 默认） |
-| `qed-tracker courses show <course_id>` | 查看单门课（含前置/后续/关联 target） |
+| `qed-tracker courses list` | 列出学科课程体系（当前 math） |
+| `qed-tracker courses show <course_id>` | 查看单门课（含前置/关联 target；也接受学科名） |
 | `qed-tracker mainline list --course <course_id>` | 列出课程教材条目（五要素视图） |
 | `qed-tracker mainline new --course <id> --title ...` | 新建条目：**先参照顶尖大学课程设置（MIT/清华等指定教材）→ 再按此探索**；LLM 预填评价，需 QWEN_API_KEY |
-| `qed-tracker mainline review <entry_id>` | 人工评审：确认/修改版本、评价、建议 |
-| `qed-tracker mainline download <entry_id>` | 触发渠道下载（自动源或人工下载指引） |
-| `qed-tracker mainline verify <entry_id>` | 校验已下载文件（PDF 结构/SHA-256/页数） |
-| `qed-tracker mainline approve <entry_id>` | 验收通过 → 移交根仓库 dataset/qed-tracker/ |
-| `qed-tracker mainline reject <entry_id>` | 验收不通过（填原因 → 重下/换渠道） |
+| `qed-tracker mainline review <course_id> <entry_id>` | 人工评审定稿（状态迁移 draft→reviewed） |
+| `qed-tracker mainline download <course_id> <entry_id>` | 触发渠道下载（自动源或人工下载指引） |
+| `qed-tracker mainline verify <course_id> <entry_id>` | 校验已下载文件（PDF 结构/SHA-256/页数） |
+| `qed-tracker mainline approve <course_id> <entry_id>` | 验收通过 → 复制移交根仓库 dataset/qed-tracker/ |
+| `qed-tracker mainline reject <course_id> <entry_id> --reason <原因>` | 验收不通过（原因必填，持久化 reject_reason） |
 | `qed-tracker mainline channels` | 渠道有效性汇总表（成功率视图） |
+
+### 已知限制（2026-08-12 最终评审登记，后续任务）
+
+1. **版本要素 CLI 闭环未实现**：`mainline new` 不落 `version`，`review` 仅状态迁移；
+   `version` 字段当前需手工编辑 JSON。后续：new/review 增加 `--edition/--language/--publisher`
+   参数写入 version。
+2. **人工下载 register 闭环未实现**：无自动候选时提示"register 登记"，但没有 CLI 命令把
+   `downloading → downloaded` 并写入人工登记的 `resource_id/final_path`（libgen 场景）。
+   后续：新增 `mainline register <course_id> <entry_id> --path <相对路径>` 复用登记端点。
+3. **防总评高「对比评级」单本不可执行**：`prefill` 每次只呈现一本书，提示词要求的
+   "同课程多本对比评级、至少一本非高"无法真正实现。后续：批量预填或注入同课程已在册条目
+   供对比。
+4. **`rejected → draft` 重试无 CLI 出口**：状态机支持（有测试），但 CLI 无命令，且重试同标题
+   会被 `new` 重复预检拦截。后续：`review` 支持 rejected 条目回 draft。
 
 **第一阶段验证闭环**（00/01/02 三门）：
 1. `courses list` 确认课程体系加载（14 门，含新增 00）
@@ -236,7 +250,7 @@ draft（LLM 预填/人工新建）
 
 ## 关联文档
 
-- [主链路架构](../architecture/main-line.md)（Draft）
+- [主链路架构](../architecture/main-line.md)（Accepted，QED-026 已实现）
 - [下载与清单设计](acquisition-and-inventory.md)（下载/登记链路复用）
 - [来源探索与评估](source-discovery.md)（渠道矩阵）
 - 根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md)（五阶段对齐）

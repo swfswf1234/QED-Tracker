@@ -11,7 +11,7 @@
 
 > 本文件是主链路的架构文档。设计细节（数据模型、端点契约、评审表单）见
 > [主链路设计](../design/main-line-curriculum.md)；实现按 [实现计划](../plans/2026-08-main-line-curriculum.md)
-> 完成（QED-026，提交链 948fa88~186e9f1，全量 221 passed + 3 skipped）。
+> 完成（QED-026，提交链 948fa88~ea905b9，全量 221 passed + 3 skipped）。
 
 ## 背景与目标
 

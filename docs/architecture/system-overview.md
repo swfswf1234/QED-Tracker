@@ -19,9 +19,10 @@ Axiom-Flow 从 HTTP 导入边界之后负责不可变文档存储、OCR/解析�
 隔离）。
 
 主链路（领域课程梳理 → 教材寻找 → 下载 → 人工验收）是与 evaluate 平行的独立体系，架构见
-[主链路架构](main-line.md)（Draft）：课程体系 `courses/*.json` 经 8901 透出供 8903 知识链路
-消费；主链路教材条目独立存储于 `meta/main-line/`；下载文件先落本仓库临时数据根，人工验收
-通过后正式移交根仓库 `dataset/qed-tracker/`。
+[主链路架构](main-line.md)（Accepted，QED-026 已实现）：课程体系 `courses/*.json` 包内静态
+数据（`/courses` API 透出属后续规划）；主链路教材条目独立存储于 `meta/main-line/`；下载文件
+先落本仓库临时数据根，人工验收通过后复制移交根仓库 `dataset/qed-tracker/`（CLI courses/
+mainline 命令组，见[主链路设计](../design/main-line-curriculum.md)）。
 
 ```mermaid
 flowchart LR
@@ -66,8 +67,8 @@ flowchart LR
 | `selection_store.py` | 原子保存与读取独立论文选择报告。 |
 | `axiom.py` | 执行健康检查、multipart 上传和可选解析请求。 |
 | `cli.py` | 提供唯一用户入口、机器输出、稳定退出码与服务启动命令（`serve`）。 |
-| `courses/`（规划中） | 领域课程体系静态数据（先修关系/学习阶段/名称映射），数学范本 `courses/math.json`；主链路架构见 [main-line.md](main-line.md)。 |
-| `main_line/`（规划中） | 主链路教材条目服务：五要素条目（课程/版本评价建议/渠道记录/验收状态）、课程与渠道查询端点。 |
+| `courses.py` | 学科课程体系加载（包内 JSON：先修关系/学习阶段/名称映射），数学范本 `courses/math.json`；主链路见 [main-line.md](main-line.md)。 |
+| `main_line/` | 主链路教材条目服务：五要素条目（课程/版本评价建议/渠道记录/验收状态）存储与 LLM 预填（`main_line/store.py`、`main_line/advisor.py`）。 |
 
 ## 数据布局
 
@@ -80,9 +81,9 @@ dataset/qed-tracker/
 └── tmp/downloads/<task-id>.part                  # 下载临时区（原子落盘后清理）
 ```
 
-主链路扩展（规划中）：`courses/`（包内，非数据根）提供课程体系；`meta/main-line/` 保存
+主链路扩展（已实现）：`courses.py`（包内，非数据根）提供课程体系；`meta/main-line/` 保存
 主链路教材条目（五要素，独立于资源清单）。主链路下载仍落 `raw/` 临时区，**人工验收通过后
-正式移交根仓库 `dataset/qed-tracker/`**（本仓库数据根为临时中转，可删可重建）。
+复制移交根仓库 `dataset/qed-tracker/`**（本仓库数据根为临时中转，可删可重建）。
 
 PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resources/` 中的单资源 JSON 是本地
 资源事实源；MySQL `qt_resources` 是查询/展示索引，双写一致性由登记服务保证；论文选择和 Axiom

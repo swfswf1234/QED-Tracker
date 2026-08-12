@@ -26,9 +26,11 @@
 
 ## 当前主线
 
-- **主链路设计（本轮，Draft）**：领域课程梳理 → 教材寻找 → 下载 → 人工验收（架构见
-  [main-line.md](main-line.md)）；数学范本先跑 3 门基础课（数学分析、高等代数、概率论与数理统计）
-  验证闭环；待用户评审设计后拆解实现任务。
+- **主链路（QED-026，实现完成待人工验证）**：领域课程梳理 → 教材寻找 → 下载 → 人工验收
+  （设计 Accepted：[main-line-curriculum.md](../design/main-line-curriculum.md)；架构见
+  [main-line.md](main-line.md)）。courses/mainline 全命令已实现（提交链 948fa88~ea905b9，
+  全量 221 passed + 3 skipped）；待人工闭环验证（配置 QWEN_API_KEY → mainline new →
+  review → download → approve 移交根仓库，00/01/02 三门基础课）。
 - **课程收集主线（QED-019）**：01 数学分析闭环——catalog 已定稿（01 共 14 目标，54 总），
   测试全绿；待 8901 重启（迁移 review_note）→ 存量清理 → evaluate 01 → 三态 → 下载/登记 →
   人工验收。
