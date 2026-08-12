@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 from dataclasses import replace
 from typing import Protocol
@@ -39,6 +40,16 @@ class HttpProvider:
 
     def resolve(self, candidate: Candidate) -> Candidate:
         return candidate
+
+
+def _decode_text(content: bytes) -> str:
+    """HTTP 响应体严格按 UTF-8 解码（禁止平台 locale 或响应头 charset 隐式解码）。"""
+    return content.decode("utf-8")
+
+
+def _decode_json(content: bytes) -> dict:
+    """HTTP JSON 响应体严格按 UTF-8 解码后解析（禁止响应头 charset 隐式解码）。"""
+    return json.loads(_decode_text(content))
 
 
 def _archive_candidate(provider: str, item: dict) -> Candidate:
@@ -83,12 +94,12 @@ class InternetArchiveProvider(HttpProvider):
             headers={"User-Agent": "QED-Tracker/0.5"},
         )
         response.raise_for_status()
-        return [_archive_candidate(self.name, item) for item in response.json().get("response", {}).get("docs", [])]
+        return [_archive_candidate(self.name, item) for item in _decode_json(response.content).get("response", {}).get("docs", [])]
 
     def resolve(self, candidate: Candidate) -> Candidate:
         response = self.client.get(f"https://archive.org/metadata/{candidate.provider_id}")
         response.raise_for_status()
-        files = response.json().get("files", [])
+        files = _decode_json(response.content).get("files", [])
         pdfs = [item for item in files if str(item.get("name", "")).lower().endswith(".pdf") and item.get("private") not in (True, "true")]
         if not pdfs:
             raise ProviderError("Internet Archive 条目没有可公开下载的 PDF")
@@ -121,7 +132,7 @@ class OpenLibraryProvider(InternetArchiveProvider):
         )
         response.raise_for_status()
         results = []
-        for item in response.json().get("docs", []):
+        for item in _decode_json(response.content).get("docs", []):
             archive_ids = item.get("ia") or []
             archive_id = archive_ids[0] if archive_ids else ""
             mapped = {
@@ -142,7 +153,7 @@ class GoogleBooksProvider(HttpProvider):
         response = self.client.get("https://www.googleapis.com/books/v1/volumes", params={"q": query, "maxResults": min(limit, 40)})
         response.raise_for_status()
         results = []
-        for item in response.json().get("items", []):
+        for item in _decode_json(response.content).get("items", []):
             info, access = item.get("volumeInfo", {}), item.get("accessInfo", {})
             link = access.get("pdf", {}).get("downloadLink", "")
             identifiers = {entry["type"].lower(): entry["identifier"] for entry in info.get("industryIdentifiers", [])}
@@ -189,7 +200,8 @@ class LibgenLiProvider(HttpProvider):
         )
         response.raise_for_status()
         results: list[Candidate] = []
-        for row in self._ROW_RE.findall(response.text):
+        text = _decode_text(response.content)
+        for row in self._ROW_RE.findall(text):
             cells = [self._cell(td) for td in self._TD_RE.findall(row)]
             match = self._EDITION_RE.search(row)
             if match is None or not cells:
@@ -225,12 +237,13 @@ class LibgenLiProvider(HttpProvider):
             headers={"User-Agent": "Mozilla/5.0 (QED-Tracker/0.6)"},
         )
         response.raise_for_status()
+        text = _decode_text(response.content)
         identifiers = dict(candidate.identifiers)
-        md5_match = re.search(r'md5:([0-9a-f]{32})', response.text, re.I)
+        md5_match = re.search(r'md5:([0-9a-f]{32})', text, re.I)
         if md5_match:
             identifiers["md5"] = md5_match.group(1)
         links: list[DownloadLink] = []
-        for url in self._LINK_RE.findall(response.text):
+        for url in self._LINK_RE.findall(text):
             href = html.unescape(url)
             if href.startswith("magnet:"):
                 links.append(DownloadLink("Torrent", href, "torrent"))
