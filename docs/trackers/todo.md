@@ -1,7 +1,7 @@
 # 待办列表
 
 状态：Current
-最后更新：2026-08-09
+最后更新：2026-08-12
 
 | ID | 类型 | 状态 | 事项 | 成功标准 |
 | --- | --- | --- | --- | --- |
@@ -21,6 +21,8 @@
 | QED-020 | Plan | 已实现 | [跨项目] 人工评审优化（需求方：QED-Engine REQ-018，设计：docs/design/review-round-dedup.md）：① evaluate 同源去重（同 provider_id 只登记第一条，其余 skipped 报告；**2026-08-07 裁决：带 file_hint 的目标例外**——同一条目多 PDF 按文件名关键词分别收录）；② qt_resources 增加 review_note 字段，confirm/backup/reject 三接口接受可选 note 参数落库，/resources 返回该字段（Alembic 0002 迁移）；③ 存量重复清理（陈纪修 exercise candidate cand_c8977caa0b358ebd71dd0bd585341dd3 与教材 confirmed 同源 archive math_analysis_chenjixiu，经 reject 标记 rejected 留痕） | QED-Tracker 门禁全绿（pytest + ruff + wheel + CLI 冒烟）；定向测试：同源去重（同 provider_id 两目标只落一条 + skipped 报告）、file_hint 例外（01-chenjixiu-v1/v2/answers 三目标同 provider_id 全收录带 file_keywords）、review_note 接口（confirm/backup/reject 带 note 落库、/resources 返回）；8901 重启实测陈纪修 candidate 清理完成、无重复；回执根仓库 REQ-018（提交号 + 测试输出）。**进度（2026-08-09）**：代码 + 测试完成（全量 145 passed + 3 skipped + ruff 全过），设计文档 review-round-dedup.md 已同步 file_hint 例外裁决；待 8901 重启后执行存量清理。 |
 | QED-022 | Plan | 待开始 | [跨项目] 治理契约范本对齐：按根仓库 governance-contract.md 范本对齐守护契约测试（契约头六字段/守护面清单/编写约定）（需求方：QED-Engine REQ-023，设计：docs/design/governance-contract-alignment.md） | 守护类测试契约头六字段齐全（DesignRef 指向本仓库标准）；pytest 全绿 + ruff 全过；回执根仓库 REQ-023（提交号 + 测试输出）。 |
 | QED-023 | Plan | 待开始 | [跨项目] 数据库设计确认：qt_* 表结构事实源确认与维护（需求方：QED-Engine REQ-026，2026-08-09 用户裁决根仓库只做指引和规划，设计：docs/design/database-schema-ownership.md） | tracker-service.md + db 迁移声明 qt_* 表清单事实源；确认后回执根仓库 REQ-026，根仓库 database-design.md 收尾为指引与规划。 |
+| QED-025 | Defect | 待开始 | 提示文案过时：`src/qed_tracker/providers/books.py:267` 来源退役报错仍提示「从 [core].sources 或 QED_TRACKER_SOURCES 中删除」，二者均已退役（TOML 与 QED_TRACKER_* 时代产物，见 docs/design/tracker-service.md） | 提示改为指向根 `.env` 来源配置或移除来源名；定向测试覆盖退役来源报错文案；pytest 全绿 + ruff 全过。 |
+| QED-024 | Plan | 待开始 | [跨项目] catalog target 套标记字段：`set_no` 可选字段（"1"~"4" 中文套 / "en" 英文对照套 / 留空无配套），math-qe.json 54 目标补齐，API 透出（需求方：QED-Engine REQ-028，设计：docs/design/catalog-set-field.md） | math-qe.json 全 target 含 set_no（无配套留空）且 01 套归属与既有 note 一致；catalog API 响应含 set_no + schema 契约测试更新；回执根仓库 REQ-028（提交号 + 测试输出），根仓库前端两套判定联调验收 |
 
 `QED-005` 当前阻塞证据：环境中未设置 `QED_TRACKER_LLM_API_KEY` 或 `DASHSCOPE_API_KEY`。恢复条件是设置其中之一并允许受限网络调用；责任位置为本地人工验收。注：QED-009（配置统一，直读根 `.env` `QWEN_API_KEY`）落地后自动满足恢复条件，无需再设 `DASHSCOPE_API_KEY`。
 

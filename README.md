@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/swfswf1234/QED-Tracker/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/swfswf1234/QED-Tracker/actions/workflows/ci.yml)
 
-QED-Tracker 是一个本地优先的 PDF 获取工具，聚焦教材、习题集和 arXiv 论文。它负责搜索、下载、PDF 校验、SHA-256 去重和本地资源清单，也能通过百炼根据研究目标规划 arXiv 检索并生成可审阅的论文推荐；需要进一步处理时，再将 PDF 显式交付给相邻项目 Axiom-Flow。
+QED-Tracker 是一个本地优先的 PDF 获取组件，聚焦教材、习题集和 arXiv 论文。它负责发现、下载、PDF 校验、SHA-256 去重和本地资源清单，也能通过百炼根据研究目标规划 arXiv 检索并生成可审阅的论文推荐；需要进一步处理时，再将 PDF 显式交付给相邻项目 Axiom-Flow。
 
-项目不运行常驻服务，也不维护数据库。包内冻结的 `math-qe` 目录保存 13 门课程的 44 个资源目标，但下载能力不依赖该目录。
+项目以 8901 HTTP 服务（`/api/v1`）运行，写操作（下载、评估、推荐）经后台任务执行并以任务状态轮询暴露；资源事实以单资源 JSON 存于数据根，MySQL `qt_resources` 为查询/展示索引（无密码时降级运行）。包内冻结的 `math-qe` 目录保存 13 门课程的教材与习题集目标，但下载能力不依赖该目录。
 
 ## 安装
 
@@ -22,6 +22,9 @@ qed-tracker --help
 ## 快速使用
 
 ```powershell
+# 启动 8901 API 服务（后台任务 + MySQL 登记索引；写操作经任务轮询）
+qed-tracker serve
+
 # 预览并显式选择教材或习题集
 qed-tracker books get "Munkres Topology"
 qed-tracker books get "Munkres Topology" --pick 1
@@ -49,19 +52,23 @@ qed-tracker axiom push sha256:<digest> --parse --page-start 1 --page-end 20
 
 ```text
 <data-root>/
-├── books/
-│   ├── inbox/
-│   └── math-qe/<course-id>/
-├── papers/<year>/
-└── .qed-tracker/
-    ├── resources/<sha256>.json
-    ├── paper-selections/<selection-id>.json
-    └── transfers/axiom/<sha256>.json
+├── raw/
+│   ├── books/{inbox,math-qe/<course-id>}/   # 教材
+│   ├── exercises/inbox/                     # 习题集
+│   └── papers/<year>/                       # 论文
+├── meta/
+│   ├── resources/<sha256>.json              # 单资源事实源
+│   ├── selections/<selection-id>.json       # 论文选择报告
+│   ├── transfers/axiom/<sha256>.json        # Axiom 传输记录
+│   └── tasks/<task-id>.json                 # 后台任务状态
+└── tmp/downloads/<task-id>.part             # 下载临时区
 ```
 
-`inventory scan` 只登记数据根目录内的 PDF，不移动或删除原文件。下载先写入 `.part`，通过 PDF 结构校验后才原子落盘并登记。
+默认数据根为 `dataset/qed-tracker/`。`inventory scan` 只登记数据根目录内的 PDF，不移动或删除
+原文件。下载先写入 `.part`，通过 PDF 结构校验后才原子落盘并登记（随后双写 MySQL 查询索引）。
 
-内置教材来源固定为 Internet Archive、Open Library 和 Google Books 三个开放来源，不依赖旧配置。
+内置教材来源为 Internet Archive、Open Library、Google Books 与 libgen_li（libgen_li 仅发现与
+提供人工下载方案，不自动写文件）；不依赖旧配置。
 
 ## 与 Axiom-Flow 的边界
 

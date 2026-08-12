@@ -22,7 +22,7 @@ QED-Tracker 是 QED 的前置 PDF 获取组件。它负责发现、下载、校�
 | arXiv 搜索与下载 | `src/qed_tracker/providers/arxiv.py` | `docs/design/acquisition-and-inventory.md` | `tests/test_arxiv_provider.py` |
 | arXiv 智能发现与评分 | `src/qed_tracker/application/papers.py`、`src/qed_tracker/providers/bailian.py` | `docs/design/paper-discovery.md` | `tests/test_paper_application.py`、`tests/test_bailian_advisor.py` |
 | 下载、PDF 校验、清单 | `src/qed_tracker/downloader.py`、`src/qed_tracker/inventory.py`、`src/qed_tracker/application/resources.py` | `docs/design/acquisition-and-inventory.md` | `tests/test_download_inventory.py`、`tests/test_services.py` |
-| 服务与 API（8901、后台任务） | src/qed_tracker/api/（服务化轮新增，尚未实现） | `docs/design/tracker-service.md`、`docs/adr/0001-tracker-service-architecture.md` | `tests/test_cli_architecture.py`（服务化轮补充 API/客户端/冒烟测试） |
+| 服务与 API（8901、后台任务、MySQL 登记索引） | `src/qed_tracker/api/main.py`、`src/qed_tracker/db/`（models/repository/registry/migrations） | `docs/design/tracker-service.md`、`docs/adr/0001-tracker-service-architecture.md` | `tests/test_api.py`、`tests/test_resources_api.py`、`tests/test_db_models.py`、`tests/test_cli_architecture.py` |
 | 配置、目录和 CLI | `src/qed_tracker/config.py`、`src/qed_tracker/catalog.py`、`src/qed_tracker/cli.py` | `docs/architecture/system-overview.md` | `tests/test_config_catalog_matching.py`、`tests/test_cli_architecture.py` |
 | Axiom-Flow 交付 | `src/qed_tracker/axiom.py`、`src/qed_tracker/cli.py` | `docs/design/axiom-handoff.md` | `tests/test_axiom.py` |
 | 文档与仓库结构 | `README.md`、`docs/` | `docs/index.md` | `tests/test_documentation.py` |
