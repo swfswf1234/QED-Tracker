@@ -1,17 +1,14 @@
 # 主链路设计：课程体系、教材条目、渠道记录与 CLI 流程
 
-设计状态：Draft
-实现状态：Not Started
+设计状态：Accepted
+实现状态：Implemented
 最后更新：2026-08-12
-关联代码：规划模块 src/qed_tracker/courses/、src/qed_tracker/main_line/（未实现）
-关联测试：—（设计 Draft）
+关联代码：`src/qed_tracker/courses.py`、`src/qed_tracker/courses/math.json`、`src/qed_tracker/main_line/`（store.py/advisor.py）、`src/qed_tracker/cli.py`（courses/mainline 命令组）、`src/qed_tracker/providers/books.py`（UTF-8 解码修复）
+关联测试：`tests/test_courses.py`、`tests/test_main_line_store.py`、`tests/test_main_line_advisor.py`、`tests/test_main_line_cli.py`、`tests/test_encoding_regression.py`
 关联 ADR：—
 需求方：QED-Engine（8903 前端知识链路；根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md) 五阶段对齐）
 执行方：QED-Tracker
-上承架构：[主链路架构](../architecture/main-line.md)（Draft）
-
-> 本文是主链路的 design 层设计（Draft）：课程体系数据模型、教材条目五要素、渠道记录与 CLI
-> 流程。实现前需完成用户评审并拆解任务。
+上承架构：[主链路架构](../architecture/main-line.md)（Draft→Accepted 随实现轮，见[实现计划](../plans/2026-08-main-line-curriculum.md)）
 
 ## 1. 课程体系数据模型（courses/math.json）
 

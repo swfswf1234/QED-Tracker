@@ -36,7 +36,11 @@
 | `src/qed_tracker/paper_profiles/`（llm-engineering.json、math-research.json） | 内置论文目标档案 | Current | `docs/design/paper-discovery.md` | `tests/test_profiles_and_selections.py` | 包数据。 |
 | `src/qed_tracker/selection_store.py` | 论文选择报告原子存储（`meta/selections/`） | Current | `docs/design/paper-discovery.md` | `tests/test_profiles_and_selections.py`、`tests/test_paper_selection_cli.py` | sel- 前缀 ID 校验。 |
 | `src/qed_tracker/axiom.py` | Axiom-Flow HTTP 客户端（健康检查/上传/可选解析） | Current | `docs/design/tracker-service.md`（外部接口：Axiom-Flow 消费面） | `tests/test_axiom.py` | 默认不解析，不自动重试。 |
-| `src/qed_tracker/cli.py` | 唯一用户入口：命令树、机器输出、稳定退出码、serve | Current | `docs/design/tracker-service.md` | `tests/test_cli_architecture.py` | 闭环命令属 QED-010 未实现（见 tracker-service.md）。 |
+| `src/qed_tracker/cli.py` | 唯一用户入口：命令树、机器输出、稳定退出码、serve | Current | `docs/design/tracker-service.md`、`docs/design/main-line-curriculum.md`（courses/mainline 命令组） | `tests/test_cli_architecture.py`、`tests/test_main_line_cli.py` | 闭环命令属 QED-010 未实现（见 tracker-service.md）。 |
+| `src/qed_tracker/courses.py` | 学科课程体系加载（包内 JSON，数学范本 14 门，含先修关系 DAG） | Current | `docs/design/main-line-curriculum.md` | `tests/test_courses.py` | 主链路课程梳理；与 catalogs/ 同模式。 |
+| `src/qed_tracker/courses/math.json` | 课程体系数据（14 门课程，三大无前置基础课） | Current | `docs/design/main-line-curriculum.md` | `tests/test_courses.py` | related_targets 只关联已二次确认评估目标（当前全空）。 |
+| `src/qed_tracker/main_line/store.py` | 主链路教材条目存储（meta/main-line/ 五要素 + 状态机 + 渠道记录） | Current | `docs/design/main-line-curriculum.md` | `tests/test_main_line_store.py`、`tests/test_main_line_cli.py` | 与 evaluate/资源体系解耦；reject_reason 留痕。 |
+| `src/qed_tracker/main_line/advisor.py` | 主链路 LLM 预填（参照顶尖大学 + 防总评高校准，可审阅） | Current | `docs/design/main-line-curriculum.md` | `tests/test_main_line_advisor.py` | 模型不写资源事实。 |
 | `src/qed_tracker/database.py` | SQLAlchemy 引擎与会话工厂（按 `QED_DB_*`） | Current | `docs/design/tracker-service.md` | `tests/test_db_models.py` | 服务启动与冒烟复用。 |
 | `src/qed_tracker/db/models.py` | qt_resources ORM 与状态枚举 | Current | `docs/design/tracker-service.md` | `tests/test_db_models.py` | 10 状态 + review_note 列。 |
 | `src/qed_tracker/db/repository.py` | 状态机仓库与查询索引数据访问 | Current | `docs/design/tracker-service.md`、`docs/design/review-round-dedup.md` | `tests/test_resources_api.py`、`tests/test_db_registry.py` | confirm/backup/reject 带 note。 |
@@ -66,6 +70,11 @@
 | `tests/test_db_registry.py` | 双写登记与重放 | `docs/design/tracker-service.md` |
 | `tests/test_db_mysql_smoke.py` | 真实 MySQL 冒烟（QED_DB_SMOKE=1） | `docs/design/tracker-service.md` |
 | `tests/test_data_layout.py` | 数据布局与路径解析 | `docs/design/tracker-service.md` |
+| `tests/test_courses.py` | 课程体系加载（14 门/阶段/前置/别名） | `docs/design/main-line-curriculum.md` |
+| `tests/test_main_line_store.py` | 主链路条目存储/状态机/渠道记录 | `docs/design/main-line-curriculum.md` |
+| `tests/test_main_line_advisor.py` | 主链路 LLM 预填契约（MockTransport） | `docs/design/main-line-curriculum.md` |
+| `tests/test_main_line_cli.py` | courses/mainline CLI 命令与闭环 | `docs/design/main-line-curriculum.md` |
+| `tests/test_encoding_regression.py` | 来源响应强制 UTF-8 解码回归 | `docs/design/main-line-curriculum.md` |
 | `tests/test_documentation.py` | 文档守护（入口/元数据/链接/CLI 一致性/tracker ID） | `docs/standards/documentation.md` |
 
 变更规则：模块职责或 DesignRef 变化时同步本表、设计文档与关联测试；`__init__.py` 等豁免文件

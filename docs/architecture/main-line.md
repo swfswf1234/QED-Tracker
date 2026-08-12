@@ -1,16 +1,17 @@
 # 主链路架构：课程梳理 → 教材寻找 → 下载 → 验收
 
-设计状态：Draft
-实现状态：Not Started
+设计状态：Accepted
+实现状态：Implemented
 最后更新：2026-08-12
-关联代码：规划模块 src/qed_tracker/courses/、src/qed_tracker/main_line/（未实现，Draft 阶段不落反引号引用）
-关联测试：—（设计 Draft，未实现）
+关联代码：src/qed_tracker/courses.py、src/qed_tracker/main_line/（store.py/advisor.py）、src/qed_tracker/cli.py（courses/mainline 命令组）
+关联测试：tests/test_courses.py、tests/test_main_line_store.py、tests/test_main_line_advisor.py、tests/test_main_line_cli.py、tests/test_encoding_regression.py
 关联 ADR：—
 需求方：QED-Engine（8903 前端知识链路消费；根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md) 五阶段流程对齐）
 执行方：QED-Tracker
 
-> 本文件是主链路的架构文档（Draft，待用户评审）。设计细节（数据模型、端点契约、评审表单）
-> 以本文件为准演进，实现前需完成设计评审并拆解为任务。
+> 本文件是主链路的架构文档。设计细节（数据模型、端点契约、评审表单）见
+> [主链路设计](../design/main-line-curriculum.md)；实现按 [实现计划](../plans/2026-08-main-line-curriculum.md)
+> 完成（QED-026，提交链 948fa88~186e9f1，全量 221 passed + 3 skipped）。
 
 ## 背景与目标
 

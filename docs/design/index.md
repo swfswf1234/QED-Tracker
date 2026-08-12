@@ -18,8 +18,9 @@
 
 - [下载与清单](acquisition-and-inventory.md)：来源协议、选择规则、可靠下载、资源 schema 和失败语义。
 - [arXiv 论文智能发现](paper-discovery.md)：目标档案、百炼检索规划、评分、选择报告和显式下载。
-- [主链路设计](main-line-curriculum.md)（Draft 待评审）：课程体系数据模型（courses/math.json）、
-  教材条目五要素（版本/评价/建议/渠道/状态）、渠道记录与 CLI 流程；与 evaluate 平行。
+- [主链路设计](main-line-curriculum.md)（Accepted，QED-026 实现完成）：课程体系数据模型
+  （courses/math.json）、教材条目五要素（版本/评价/建议/渠道/状态）、渠道记录与 CLI 流程；
+  与 evaluate 平行。
 
 ## 评审与来源
 
