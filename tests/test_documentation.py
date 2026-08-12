@@ -24,7 +24,6 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/design/tracker-service.md"),
     Path("docs/design/database-schema-ownership.md"),
     Path("docs/design/governance-contract-alignment.md"),
-    Path("docs/design/catalog-set-field.md"),
     Path("docs/design/main-line-curriculum.md"),
     Path("docs/standards/index.md"),
     Path("docs/standards/documentation.md"),
@@ -46,6 +45,7 @@ REQUIRED_HISTORY_DOCS = {
     Path("docs/trackers/index.md"),
     Path("docs/history/baselines/pre-acquisition-cli.md"),
     Path("docs/history/baselines/math-qe-2026-05.md"),
+    Path("docs/history/baselines/catalog-set-field.md"),
 }
 INDEX_DOCS = {
     Path("docs/index.md"),
@@ -67,7 +67,6 @@ DESIGN_DOCS = {
     Path("docs/design/tracker-service.md"),
     Path("docs/design/database-schema-ownership.md"),
     Path("docs/design/governance-contract-alignment.md"),
-    Path("docs/design/catalog-set-field.md"),
     Path("docs/design/main-line-curriculum.md"),
 }
 LINK_PATTERN = re.compile(r"\[[^]]+\]\(([^)]+)\)")

@@ -1,12 +1,16 @@
-# Axiom-Flow 交接设计
+# 与 Axiom-Flow 的交互规范
 
 设计状态：Accepted
 实现状态：Implemented
 最后更新：2026-08-12
-外部契约：Axiom-Flow 0.3 HTTP API
+外部契约：Axiom-Flow 0.3 HTTP API；QED-Engine 跨项目契约（端口 8902、dataset 布局）以根仓库
+`docs/design/service-contracts.md` 与 [dataset-conventions.md](../../../docs/design/dataset-conventions.md) 为准
 关联代码：`src/qed_tracker/axiom.py`、`src/qed_tracker/cli.py`
 关联测试：`tests/test_axiom.py`、`tests/test_cli_architecture.py`
 关联 ADR：—
+
+> 本文是 QED-Tracker 与 Axiom-Flow、QED-Engine 之间的**跨项目交互规范**：定义交接接口、数据
+> 边界与失败语义。跨项目事实（端口、dataset、qed 库）只链接根仓库契约，本文件不复制。
 
 ## 边界
 

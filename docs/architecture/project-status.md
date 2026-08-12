@@ -34,7 +34,8 @@
   人工验收。
 - **QED-014 全链路联调**：真实 8901 全链路（评估→确认→下载→验收/删除→登记→qed CLI/8903
   前端展示）待开始；QED-010（CLI 转 HTTP 客户端）与 QED-011（重复下载验证）随其后。
-- **QED-024 套标记字段**：catalog-set-field 设计 Draft 待用户评审，评审通过后实现
+- **QED-024 套标记字段**：属 Plan 类别（方案确定后再进设计文档），既有 Draft 已归档至
+  docs/history/baselines/catalog-set-field.md，待方案确定后实现
   （`set_no` 字段 + math-qe.json 54 目标补齐 + API 透出，回执根仓库 REQ-028）。
 - **治理对齐（QED-022/023）**：守护契约范本对齐与 qt_* 表结构事实源确认，设计已建、待执行。
 

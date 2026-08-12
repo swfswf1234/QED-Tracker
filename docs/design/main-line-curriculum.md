@@ -55,14 +55,14 @@
 | `name` / `aliases` | 规范名 + 别名（同一课程不同名称：高等代数/线性代数） |
 | `stage` | 所属阶段（`stages` 之一） |
 | `prerequisites` | 先修课程 id 数组（空 = 基础课；构成主知识链路 DAG） |
-| `related_targets` | 关联 catalog 目标 id（`math-qe.json` 内），供 8903 展示与跳转 |
+| `related_targets` | 关联 catalog 目标 id（`math-qe.json` 内）。**只关联已通过二次确认评估（人工验收 approved）的课程目标**；当前全部为空，随主链路验收逐步回填 |
 | `note` | 备注（选书依据等） |
 
 ### 课程清单（14 门，用户 2026-08-12 审理）
 
 | course_id | 名称 | stage | prerequisites | 说明 |
 | --- | --- | --- | --- | --- |
-| 00_probability_stats | 概率论与数理统计 | 本科基础 | — | **新增课程**（无前置基础课）；catalog 无独立课程，related_targets 暂空或关联 11 下本科向 target（待定） |
+| 00_probability_stats | 概率论与数理统计 | 本科基础 | — | **新增课程**（无前置基础课）；catalog 无独立课程，related_targets 暂空 |
 | 01_math_analysis | 数学分析 | 本科基础 | — | 三大基础课之一 |
 | 02_linear_algebra | 高等代数 | 本科基础 | — | aliases: 线性代数（catalog 02 显示名） |
 | 03_topology | 点集拓扑 | 本科基础 | 01, 02 | 泛函与流形先修 |
@@ -133,7 +133,7 @@
 | --- | --- | --- |
 | 课程 | `course_id` | 课程体系 id |
 | 版本 | `version` | 版次/出版社/年份/语言/详细描述（回答「什么版本的什么教材」） |
-| 评价 | `evaluation` | LLM 预填（`source=llm`）+ 人工可修改（`source=manual`）；文本 + 权威性等级 + 套候选 |
+| 评价 | `evaluation` | LLM 预填（`source=llm`）+ 人工可修改（`source=manual`）；文本 + 权威性等级（高/中/低）+ 套候选 |
 | 建议 | `advice` | 下载建议（recommended / optional / not_recommended）+ 理由 |
 | 渠道 | `channels[]` | 渠道尝试记录（自动生成，见下） |
 | 状态 | `status` | 状态机（见下） |
@@ -153,9 +153,18 @@ draft（LLM 预填/人工新建）
 - `reviewed → downloading`：CLI 显式触发下载；尝试各渠道（archive 自动 / libgen 发现专用 →
   人工下载指引 → register 登记）。
 - `downloading → downloaded`：文件经通用下载器/登记端点落临时区。
-- `downloaded → approved`：人工验收（预览 PDF + 给出绝对路径）；通过后文件与登记**移交根仓库
-  `dataset/qed-tracker/`**（正式落地），条目记录 `final_path`。
+- `downloaded → approved`：人工验收（预览 PDF + 给出绝对路径）；通过后**复制**文件与登记同步
+  **移交根仓库 `dataset/qed-tracker/`**（正式落地，临时区副本保留留痕），条目记录 `final_path`；
+  同时课程 `related_targets` 回填该目标（二次确认评估完成）。
 - `downloaded → rejected`：人工验收不通过，按建议重下或换渠道（可回 `draft` 改建议后重试）。
+
+### LLM 评价校准（防「总评高」）
+
+- 权威性等级取值 **高 / 中 / 低**；LLM 预填时强制要求**给出区分度依据**：引用具体证据
+  （如「XX 大学 QE 指定教材」「数学社区公认经典」「知名度低/版本小众」），不能仅凭书名判断。
+- 提示词要求对同一课程多本候选**相互对比评级**（至少一高必有一中/低，避免全部评高）；
+  人工评审时如发现 LLM 输出失真可覆盖（`source=manual`）。
+- 评价文本与权威性等级**仅供人工参考**，不作为自动下载依据（下载仍需显式 `download` 触发）。
 
 ### 与现有资源体系的关系
 
@@ -181,7 +190,7 @@ draft（LLM 预填/人工新建）
 | `qed-tracker courses list` | 列出学科课程体系（--subject math 默认） |
 | `qed-tracker courses show <course_id>` | 查看单门课（含前置/后续/关联 target） |
 | `qed-tracker mainline list --course <course_id>` | 列出课程教材条目（五要素视图） |
-| `qed-tracker mainline new --course <id> --title ...` | 新建条目（LLM 预填评价，需 QWEN_API_KEY） |
+| `qed-tracker mainline new --course <id> --title ...` | 新建条目：**先参照顶尖大学课程设置（MIT/清华等指定教材）→ 再按此探索**；LLM 预填评价，需 QWEN_API_KEY |
 | `qed-tracker mainline review <entry_id>` | 人工评审：确认/修改版本、评价、建议 |
 | `qed-tracker mainline download <entry_id>` | 触发渠道下载（自动源或人工下载指引） |
 | `qed-tracker mainline verify <entry_id>` | 校验已下载文件（PDF 结构/SHA-256/页数） |
@@ -191,11 +200,17 @@ draft（LLM 预填/人工新建）
 
 **第一阶段验证闭环**（00/01/02 三门）：
 1. `courses list` 确认课程体系加载（14 门，含新增 00）
-2. 每门课 `mainline new` 生成教材条目（LLM 预填评价/建议）
+2. 每门课 `mainline new` 生成教材条目——**先参照顶尖大学（MIT/清华等）该课程指定教材设置，
+   再按此探索候选**；LLM 预填评价/建议（防「总评高」校准）
 3. `mainline review` 人工定稿（版本/评价/建议）
 4. `mainline download` 下载（archive 自动或 libgen 人工指引 → register）
-5. `mainline verify` 校验 → `mainline approve` 验收通过，文件移交根仓库
+5. `mainline verify` 校验 → `mainline approve` 验收通过，**复制 + 登记同步**移交根仓库
 6. `mainline channels` 查看渠道有效性，剔除无效渠道
+
+**mainline new 的探索依据（2026-08-12 用户确认）**：
+- 第一步：收集顶尖大学（MIT、清华等）该课程的官方指定教材/课程大纲（LLM 检索辅助）；
+- 第二步：以该参照为锚点探索可下载候选（渠道搜索 + 候选比对）；
+- 第三步：LLM 预填版本/评价/建议，人工评审定稿。
 
 ## 5. 乱码修复与存量清理（本轮一并执行）
 
@@ -204,13 +219,20 @@ draft（LLM 预填/人工新建）
 - **存量清理**：本仓库数据根为临时中转（用户已确认可删可重建）——乱码任务/资源 JSON 清理或
   重建；《突破朗道位垒》txt 重编码为 UTF-8（保留原 GBK 到历史基线或直接修复）。
 
-## 6. 待确认（评审后实现）
+## 6. 已确认决策（2026-08-12 用户审理）
 
-- `00_probability_stats` 的 `related_targets`：暂空（catalog 无独立课程），或关联 11 下严士健
-  等本科向 target（跨课程关联，需评审）。
-- LLM 预填评价的模型/提示词与「权威性等级」取值（高/中/低？）。
-- `mainline new` 是否复用 catalog target 生成（related_targets 驱动）还是纯自由搜索。
-- 移交根仓库的物理动作：复制 + 登记同步（先复制再删临时，或移动）；qed CLI 触发方式。
+- `00_probability_stats` 的 `related_targets`：**暂空**（catalog 无独立课程）。
+- `related_targets` 通用规则：**只关联已通过二次确认评估（人工验收 approved）的课程目标**，
+  当前全部为空，随主链路验收逐步回填。
+- LLM 权威性等级：**高/中/低**，并强制「防总评高」校准（对比评级 + 证据依据，见上）。
+- `mainline new` 生成方式：**先参照顶尖大学（MIT/清华等）课程设置 → 再按此探索**。
+- 移交根仓库动作：**复制 + 登记同步**（临时区副本保留留痕）。
+
+## 7. 待确认（评审后实现）
+
+- LLM 预填的模型与提示词实现细节（`QWEN_API_KEY` 复用百炼）。
+- 顶尖大学参照的来源与存储方式（LLM 检索即时生成 vs 预置课程大纲数据）。
+- `mainline new` 的候选来源范围（复用现有 providers / 新增主链路专属渠道）。
 
 ## 关联文档
 

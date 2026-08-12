@@ -27,7 +27,7 @@
 | `src/qed_tracker/providers/book_advisor.py` | 百炼教材评估顾问：书目结构化补全与候选评分 | Current | `docs/design/tracker-service.md`（QED-013） | `tests/test_catalog_evaluate.py`（评估链路用假顾问） | 输出可审阅评估，不写事实。 |
 | `src/qed_tracker/config.py` | 统一配置：直读根 `.env` `QED_*`，默认值 + 降级尾注 | Current | `docs/design/tracker-service.md` | `tests/test_config_catalog_matching.py` | TOML 与旧 `QED_TRACKER_*` 退役。 |
 | `src/qed_tracker/catalog.py` | 冻结目录读取（包内 JSON） | Current | `docs/design/acquisition-and-inventory.md` | `tests/test_config_catalog_matching.py` | `math-qe` 永久 frozen。 |
-| `src/qed_tracker/catalogs/math-qe.json` | 冻结目录数据（13 门课程 54 目标） | Current | `docs/design/acquisition-and-inventory.md`、`docs/design/catalog-set-field.md`（set_no 待实现） | `tests/test_config_catalog_matching.py` | 01 数学分析套归属按 note 文本（QED-024 待结构化）。 |
+| `src/qed_tracker/catalogs/math-qe.json` | 冻结目录数据（13 门课程 54 目标） | Current | `docs/design/acquisition-and-inventory.md` | `tests/test_config_catalog_matching.py` | 01 数学分析套归属按 note 文本（QED-024 set_no 属 Plan，方案确定后再进设计）。 |
 | `src/qed_tracker/matching.py` | 冻结目录严格匹配（标题/作者/语言/版次） | Current | `docs/design/acquisition-and-inventory.md` | `tests/test_config_catalog_matching.py` | 不确定候选不自动落盘。 |
 | `src/qed_tracker/downloader.py` | 通用下载器：重试、PDF 校验、SHA-256、原子落盘 | Current | `docs/design/acquisition-and-inventory.md` | `tests/test_download_inventory.py` | `.part` 校验后原子替换。 |
 | `src/qed_tracker/inventory.py` | 资源清单：单资源 JSON 事实源、登记/verify/scan/传输记录 | Current | `docs/design/acquisition-and-inventory.md` | `tests/test_download_inventory.py` | 路径限定数据根内。 |

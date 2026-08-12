@@ -1,6 +1,7 @@
 # 套标记字段设计：catalog target 增加 set_no（QED-024，承接根仓库 REQ-028）
 
-设计状态：Draft（待用户评审）
+设计状态：Historical（2026-08-12 归档：用户裁决 set_no 属 Plan 类别，确定方案后再进设计文档；
+本文件保留作未来重写的基线参考）
 实现状态：Not Started
 最后更新：2026-08-12
 关联代码：`src/qed_tracker/catalogs/math-qe.json`、`src/qed_tracker/models.py`（CatalogTarget）、
