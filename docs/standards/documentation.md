@@ -1,7 +1,7 @@
 # 文档规范
 
 状态：Current
-最后更新：2026-08-04
+最后更新：2026-08-12
 治理对象：文档分类、写作、元数据、索引、命名、归档与删除
 依据：QED-Engine 根仓库 `docs/standards/documentation.md` 治理模式，适配单仓库规模
 关联测试：`tests/test_documentation.py`
@@ -21,7 +21,7 @@
 | 根 `AGENTS.md` | Agent 执行入口：项目目标、任务路由、强制约束与门禁。只指引，不保存正文事实。 |
 | `docs/index.md` 与各目录 `index.md` | 只导航当前文件，不保存正文事实。 |
 | `docs/architecture/` | 当前系统边界、模块拓扑和数据不变量。 |
-| `docs/design/` | 当前契约与接口：下载/清单、论文发现、Axiom 交接、服务化接口。 |
+| `docs/design/` | 当前契约与接口：下载/清单、论文发现、服务与外部接口（含 Axiom 消费面）、主链路、来源与评审、数据设计、治理。 |
 | `docs/standards/` | 工程治理规则（文档规范、ADR 治理）。 |
 | `docs/adr/` | 影响长期约束的决定、理由、后果和取代关系。 |
 | `docs/guides/` | 可重复执行的用户操作与开发门禁。 |

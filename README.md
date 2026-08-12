@@ -41,6 +41,15 @@ qed-tracker papers selections download <selection-id> --pick 1
 qed-tracker inventory scan E:/qed/dataset
 qed-tracker inventory verify
 
+# 主链路：课程梳理与教材条目（课程学习主流程，与 evaluate 平行）
+qed-tracker courses list
+qed-tracker courses show 01_math_analysis
+qed-tracker mainline new --course 01_math_analysis --title "数学分析原理" --author Rudin
+qed-tracker mainline review 01_math_analysis <entry_id>
+qed-tracker mainline download 01_math_analysis <entry_id>
+# 验收通过 → 复制移交根仓库 dataset/qed-tracker/
+qed-tracker mainline approve 01_math_analysis <entry_id>
+
 # 默认只上传；显式 --parse 才创建 Axiom 解析任务
 qed-tracker axiom push sha256:<digest>
 qed-tracker axiom push sha256:<digest> --parse --page-start 1 --page-end 20
@@ -58,6 +67,7 @@ qed-tracker axiom push sha256:<digest> --parse --page-start 1 --page-end 20
 │   └── papers/<year>/                       # 论文
 ├── meta/
 │   ├── resources/<sha256>.json              # 单资源事实源
+│   ├── main-line/<course_id>/<entry_id>.json # 主链路教材条目（五要素，独立于资源清单）
 │   ├── selections/<selection-id>.json       # 论文选择报告
 │   ├── transfers/axiom/<sha256>.json        # Axiom 传输记录
 │   └── tasks/<task-id>.json                 # 后台任务状态

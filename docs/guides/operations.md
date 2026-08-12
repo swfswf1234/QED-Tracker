@@ -103,6 +103,44 @@ qed-tracker inventory verify
 
 `scan` 递归登记指定目录中的 PDF；路径必须位于数据根内。省略路径时扫描整个数据根。它不移动或删除文件。`verify` 重新检查文件结构、哈希、大小和页数。`meta/resources/` 中的单资源 JSON 是唯一清单事实源。
 
+## 主链路：课程梳理与教材条目
+
+主链路（领域课程梳理 → 教材寻找 → 下载 → 人工验收）是与 evaluate 平行的独立体系，面向课程
+学习的主流程。课程体系为包内静态数据（数学范本 14 门课程），教材条目独立存储于
+`meta/main-line/`（五要素：课程/版本评价建议/渠道记录/状态）。
+
+```powershell
+qed-tracker courses list
+qed-tracker courses show 01_math_analysis
+qed-tracker mainline list --course 01_math_analysis
+qed-tracker mainline new --course 01_math_analysis --title "数学分析原理" --author Rudin
+qed-tracker mainline review 01_math_analysis <entry_id>
+qed-tracker mainline download 01_math_analysis <entry_id>
+qed-tracker mainline verify 01_math_analysis <entry_id>
+qed-tracker mainline approve 01_math_analysis <entry_id>
+qed-tracker mainline reject 01_math_analysis <entry_id> --reason <原因>
+qed-tracker mainline channels
+```
+
+流程说明：
+
+- `courses list/show` 查看课程体系（先修关系、阶段、关联目标）。
+- `mainline new` 先参照顶尖大学（MIT/清华等）该课程指定教材，再按此探索候选；LLM 预填
+  版本/评价/建议（需 `QWEN_API_KEY`），输出 draft 条目供人工评审。评价权威性等级取
+  高/中/低，仅供人工参考，不作为自动下载依据。
+- `mainline review` 人工定稿（状态迁移 draft → reviewed）。
+- `mainline download` 触发渠道下载（archive 等自动源）；无自动候选时输出人工下载指引
+  （libgen 等发现专用来源），返回 3。
+- `mainline verify` 校验已下载文件（PDF 结构/SHA-256/页数）。
+- `mainline approve` 人工验收：通过后**复制**文件与登记同步**移交根仓库
+  `dataset/qed-tracker/`**（正式落地，临时区副本保留留痕）；`related_targets` 回填待二次
+  确认评估后人工执行（编辑 `courses/math.json`）。
+- `mainline reject` 验收不通过（`--reason` 必填，持久化留痕）。
+- `mainline channels` 汇总渠道有效性（各来源成功/失败次数），供剔除无效渠道决策。
+
+已知限制（QED-027 待实现）：版本要素 CLI 闭环、人工下载 register 闭环、防总评高单本对比、
+rejected 重试出口——见[主链路设计](../design/main-line-curriculum.md)「已知限制」。
+
 ## 交付给 Axiom-Flow
 
 ```powershell
