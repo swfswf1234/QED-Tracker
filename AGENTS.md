@@ -18,6 +18,8 @@ QED-Tracker 是 QED 的前置 PDF 获取组件。它负责发现、下载、校�
 
 | 任务 | 首查实现 | 当前文档 | 定向测试 |
 | --- | --- | --- | --- |
+| 代码-设计-测试映射、模块定位 | `src/qed_tracker/`（全模块，映射唯一事实源见 `docs/architecture/code-map.md`） | `docs/architecture/code-map.md` | — |
+| 项目当前状态与主线 | —（状态快照） | `docs/architecture/project-status.md` | — |
 | 教材来源、候选归一化 | `src/qed_tracker/providers/books.py` | `docs/design/acquisition-and-inventory.md` | `tests/test_book_providers.py` |
 | arXiv 搜索与下载 | `src/qed_tracker/providers/arxiv.py` | `docs/design/acquisition-and-inventory.md` | `tests/test_arxiv_provider.py` |
 | arXiv 智能发现与评分 | `src/qed_tracker/application/papers.py`、`src/qed_tracker/providers/bailian.py` | `docs/design/paper-discovery.md` | `tests/test_paper_application.py`、`tests/test_bailian_advisor.py` |

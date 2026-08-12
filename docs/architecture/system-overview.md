@@ -89,6 +89,27 @@ PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resourc
 7. LLM 只能生成检索计划和评分；下载必须引用固定报告、经人工确认（`confirm`）后由任务触发，模型不写入资源事实。
 8. 长操作（下载、评估等）全部经后台任务执行（并发上限 2），任务状态落盘并支持轮询；轻量状态迁移（`confirm`/`backup`/`approve`/`reject`/`register`）同步执行；非法状态迁移返回 409。
 
+## 架构符合度
+
+不变量与跨项目契约的当前状态、证据与跟踪（约束偏差以稳定 `ARCH-NNN` 在台账双向登记，文档不得标为完全实现）：
+
+| Accepted 约束 | 当前状态 | 证据与跟踪 |
+| --- | --- | --- |
+| 1. 来源适配器只搜索和解析下载地址，不直接写正式 PDF；libgen_li 恒 `metadata_only` | 符合 | `src/qed_tracker/providers/`、`application/books.py`（resolve 后才下载）；`tests/test_book_providers.py`（libgen resolve 无 download_url） |
+| 2. `.part` 只有通过 PDF 结构校验后才能原子替换目标文件 | 符合 | `downloader.py`（临时区 + `os.replace`）；`tests/test_download_inventory.py` |
+| 3. 相同 SHA-256 只保留一条资源记录，重复文件由资源服务移除 | 符合 | `inventory.py`/`db/registry.py` 幂等复用；`tests/test_api.py`（同 sha256 二次提交幂等） |
+| 4. `inventory scan` 只接受数据根内部路径，不移动或删除已有 PDF | 符合 | `inventory.py`（relative_to 校验 + scan 只登记）；`tests/test_download_inventory.py` |
+| 5. 包内目录是可选输入；`math-qe` 永久标记 `frozen` | 符合 | `catalog.py` + `catalogs/math-qe.json`（status=frozen）；`tests/test_config_catalog_matching.py` |
+| 6. 登记顺序落盘 → 资源 JSON → MySQL，任一步失败可重放 | 符合 | `db/registry.py` 双写服务；`tests/test_db_registry.py` |
+| 7. LLM 只生成检索计划与可审阅评分，不写资源事实、不自动下载 | 符合 | `providers/bailian.py`/`book_advisor.py` 只产出评估；`tests/test_bailian_advisor.py`、`tests/test_paper_application.py` |
+| 8. 长操作经后台任务（并发上限 2）轮询；轻量状态迁移同步；非法迁移 409 | 符合 | `api/main.py` + `api/tasks.py`；`tests/test_api.py`、`tests/test_catalog_evaluate.py` |
+| 8901 服务端口与 `/api/v1` 前缀（根仓库 ADR 0002） | 符合 | `api/main.py`（FastAPI 8901）；`tests/test_api.py` |
+| 数据根默认 `dataset/qed-tracker/`（raw/meta/tmp 布局，根仓库 dataset-conventions） | 符合 | `config.py` 默认值与路径解析；`tests/test_data_layout.py` |
+| 共享 `qed` 库实例、`qt_*` 表命名空间隔离（根仓库 ADR 0003） | 符合 | `db/models.py`（qt_resources）；`tests/test_db_models.py` |
+| Axiom-Flow 地址默认 `http://127.0.0.1:8902` | 符合 | `config.py`（axiom_url 默认）；`tests/test_axiom.py` |
+| 8903 工作台 CORS（仅 127.0.0.1/localhost:8903） | 符合 | `api/main.py`（FRONTEND_ORIGINS）；`tests/test_api.py` |
+| 8901 全链路联调与回执（评估→确认→下载→验收→登记→前端展示） | 偏差（QED-014 待开始） | `docs/trackers/todo.md` QED-014；QED-019 01 闭环进行中 |
+
 ## 已退出的职责
 
 旧版本的本地 TOML 配置与 `QED_TRACKER_*` 变量、`.qed-tracker/` 数据布局、`manifest.jsonl`、
