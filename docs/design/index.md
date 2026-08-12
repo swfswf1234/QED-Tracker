@@ -5,8 +5,9 @@
 
 - [下载与清单](acquisition-and-inventory.md)：来源协议、选择规则、可靠下载、资源 schema 和失败语义。
 - [arXiv 论文智能发现](paper-discovery.md)：目标档案、百炼检索规划、评分、选择报告和显式下载。
-- [与 Axiom-Flow 的交互规范](axiom-handoff.md)：跨项目交接接口、传输记录、幂等边界和失败语义
-  （跨项目契约以根仓库为准，本文件只链接不复制）。
+- [Axiom-Flow API 接口文档](axiom-handoff.md)（消费面契约）：QED-Tracker 消费的端点契约表
+  （health / documents / parse-jobs）、统一错误结构、交互规范与传输记录/失败语义；全量 API
+  事实源在 Axiom-Flow 仓库。
 - [服务接口设计](tracker-service.md)（Accepted，需求方 QED-Engine）：8901 API、后台任务与轮询、
   配置与数据布局迁移、qed 库 MySQL 资源登记（qt_resources）、基础书单 math-qe-v2 与批量下载。
 - [来源探索与评估](source-discovery.md)：发现合适下载路径、淘汰不合适路径的目标、评估矩阵、
