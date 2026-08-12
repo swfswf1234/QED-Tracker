@@ -299,6 +299,40 @@ def test_mainline_download_missing_entry_returns_2(tmp_path: Path, capsys) -> No
     assert "条目不存在" in capsys.readouterr().err
 
 
+def test_mainline_download_requires_reviewed_status(tmp_path: Path, monkeypatch) -> None:
+    from qed_tracker.cli import main as cli_main
+
+    class FakeBookService:
+        failures: list[tuple[str, str]] = []
+
+        def search(self, query, *, limit=10):
+            raise AssertionError("门禁失效：draft 条目不应触发 search")
+
+        def close(self):
+            pass
+
+    import qed_tracker.cli as cli_module
+
+    monkeypatch.setattr(cli_module, "_book_service", lambda settings: FakeBookService())
+    store = EntryStore(tmp_path)
+    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "数学分析原理", "authors": []})
+    result = cli_main(["--data-root", str(tmp_path), "mainline", "download", "01_math_analysis", "e1"])
+    assert result == 2
+    entry = store.get("01_math_analysis", "e1")
+    assert entry.status == "draft"
+    assert len(entry.channels) == 0
+
+
+def test_mainline_verify_missing_final_path(tmp_path: Path, capsys) -> None:
+    from qed_tracker.cli import main as cli_main
+
+    store = EntryStore(tmp_path)
+    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
+    result = cli_main(["--data-root", str(tmp_path), "mainline", "verify", "01_math_analysis", "e1"])
+    assert result == 2
+    assert "final_path" in capsys.readouterr().err
+
+
 def test_mainline_verify_success(tmp_path: Path, capsys, pdf_bytes: bytes) -> None:
     from qed_tracker.cli import main as cli_main
 

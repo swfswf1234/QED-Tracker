@@ -561,6 +561,9 @@ def _mainline(args, settings: Settings) -> int:
         if entry is None:
             _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr)
             return 2
+        if entry.status not in ("reviewed", "downloading"):
+            _print({"error": f"只有 reviewed/downloading 条目可下载（当前 {entry.status}）"}, True) if args.json else print(f"ERROR: 只有 reviewed/downloading 条目可下载（当前 {entry.status}）", file=sys.stderr)
+            return 2
         try:
             # reviewed → downloading（CLI 显式触发下载）；成功后 downloading → downloaded
             if entry.status == MainLineStatus.REVIEWED.value:
@@ -602,7 +605,10 @@ def _mainline(args, settings: Settings) -> int:
         if entry is None:
             _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr)
             return 2
-        path = Path(entry.final_path) if entry.final_path else Path(settings.data_root) / "raw" / "books" / "math-qe" / args.course_id
+        if not entry.final_path:
+            _print({"error": "条目缺少文件路径（final_path），请先执行 download"}, True) if args.json else print("ERROR: 条目缺少文件路径（final_path），请先执行 download", file=sys.stderr)
+            return 2
+        path = Path(entry.final_path)
         if not path.is_file():
             _print({"error": f"文件不存在：{path}"}, True) if args.json else print(f"ERROR: 文件不存在：{path}", file=sys.stderr)
             return 3
