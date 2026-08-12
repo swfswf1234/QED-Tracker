@@ -189,3 +189,57 @@ def test_create_accepts_explicit_valid_status(tmp_path: Path) -> None:
     store = EntryStore(tmp_path)
     entry = store.create(data)
     assert entry.status == MainLineStatus.REVIEWED
+
+
+def test_record_channel_appends_and_persists(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    store.create(_entry())
+    updated = store.record_channel("01_math_analysis", "01-rudin-zh", "internet_archive", True, "sha256:abc")
+    assert len(updated.channels) == 1
+    assert updated.channels[0]["channel"] == "internet_archive"
+    assert updated.channels[0]["ok"] is True
+    assert updated.channels[0]["note"] == "sha256:abc"
+    assert "attempted_at" in updated.channels[0]
+    reloaded = store.get("01_math_analysis", "01-rudin-zh")
+    assert reloaded is not None
+    assert reloaded.channels[0] == updated.channels[0]
+    store.record_channel("01_math_analysis", "01-rudin-zh", "google_books", False, "429")
+    reloaded = store.get("01_math_analysis", "01-rudin-zh")
+    assert reloaded is not None
+    assert [item["channel"] for item in reloaded.channels] == ["internet_archive", "google_books"]
+    assert reloaded.channels[1]["ok"] is False
+
+
+def test_record_channel_missing_entry_raises(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    with pytest.raises(ValueError):
+        store.record_channel("01_math_analysis", "nope", "internet_archive", True)
+
+
+def test_channel_stats_aggregates_across_courses(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    first = _entry()
+    first["channels"] = [
+        {"channel": "internet_archive", "ok": True, "note": ""},
+        {"channel": "google_books", "ok": False, "note": "429"},
+    ]
+    store.create(first)
+    second = _entry()
+    second["entry_id"] = "02-rudin-en"
+    second["course_id"] = "02_linear_algebra"
+    second["channels"] = [
+        {"channel": "internet_archive", "ok": False, "note": "404"},
+        {"channel": "google_books", "ok": True, "note": ""},
+        {"channel": "libgen_li", "ok": True, "note": ""},
+    ]
+    store.create(second)
+    stats = store.channel_stats()
+    assert stats == {
+        "internet_archive": {"ok": 1, "fail": 1},
+        "google_books": {"ok": 1, "fail": 1},
+        "libgen_li": {"ok": 1, "fail": 0},
+    }
+
+
+def test_channel_stats_empty_when_no_entries(tmp_path: Path) -> None:
+    assert EntryStore(tmp_path).channel_stats() == {}

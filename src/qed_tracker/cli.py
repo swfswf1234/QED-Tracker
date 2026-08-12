@@ -556,16 +556,78 @@ def _mainline(args, settings: Settings) -> int:
         _print(updated.to_dict(), True) if args.json else print(f"已否定：{updated.entry_id}（{args.reason}）")
         return 0
 
+    if args.mainline_command == "download":
+        entry = store.get(args.course_id, args.entry_id)
+        if entry is None:
+            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr)
+            return 2
+        try:
+            # reviewed → downloading（CLI 显式触发下载）；成功后 downloading → downloaded
+            if entry.status == MainLineStatus.REVIEWED.value:
+                store.transition(args.course_id, args.entry_id, MainLineStatus.DOWNLOADING)
+            from qed_tracker.models import Availability, ResourceKind
+            service = _book_service(settings)
+            try:
+                query = f"{entry.title} {' '.join(entry.authors)}".strip()
+                ranked = service.search(query, limit=8)
+                candidates = [item.candidate for item in ranked]
+                for name, error in service.failures:
+                    print(f"WARN {name}: {error}", file=sys.stderr)
+                downloadable = [c for c in candidates if c.availability == Availability.DOWNLOADABLE]
+                if not downloadable:
+                    for c in candidates:
+                        if c.availability == Availability.METADATA_ONLY and c.links:
+                            print(f"人工下载指引 [{c.provider}]: {c.title}")
+                            for link in c.links:
+                                print(f"  - {link.label}: {link.url}")
+                    store.record_channel(args.course_id, args.entry_id, "search", False, "无自动可下载候选")
+                    _print({"error": "无自动可下载候选，请人工下载后使用 register 登记"}, True) if args.json else print("WARN: 无自动可下载候选，请人工下载后使用 register 登记", file=sys.stderr)
+                    return 3
+                candidate = downloadable[0]
+                record = service.download(candidate, kind=ResourceKind.BOOK)
+                store.record_channel(args.course_id, args.entry_id, candidate.provider, True, record.resource_id)
+                store.update(args.course_id, args.entry_id, resource_id=record.resource_id, final_path=str(record.absolute_path(settings.data_root)))
+                store.transition(args.course_id, args.entry_id, MainLineStatus.DOWNLOADED)
+                _print({"resource_id": record.resource_id, "path": record.file["relative_path"]}, True) if args.json else print(f"已下载：{record.file['relative_path']}")
+                return 0
+            finally:
+                service.close()
+        except Exception as exc:  # noqa: BLE001 - CLI 顶层兜底
+            store.record_channel(args.course_id, args.entry_id, "download", False, str(exc)[:300])
+            _print({"error": f"下载失败：{exc}"}, True) if args.json else print(f"ERROR: 下载失败：{exc}", file=sys.stderr)
+            return 2
+
+    if args.mainline_command == "verify":
+        entry = store.get(args.course_id, args.entry_id)
+        if entry is None:
+            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr)
+            return 2
+        path = Path(entry.final_path) if entry.final_path else Path(settings.data_root) / "raw" / "books" / "math-qe" / args.course_id
+        if not path.is_file():
+            _print({"error": f"文件不存在：{path}"}, True) if args.json else print(f"ERROR: 文件不存在：{path}", file=sys.stderr)
+            return 3
+        try:
+            from qed_tracker.downloader import inspect_pdf
+            digest, size, pages = inspect_pdf(path)
+            _print({"path": str(path), "sha256": digest[:16], "size_bytes": size, "page_count": pages}, True) if args.json else print(f"OK: {path} | sha256={digest[:16]}... | {size} bytes | {pages} 页")
+            return 0
+        except Exception as exc:  # noqa: BLE001
+            _print({"error": f"校验失败：{exc}"}, True) if args.json else print(f"ERROR: 校验失败：{exc}", file=sys.stderr)
+            return 2
+
     print(f"ERROR: 未实现的 mainline 命令：{args.mainline_command}", file=sys.stderr)
     return 2
 
 
 def _print_channel_summary(store, json_output: bool) -> None:
-    """按渠道聚合 success/fail（实现见任务 6；先输出空汇总）。"""
+    """按渠道聚合成功/失败次数（channels[] 运行时事实）。"""
+    stats = store.channel_stats()
     if json_output:
-        _print({"channels": {}}, True)
+        _print({"channels": stats}, True)
     else:
-        print("渠道有效性汇总（实现中）")
+        print(f"{'渠道':<20} 成功  失败")
+        for name, counts in sorted(stats.items()):
+            print(f"{name:<20} {counts['ok']:>3}  {counts['fail']:>3}")
 
 
 def _serve(args, settings: Settings) -> int:

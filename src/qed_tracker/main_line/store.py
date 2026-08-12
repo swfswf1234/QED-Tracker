@@ -203,3 +203,32 @@ class EntryStore:
         )
         self._write(updated)
         return updated
+
+    def record_channel(self, course_id: str, entry_id: str, channel: str, ok: bool, note: str = "") -> MainLineEntry:
+        entry = self._read(course_id, entry_id)
+        if entry is None:
+            raise ValueError(f"教材条目不存在：{entry_id}")
+        record = {
+            "channel": channel,
+            "attempted_at": datetime.now(UTC).isoformat(),
+            "ok": bool(ok),
+            "note": note,
+        }
+        return self.update(course_id, entry_id, channels=entry.channels + (record,))
+
+    def channel_stats(self) -> dict[str, dict[str, int]]:
+        """跨全部课程条目聚合渠道成功/失败统计。"""
+        stats: dict[str, dict[str, int]] = {}
+        if not self.main_line_dir.is_dir():
+            return stats
+        for course_dir in self.main_line_dir.iterdir():
+            for path in course_dir.glob("*.json"):
+                entry = self._from_dict(json.loads(path.read_text(encoding="utf-8")))
+                for channel in entry.channels:
+                    name = channel.get("channel", "?")
+                    bucket = stats.setdefault(name, {"ok": 0, "fail": 0})
+                    if channel.get("ok"):
+                        bucket["ok"] += 1
+                    else:
+                        bucket["fail"] += 1
+        return stats
