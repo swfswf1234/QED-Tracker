@@ -17,6 +17,7 @@ from qed_tracker.application.papers import PaperService
 from qed_tracker.axiom import AxiomClient
 from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key, load_settings
+from qed_tracker.courses import Curriculum
 from qed_tracker.database import upgrade_database
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
@@ -114,6 +115,38 @@ def build_parser() -> argparse.ArgumentParser:
     config = commands.add_parser("config", help="生效配置")
     config_commands = config.add_subparsers(dest="config_command", required=True)
     config_commands.add_parser("show", help="显示生效配置")
+
+    courses = commands.add_parser("courses", help="学科课程体系")
+    courses_commands = courses.add_subparsers(dest="courses_command", required=True)
+    courses_commands.add_parser("list", help="列出学科课程体系")
+    courses_show = courses_commands.add_parser("show", help="查看单门课（含前置/关联目标）")
+    courses_show.add_argument("course_id")
+
+    mainline = commands.add_parser("mainline", help="主链路教材条目（课程梳理→下载→验收）")
+    mainline_commands = mainline.add_subparsers(dest="mainline_command", required=True)
+    mainline_list = mainline_commands.add_parser("list", help="列出课程教材条目")
+    mainline_list.add_argument("--course", required=True)
+    mainline_new = mainline_commands.add_parser("new", help="新建条目（LLM 预填评价）")
+    mainline_new.add_argument("--course", required=True)
+    mainline_new.add_argument("--title", required=True)
+    mainline_new.add_argument("--author", action="append", default=[])
+    mainline_review = mainline_commands.add_parser("review", help="人工评审定稿（版本/评价/建议）")
+    mainline_review.add_argument("course_id")
+    mainline_review.add_argument("entry_id")
+    mainline_download = mainline_commands.add_parser("download", help="触发渠道下载")
+    mainline_download.add_argument("course_id")
+    mainline_download.add_argument("entry_id")
+    mainline_verify = mainline_commands.add_parser("verify", help="校验已下载文件")
+    mainline_verify.add_argument("course_id")
+    mainline_verify.add_argument("entry_id")
+    mainline_approve = mainline_commands.add_parser("approve", help="验收通过 → 移交根仓库")
+    mainline_approve.add_argument("course_id")
+    mainline_approve.add_argument("entry_id")
+    mainline_reject = mainline_commands.add_parser("reject", help="验收不通过（填原因）")
+    mainline_reject.add_argument("course_id")
+    mainline_reject.add_argument("entry_id")
+    mainline_reject.add_argument("--reason", required=True)
+    mainline_commands.add_parser("channels", help="渠道有效性汇总")
 
     serve = commands.add_parser("serve", help="启动工作台 API 服务（8901）")
     serve.add_argument("--host", default="127.0.0.1", help="监听地址")
@@ -367,6 +400,60 @@ def _config(args, settings: Settings) -> int:
     raise ValueError(f"未知 config 命令：{args.config_command}")
 
 
+def _courses(args, settings: Settings) -> int:
+    from qed_tracker.courses import list_courses
+
+    if args.courses_command == "list":
+        subjects = list_courses()
+        if args.json:
+            _print({"subjects": list(subjects)}, True)
+        else:
+            for subject in subjects:
+                print(subject)
+        return 0
+    try:
+        curriculum = _load_curriculum(args.course_id)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        _print(
+            {
+                "subject": curriculum.subject,
+                "name": curriculum.name,
+                "description": curriculum.description,
+                "stages": list(curriculum.stages),
+                "courses": [asdict(c) for c in curriculum.courses],
+            },
+            True,
+        )
+    else:
+        print(f"{curriculum.name}（{curriculum.subject}）：{curriculum.description}")
+        for course in curriculum.courses:
+            prefix = " " if course.prerequisites else "*"
+            print(f"{prefix} {course.course_id} {course.name} [{course.stage}] 前置: {', '.join(course.prerequisites) or '-'}")
+    return 0
+
+
+def _load_curriculum(course_id: str) -> Curriculum:
+    """按学科名或课程 ID 定位课程体系（课程 ID 需在某个学科内解析）。"""
+    from qed_tracker.courses import list_courses, load_course
+
+    try:
+        return load_course(course_id)
+    except ValueError:
+        for subject in list_courses():
+            curriculum = load_course(subject)
+            if any(course.course_id == course_id for course in curriculum.courses):
+                return curriculum
+        raise ValueError(f"未知学科课程体系：{course_id}") from None
+
+
+def _mainline(args, settings: Settings) -> int:
+    print(f"ERROR: 未实现的 mainline 命令：{args.mainline_command}", file=sys.stderr)
+    return 2
+
+
 def _serve(args, settings: Settings) -> int:
     import logging
 
@@ -407,7 +494,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "serve":
             _load_root_env(Path.cwd())
         settings = _settings(args)
-        handlers = {"books": _books, "papers": _papers, "catalog": _catalog, "inventory": _inventory, "axiom": _axiom, "config": _config, "serve": _serve}
+        handlers = {"books": _books, "papers": _papers, "catalog": _catalog, "inventory": _inventory, "axiom": _axiom, "config": _config, "courses": _courses, "mainline": _mainline, "serve": _serve}
         return handlers[args.command](args, settings)
     except (ValueError, OSError, RuntimeError) as exc:
         if args.json:
