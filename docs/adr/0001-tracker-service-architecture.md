@@ -2,7 +2,7 @@
 
 状态：Accepted
 日期：2026-08-04
-最后更新：2026-08-04
+最后更新：2026-08-12
 领域：API 与任务
 决策阶段：v0.6
 取代：—
@@ -23,8 +23,14 @@ QED-Tracker 是纯 CLI（不运行常驻服务、不维护数据库），配置�
    - 写操作（下载、推荐、目录批处理、扫描、Axiom 推送）一律创建**后台任务**：
      `POST /tasks/...` 返回 `task_id`，`GET /tasks/{id}` 轮询状态与结果；
      状态机 `queued → running → succeeded / failed`；任务记录落盘 `meta/tasks/`；
-   - 同 sha256 已登记时任务直接 `succeeded` 并复用既有记录（幂等）；
-   - 并发上限 2，线程池执行现有同步下载器，不重写核心逻辑。
+    - 同 sha256 已登记时任务直接 `succeeded` 并复用既有记录（幂等）；
+    - 并发上限 2，线程池执行现有同步下载器，不重写核心逻辑。
+
+   > 勘误（2026-08-12，W3 文档一致性深扫）：决定原文「写操作一律创建后台任务」过强。
+   > 已实现事实为——**长操作**（下载、评估、推荐、目录批处理、扫描、Axiom 推送）走后台任务；
+   > **轻量状态迁移**（`confirm` / `backup` / `approve` / `reject` / `register`）同步执行
+   > （见 [服务接口设计](../design/tracker-service.md) 端点表的「同步轻写」与
+   > [系统总览](../architecture/system-overview.md) 不变量 8）。
 2. **CLI 转 HTTP 客户端**：`qed-tracker` 命令改为调用本地 8901 服务（默认等待完成，
    `--no-wait` 输出 task_id 供前端场景）；独立脚本入口保留至统一 CLI `qed` 承接后退役。
 3. **配置统一**：直读根 `.env` 的 `QED_*` 变量（`QWEN_API_KEY`、`QED_MODEL`、

@@ -2,9 +2,10 @@
 
 设计状态：Accepted
 实现状态：Not Started
-最后更新：2026-08-10
+最后更新：2026-08-12
 关联代码：`src/qed_tracker/db/`（模型与迁移）
 关联测试：`tests/test_resources_api.py` 等库相关测试
+关联 ADR：—（承接根仓库 ADR 0003，见背景）
 需求方：QED-Engine（根仓库 REQ-026；2026-08-09 用户裁决：数据库设计先在各子项目确认，
 根仓库只做指引和规划）
 执行方：QED-Tracker

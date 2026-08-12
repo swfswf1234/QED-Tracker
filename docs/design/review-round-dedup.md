@@ -1,12 +1,12 @@
 # 人工评审优化：同源去重 + review_note（QED-020）
 
 设计状态：Accepted
-实现状态：In Progress
-最后更新：2026-08-07
+实现状态：Implemented
+最后更新：2026-08-12
 关联代码：`src/qed_tracker/application/catalog_evaluate.py`、`src/qed_tracker/db/models.py`、`src/qed_tracker/db/repository.py`、`src/qed_tracker/api/main.py`
 关联测试：`tests/test_catalog_evaluate.py`、`tests/test_resources_api.py`、`tests/test_download_inventory.py`
 关联 ADR：—
-需求方：QED-Engine（REQ-018，计划 docs/plans/2026-08-review-round.md）
+需求方：QED-Engine（REQ-018；QED-020 已完成，见[完成台账](../trackers/completed.md)）
 执行方：QED-Tracker
 接口面：8901 `/api/v1` 资源接口（confirm/backup/reject 增可选 `note` 参数；`/resources` 返回 `review_note` 字段）
 评审方：用户

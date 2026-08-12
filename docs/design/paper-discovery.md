@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-07-30
+最后更新：2026-08-12
 关联代码：`src/qed_tracker/application/papers.py`、`src/qed_tracker/providers/bailian.py`、`src/qed_tracker/selection_store.py`
 关联测试：`tests/test_paper_application.py`、`tests/test_bailian_advisor.py`、`tests/test_paper_selection_cli.py`
 关联 ADR：—
@@ -37,7 +37,7 @@ arXiv 提供标题、作者、分类、时间和摘要等候选事实。百炼�
 
 ## 选择报告 schema v1
 
-报告写入 `.qed-tracker/paper-selections/<selection-id>.json`，包含 `selection_id`、`schema_version`、`status`、时间、目标档案快照、临时目标、模型与契约版本、检索计划、候选、评分、推荐序号、调用用量、响应哈希和下载尝试。
+报告写入 `meta/selections/<selection-id>.json`，包含 `selection_id`、`schema_version`、`status`、时间、目标档案快照、临时目标、模型与契约版本、检索计划、候选、评分、推荐序号、调用用量、响应哈希和下载尝试。
 
 报告先以 `ranked` 原子写入。后续显式下载只读取该快照并追加成功或失败尝试，再原子替换；成功项记录 `resource_id`。报告不保存密钥、完整提示词或完整原始模型响应。
 

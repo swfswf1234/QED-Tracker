@@ -1,7 +1,7 @@
 # 日常操作
 
 状态：Current
-最后更新：2026-08-06
+最后更新：2026-08-12
 
 ## 配置
 
@@ -13,7 +13,8 @@ qed-tracker config show
 ```
 
 配置直读根仓库 `.env` 的 `QED_*` 变量（`QWEN_API_KEY`、`QED_MODEL`、`QED_AXIOM_URL`、
-`QED_TRACKER_PORT`、`QED_DB_*`、`QED_PROXY` 等），本地 TOML 与 `QED_TRACKER_*` 环境变量已退役；无根
+`QED_TRACKER_PORT`、`QED_TRACKER_URL`、`QED_DB_*`、`QED_PROXY` 等），本地 TOML 与旧
+`QED_TRACKER_*` 变量（`QED_TRACKER_LLM_API_KEY`、`QED_TRACKER_SOURCES` 等）已退役；无根
 `.env` 时使用内置最小默认值，启动时输出尾注提醒。数据根默认 `dataset/qed-tracker/`，可用
 全局 `--data-root` 覆盖。
 
@@ -42,7 +43,9 @@ qed-tracker books fetch-url https://example.org/book.pdf --title "Book Title"
 
 `books get` 汇总启用来源，并将可下载结果排在只有元数据的结果之前。没有 `--pick` 时只预览；显式提供序号才下载，因此终端和脚本行为一致。只有元数据的结果不能下载。
 
-内置来源固定为 Internet Archive、Open Library 和 Google Books 三个开放来源，不再支持配置来源列表。
+内置来源固定为 Internet Archive、Open Library、Google Books 与 libgen_li（libgen_li 为发现
+专用来源：只搜索与解析下载方案，永不自动写文件，人工下载后经登记端点入资源体系）。来源列表
+可经 `QED_SOURCES` 环境变量覆盖；TOML 时代的来源配置已退役。
 
 已知 PDF 地址可使用 `fetch-url`，但仍会经过统一的下载、校验、哈希和登记流程。单个来源失败会输出来源名和错误摘要，并继续处理其他来源。
 

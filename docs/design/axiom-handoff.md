@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-07-30
+最后更新：2026-08-12
 外部契约：Axiom-Flow 0.3 HTTP API
 关联代码：`src/qed_tracker/axiom.py`、`src/qed_tracker/cli.py`
 关联测试：`tests/test_axiom.py`、`tests/test_cli_architecture.py`
@@ -26,7 +26,7 @@ CLI 要求页码参数与 `--parse` 同时使用。Axiom-Flow 继续负责页码
 
 ## 传输记录
 
-成功上传后，QED-Tracker 将结果写入 `.qed-tracker/transfers/axiom/<sha256>.json`，包含：
+成功上传后，QED-Tracker 将结果写入 `meta/transfers/axiom/<sha256>.json`，包含：
 
 - `schema_version`、QED `resource_id` 和 Axiom 服务 URL；
 - Axiom `document_id`、完整文档响应和 UTC 推送时间；

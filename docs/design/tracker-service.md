@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：In Progress
-最后更新：2026-08-05
+最后更新：2026-08-12
 需求方：QED-Engine
 关联代码：src/qed_tracker/api/（FastAPI 服务与后台任务层，服务化轮已实现）、src/qed_tracker/db/ 与
 src/qed_tracker/database.py（qt_resources ORM、状态机仓库、双写登记，QED-012 已实现）、
@@ -28,27 +28,30 @@ QED-Engine 按 [ADR 0002](../../../docs/adr/0002-frontend-and-port-centralizatio
 
 ### 服务（src/qed_tracker/api/，端口 8901，前缀 `/api/v1`）
 
+已实现端点（`src/qed_tracker/api/main.py`）：
+
 | 方法/路径 | 行为 |
 | --- | --- |
 | `GET /health` | 存活检查 |
 | `GET /books/search?q=&source=&limit=` | 同步：教材候选搜索 |
 | `GET /papers/search?q=&category=&author=&limit=` | 同步：arXiv 候选搜索 |
-| `GET /resources?status=&course_id=&kind=&language=` | 同步：资源清单查询（前端展示，按状态/课程过滤） |
+| `GET /resources?status=&course_id=&kind=&language=` | 同步：资源清单查询（前端展示，按状态/课程过滤；含 `review_note` 字段，QED-020） |
 | `GET /resources/{id}` | 同步：资源详情（含 llm_evaluation/catalog_ref/留痕字段） |
 | `GET /resources/{id}/file` | 同步：PDF 预览流（仅 downloaded/approved 可访问；供 8903 验收台 iframe 内嵌） |
-| `POST /resources/{id}/confirm` | 同步轻写：candidate → confirmed（人工确认下载） |
+| `POST /resources/{id}/register` | 同步轻写：人工下载登记（QED-021，body `{relative_path}`，数据根内 PDF 校验 + SHA-256 去重 → downloaded） |
+| `POST /resources/{id}/confirm` | 同步轻写：candidate → confirmed（人工确认下载；可选 body `{note}` 写入 review_note） |
+| `POST /resources/{id}/backup` | 同步轻写：candidate/pending_manual → backup（QED-017 备选，不下载，可转正/放弃；可选 `{note}`） |
 | `POST /resources/{id}/approve` | 同步轻写：downloaded → approved（验收通过） |
-| `POST /resources/{id}/reject` | 同步轻写：candidate 或 downloaded → rejected；body `{reason}` 必填；downloaded 时同步硬删文件，DB 记录保留留痕 |
-| `GET /selections`、`GET /selections/{id}` | 同步：论文选择报告 |
+| `POST /resources/{id}/reject` | 同步轻写：candidate 或 downloaded → rejected；body `{reason}` 必填（缺省 422）；downloaded 时同步硬删文件，DB 记录保留留痕 |
 | `GET /catalogs`、`GET /catalogs/{id}` | 同步：冻结目录与目标 |
 | `POST /tasks/catalog/evaluate` | 后台任务：按课程批量评估（搜索源 → LLM 评估 → 候选落库；body `{course_id?}`，缺省=全目录；缺模型密钥时降级跳过评估） |
 | `POST /tasks/books/download` | 后台任务：教材/习题下载（body `{resource_id}`，仅 confirmed 可触发，否则 409） |
-| `POST /tasks/papers/download` | 后台任务：论文下载 |
-| `POST /tasks/recommend` | 后台任务：百炼论文推荐 |
-| `POST /tasks/catalog/run` | 后台任务：冻结目录批处理 |
-| `POST /tasks/scan` | 后台任务：数据根扫描登记 |
-| `POST /tasks/axiom/push` | 后台任务：Axiom 上传（默认不解析） |
 | `GET /tasks`、`GET /tasks/{id}` | 任务列表与状态轮询 |
+
+规划中（未实现，属 QED-010「CLI 转 HTTP 客户端」范围，实现后同步本表）：`GET /selections`、
+`GET /selections/{id}`（论文选择报告）、`POST /tasks/papers/download`、`POST /tasks/recommend`
+（百炼论文推荐）、`POST /tasks/catalog/run`（目录批处理）、`POST /tasks/scan`（数据根扫描登记）、
+`POST /tasks/axiom/push`（Axiom 上传，默认不解析）。
 
 任务模型（落盘 `meta/tasks/<task-id>.json`）：`{task_id, type, status, progress, created_at,
 updated_at, params, result, error}`；`result` 含 `resource_id`、`relative_path`、
@@ -60,7 +63,9 @@ updated_at, params, result, error}`；`result` 含 `resource_id`、`relative_pat
 - 直读根 `.env` 的 `QED_*` 变量：`QWEN_API_KEY`（百炼）、`QED_MODEL`、`QED_AXIOM_URL`
   （默认 `http://127.0.0.1:8902`）、`QED_TRACKER_PORT`（默认 8901）、`QED_PROXY`
   （代理访问，绕开 archive.org/openlibrary.org 的 DNS 污染与限流）。
-- 本地 TOML 与 `QED_TRACKER_*` 环境变量退役；无配置时内置最小默认值 + 启动尾注提醒。
+- 本地 TOML 与旧 `QED_TRACKER_*` 变量（`QED_TRACKER_LLM_API_KEY`、`QED_TRACKER_SOURCES`
+  等）退役；`QED_TRACKER_PORT` / `QED_TRACKER_URL` 为服务端口变量保留。无配置时内置最小
+  默认值 + 启动尾注提醒。
 - 根 `.env` 由统一 CLI `qed` 启动服务时注入；独立启动 `qed-tracker serve` 时自动从当前
   目录向上查找根 `.env` 并注入 `QED_*` 与供应商密钥（不覆盖已显式设置的环境变量），
   无 `.env` 时降级运行。
@@ -86,9 +91,11 @@ dataset/qed-tracker/
 转 HTTP 客户端：默认等待任务完成；`--no-wait` 输出 `task_id`；`--json` 保留。独立脚本入口
 `qed-tracker` 在统一 CLI `qed` 承接后退役（见根仓库计划 Phase 1/2）。
 
-闭环命令（无前端时完整可用，独立性铁律）：`catalog evaluate [--course]`、`resources
+**规划中（QED-010，未实现）**：闭环命令 `catalog evaluate [--course]`、`resources
 list [--status] [--course]`、`resources show <id>`、`resources confirm <id>`、`resources
-reject <id> --reason <原因>`、`resources approve <id>`、`books download <id>`。
+reject <id> --reason <原因>`、`resources approve <id>`、`books download <id>`。当前闭环经
+8901 API 或 CLI 既有直连命令（如 `catalog run --download`）完成，无前端时由 `qed` CLI / API
+客户端承接。
 
 ### 配置（补充：统一数据库，2026-08-04 用户裁决）
 

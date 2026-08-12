@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-07
+最后更新：2026-08-12
 关联代码：`src/qed_tracker/providers/`、`src/qed_tracker/application/`、`src/qed_tracker/downloader.py`、`src/qed_tracker/inventory.py`
 关联测试：`tests/test_book_providers.py`、`tests/test_arxiv_provider.py`、`tests/test_download_inventory.py`、`tests/test_services.py`
 关联 ADR：—
@@ -59,7 +59,7 @@
 
 ## 资源 schema v1
 
-资源身份固定为 `sha256:<digest>`。单资源 JSON 写入 `.qed-tracker/resources/<sha256>.json`，字段如下：
+资源身份固定为 `sha256:<digest>`。单资源 JSON 写入 `meta/resources/<sha256>.json`，字段如下：
 
 | 字段 | 内容 |
 | --- | --- |
@@ -68,7 +68,9 @@
 | `source` | 来源名、来源 ID、页面地址、下载地址和获取时间；本地扫描记录为 `provider=local`；libgen 发现候选另含 `links`（下载方案：torrent / IPFS / ed2k）。 |
 | `file` | 数据根相对路径、SHA-256、字节数、`application/pdf` 和页数。 |
 | `catalog_ref` | 可选的目录 ID、目标 ID 和课程 ID。 |
-| `human_note` | 可选：人工评审建议/备注（三态确认时由 `note` 写入，与 `reject_reason` 并列留痕）。 |
+
+人工评审建议（三态确认时的 `note`）保存在 MySQL `qt_resources.review_note`（QED-020，见
+[人工评审优化设计](review-round-dedup.md)），单资源 JSON 事实源不包含评审备注。
 
 资源 JSON 使用 UTF-8、稳定键排序和原子替换写入。单资源 JSON 是唯一清单事实源；0.5 不再生成 `manifest.jsonl`，已有文件不会被主动删除。
 
