@@ -26,9 +26,9 @@ python -m pip install -e ".[dev]"
 
 ## 分支与提交
 
-- `dev` 用于日常开发，较大改动从它派生 `feat/*`。
-- 发布候选从 `dev` 合入 `release`，验证通过后再合入 `main`。
-- `release` 上的修复进入 `main` 后必须同步回 `dev`。
+- `release` 用于日常开发，较大改动从它派生 `feat/*`。
+- 发布候选从 `release` 合入 `main`。
+- `main` 上的修复发布后必须同步回 `release`。
 - 提交保持单一目的，不回滚无关用户改动；过程由 Git 记录，不新增逐日 worklog。
 
 ## 实现约束
@@ -58,4 +58,4 @@ git diff --cached --check
 
 测试覆盖配置优先级、目录唯一性和匹配边界、来源归一化、可靠下载、资源登记与校验、论文推荐与报告重放、CLI 命令树和退出码，以及 Axiom 的上传与可选解析。真实来源和模型在线可用性不作为 CI 门禁；人工检查应记录运行时间、来源、模型、结果和错误摘要。
 
-GitHub Actions 在 `dev`、`release` 和 `main` 上执行相同的 Python 3.12 测试、Ruff、wheel、CLI 冒烟与 diff 门禁；任一分支失败都必须停止后续晋级。
+GitHub Actions 在 `release` 和 `main` 上执行相同的 Python 3.12 测试、Ruff、wheel、CLI 冒烟与 diff 门禁；任一分支失败都必须停止后续晋级。

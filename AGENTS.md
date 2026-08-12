@@ -40,6 +40,6 @@ QED-Tracker 是 QED 的前置 PDF 获取组件。它负责发现、下载、校�
 
 ## 分支与完成门禁
 
-日常开发进入 `dev`，较大改动从它派生 `feat/*`。发布候选依次从 `dev` 合入 `release` 和 `main`；`release` 修复发布后必须同步回 `dev`。提交保持单一目的，不维护逐日 worklog。
+日常开发直接在 `release`，较大改动从它派生 `feat/*` 并合回。发布候选由 `release` 合入 `main`；`main` 上的修复发布后必须同步回 `release`。提交保持单一目的，不维护逐日 worklog。
 
 完成前运行 [开发指南](docs/guides/development.md) 中的完整门禁，保留用户已有改动，并确认没有读取或修改真实数据根。
