@@ -301,6 +301,14 @@ def create_app(
             value["status"] = ResourceStatus.DOWNLOADED.value
             value["review_note"] = ""  # 本地清单行无人工评估建议，统一补空
             merged.append(value)
+        # roles 透出：MySQL 行无 roles 列，从本地清单事实源回填（方案 A）
+        local_roles = {record.sha256: record.roles for record in app.resources.inventory.list() if record.roles}
+        for item in merged:
+            digest = (item.get("sha256") or "").removeprefix("sha256:")
+            if digest in local_roles:
+                item["roles"] = local_roles[digest]
+            else:
+                item["roles"] = None
         return merged
 
     @fastapi_app.get("/api/v1/resources/{resource_id}")
