@@ -72,7 +72,14 @@ class EntryStore:
         self.data_root = data_root.resolve()
         self.main_line_dir = self.data_root / "meta" / "main-line"
 
+    @staticmethod
+    def _validate_ids(course_id: str, entry_id: str) -> None:
+        for name, value in (("course_id", course_id), ("entry_id", entry_id)):
+            if value in (".", "..") or Path(value).name != value:
+                raise ValueError(f"非法的 {name}：{value}")
+
     def _path(self, course_id: str, entry_id: str) -> Path:
+        self._validate_ids(course_id, entry_id)
         return self.main_line_dir / course_id / f"{entry_id}.json"
 
     def _read(self, course_id: str, entry_id: str) -> MainLineEntry | None:
@@ -108,20 +115,31 @@ class EntryStore:
         os.replace(temporary, path)
 
     def create(self, data: dict[str, Any]) -> MainLineEntry:
+        course_id = data["course_id"]
+        entry_id = data["entry_id"]
+        self._validate_ids(course_id, entry_id)
+        raw_status = data.get("status", MainLineStatus.DRAFT.value)
+        try:
+            status = MainLineStatus(raw_status).value
+        except ValueError:
+            raise ValueError(f"非法的 status：{raw_status}") from None
         now = datetime.now(UTC).isoformat()
         entry = MainLineEntry(
-            entry_id=data["entry_id"],
-            course_id=data["course_id"],
+            entry_id=entry_id,
+            course_id=course_id,
             title=data["title"],
             authors=tuple(data.get("authors", [])),
             version=data.get("version", {}),
             evaluation=data.get("evaluation", {}),
             advice=data.get("advice", {}),
-            status=data.get("status", MainLineStatus.DRAFT.value),
+            channels=tuple(data.get("channels", [])),
+            status=status,
+            resource_id=data.get("resource_id", ""),
+            final_path=data.get("final_path", ""),
             updated_at=data.get("updated_at", now),
         )
-        if self._path(entry.course_id, entry.entry_id).exists():
-            raise ValueError(f"教材条目已存在：{entry.entry_id}")
+        if self._path(course_id, entry_id).exists():
+            raise ValueError(f"教材条目已存在：{entry_id}")
         self._write(entry)
         return entry
 

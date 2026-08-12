@@ -70,3 +70,93 @@ def test_list_course_entries(tmp_path: Path) -> None:
 def test_missing_entry_returns_none(tmp_path: Path) -> None:
     store = EntryStore(tmp_path)
     assert store.get("01_math_analysis", "nope") is None
+
+
+def test_create_preserves_channels_resource_and_path(tmp_path: Path) -> None:
+    data = _entry()
+    channel = {"kind": "book", "url": "https://example.com/book.pdf"}
+    data["channels"] = [channel]
+    data["resource_id"] = "res-123"
+    data["final_path"] = "books/01-rudin-zh.pdf"
+    store = EntryStore(tmp_path)
+    entry = store.create(data)
+    assert entry.channels == (channel,)
+    assert entry.resource_id == "res-123"
+    assert entry.final_path == "books/01-rudin-zh.pdf"
+    raw = json.loads((tmp_path / "meta" / "main-line" / "01_math_analysis" / "01-rudin-zh.json").read_text(encoding="utf-8"))
+    assert raw["channels"] == [channel]
+    assert raw["resource_id"] == "res-123"
+    assert raw["final_path"] == "books/01-rudin-zh.pdf"
+
+
+def test_rejected_to_draft_retry(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    store.create(_entry())
+    store.transition("01_math_analysis", "01-rudin-zh", MainLineStatus.REJECTED)
+    entry = store.transition("01_math_analysis", "01-rudin-zh", MainLineStatus.DRAFT)
+    assert entry.status == MainLineStatus.DRAFT
+
+
+def test_approved_is_terminal(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    store.create(_entry())
+    for status in (MainLineStatus.REVIEWED, MainLineStatus.DOWNLOADING, MainLineStatus.DOWNLOADED):
+        store.transition("01_math_analysis", "01-rudin-zh", status)
+    store.transition("01_math_analysis", "01-rudin-zh", MainLineStatus.APPROVED)
+    for status in MainLineStatus:
+        with pytest.raises(ValueError):
+            store.transition("01_math_analysis", "01-rudin-zh", status)
+
+
+def test_duplicate_create_raises(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    store.create(_entry())
+    with pytest.raises(ValueError):
+        store.create(_entry())
+
+
+def test_update_persists_title_and_advice(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    store.create(_entry())
+    updated = store.update("01_math_analysis", "01-rudin-zh", title="新标题", advice={"download": "required", "reason": "更新"})
+    assert updated.title == "新标题"
+    entry = store.get("01_math_analysis", "01-rudin-zh")
+    assert entry is not None
+    assert entry.title == "新标题"
+    assert entry.advice["download"] == "required"
+
+
+def test_create_rejects_path_traversal_ids(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    bad_entry = _entry()
+    bad_entry["entry_id"] = "../escape"
+    with pytest.raises(ValueError):
+        store.create(bad_entry)
+    bad_course = _entry()
+    bad_course["course_id"] = "a/b"
+    with pytest.raises(ValueError):
+        store.create(bad_course)
+
+
+def test_path_methods_reject_path_traversal_ids(tmp_path: Path) -> None:
+    store = EntryStore(tmp_path)
+    with pytest.raises(ValueError):
+        store.get("..", "escape")
+    with pytest.raises(ValueError):
+        store.transition("01_math_analysis", "a/b", MainLineStatus.REVIEWED)
+
+
+def test_create_rejects_unknown_status(tmp_path: Path) -> None:
+    data = _entry()
+    data["status"] = "bogus"
+    store = EntryStore(tmp_path)
+    with pytest.raises(ValueError):
+        store.create(data)
+
+
+def test_create_accepts_explicit_valid_status(tmp_path: Path) -> None:
+    data = _entry()
+    data["status"] = "reviewed"
+    store = EntryStore(tmp_path)
+    entry = store.create(data)
+    assert entry.status == MainLineStatus.REVIEWED
