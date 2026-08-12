@@ -18,6 +18,11 @@ Axiom-Flow 从 HTTP 导入边界之后负责不可变文档存储、OCR/解析�
 不互相导入 Python 包，不共享数据库表或数据目录（共享 `qed` 库实例，`qt_*`/`af_*` 表命名空间
 隔离）。
 
+主链路（领域课程梳理 → 教材寻找 → 下载 → 人工验收）是与 evaluate 平行的独立体系，架构见
+[主链路架构](main-line.md)（Draft）：课程体系 `courses/*.json` 经 8901 透出供 8903 知识链路
+消费；主链路教材条目独立存储于 `meta/main-line/`；下载文件先落本仓库临时数据根，人工验收
+通过后正式移交根仓库 `dataset/qed-tracker/`。
+
 ```mermaid
 flowchart LR
     USER[用户或 8903 工作台] --> API[FastAPI 8901 /api/v1]
@@ -61,6 +66,8 @@ flowchart LR
 | `selection_store.py` | 原子保存与读取独立论文选择报告。 |
 | `axiom.py` | 执行健康检查、multipart 上传和可选解析请求。 |
 | `cli.py` | 提供唯一用户入口、机器输出、稳定退出码与服务启动命令（`serve`）。 |
+| `courses/`（规划中） | 领域课程体系静态数据（先修关系/学习阶段/名称映射），数学范本 `courses/math.json`；主链路架构见 [main-line.md](main-line.md)。 |
+| `main_line/`（规划中） | 主链路教材条目服务：五要素条目（课程/版本评价建议/渠道记录/验收状态）、课程与渠道查询端点。 |
 
 ## 数据布局
 
@@ -72,6 +79,10 @@ dataset/qed-tracker/
 ├── meta/{resources,selections,transfers,tasks}/  # JSON 状态事实（资源、选择、Axiom、任务）
 └── tmp/downloads/<task-id>.part                  # 下载临时区（原子落盘后清理）
 ```
+
+主链路扩展（规划中）：`courses/`（包内，非数据根）提供课程体系；`meta/main-line/` 保存
+主链路教材条目（五要素，独立于资源清单）。主链路下载仍落 `raw/` 临时区，**人工验收通过后
+正式移交根仓库 `dataset/qed-tracker/`**（本仓库数据根为临时中转，可删可重建）。
 
 PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resources/` 中的单资源 JSON 是本地
 资源事实源；MySQL `qt_resources` 是查询/展示索引，双写一致性由登记服务保证；论文选择和 Axiom
