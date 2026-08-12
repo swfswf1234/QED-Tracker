@@ -406,3 +406,33 @@ def test_mainline_channels_json_output(tmp_path: Path, capsys) -> None:
     assert cli_main(["--data-root", str(tmp_path), "--json", "mainline", "channels"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["channels"]["internet_archive"] == {"ok": 1, "fail": 1}
+
+
+def test_approve_copies_file_to_root(tmp_path: Path, monkeypatch, pdf_bytes: bytes) -> None:
+    import qed_tracker.cli as cli_module
+    from qed_tracker.cli import main as cli_main
+    from qed_tracker.main_line.store import MainLineStatus
+
+    source_dir = tmp_path / "dataset" / "qed-tracker" / "raw" / "books" / "math-qe" / "01_math_analysis"
+    source_dir.mkdir(parents=True)
+    source = source_dir / "math-analysis.pdf"
+    source.write_bytes(pdf_bytes)
+
+    root_dataset = tmp_path / "root-dataset"
+    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(root_dataset))
+
+    store = EntryStore(tmp_path / "dataset" / "qed-tracker")
+    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
+    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
+    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADING)
+    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADED)
+    store.update("01_math_analysis", "e1", final_path=str(source))
+
+    result = cli_main(["--data-root", str(tmp_path / "dataset" / "qed-tracker"), "mainline", "approve", "01_math_analysis", "e1"])
+    assert result == 0
+    target = root_dataset / "raw" / "books" / "math-qe" / "01_math_analysis" / "math-analysis.pdf"
+    assert target.is_file()
+    assert target.read_bytes() == pdf_bytes
+    entry = store.get("01_math_analysis", "e1")
+    assert entry.status == "approved"
+    assert entry.final_path == str(target)

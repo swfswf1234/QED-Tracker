@@ -25,6 +25,9 @@ from qed_tracker.models import Availability, Candidate, ResourceKind
 from qed_tracker.profiles import list_paper_profiles, load_paper_profile
 from qed_tracker.providers import ArxivProvider, BailianPaperAdvisor, create_book_providers
 
+# 主链路移交目标：根仓库 dataset 数据根（正式落地；本仓库数据根为临时中转）
+_MAINLINE_ROOT_DATASET = os.environ.get("QED_MAINLINE_ROOT", r"D:\coding\QED-Engine\dataset\qed-tracker")
+
 
 def _add_limit(parser: argparse.ArgumentParser, default: int = 10) -> None:
     parser.add_argument("--limit", type=int, default=default, help="每个来源的最大结果数")
@@ -620,6 +623,39 @@ def _mainline(args, settings: Settings) -> int:
         except Exception as exc:  # noqa: BLE001
             _print({"error": f"校验失败：{exc}"}, True) if args.json else print(f"ERROR: 校验失败：{exc}", file=sys.stderr)
             return 2
+
+    if args.mainline_command == "approve":
+        entry = store.get(args.course_id, args.entry_id)
+        if entry is None:
+            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr)
+            return 2
+        if entry.status != "downloaded":
+            _print({"error": f"只有 downloaded 条目可验收（当前 {entry.status}）"}, True) if args.json else print(f"ERROR: 只有 downloaded 条目可验收（当前 {entry.status}）", file=sys.stderr)
+            return 2
+        if not entry.final_path:
+            _print({"error": "条目缺少已下载文件（final_path）"}, True) if args.json else print("ERROR: 条目缺少已下载文件（final_path）", file=sys.stderr)
+            return 2
+        source = Path(entry.final_path)
+        if not source.is_file():
+            _print({"error": f"文件不存在：{source}"}, True) if args.json else print(f"ERROR: 文件不存在：{source}", file=sys.stderr)
+            return 3
+        try:
+            from qed_tracker.downloader import inspect_pdf
+            inspect_pdf(source)  # 验收前校验 PDF 完整性
+        except Exception as exc:  # noqa: BLE001
+            _print({"error": f"PDF 校验失败：{exc}"}, True) if args.json else print(f"ERROR: PDF 校验失败：{exc}", file=sys.stderr)
+            return 2
+        # 复制 + 登记同步：目标 = 根仓库 dataset/raw/books/math-qe/<course>/
+        target_dir = Path(_MAINLINE_ROOT_DATASET) / "raw" / "books" / "math-qe" / args.course_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / source.name
+        import shutil
+        shutil.copy2(source, target)
+        store.update(args.course_id, args.entry_id, final_path=str(target))
+        store.transition(args.course_id, args.entry_id, MainLineStatus.APPROVED)
+        _print({"final_path": str(target)}, True) if args.json else print(f"验收通过，已移交根仓库：{target}")
+        print("提示：课程 related_targets 回填待二次确认评估后人工执行（courses/math.json）", file=sys.stderr)
+        return 0
 
     print(f"ERROR: 未实现的 mainline 命令：{args.mainline_command}", file=sys.stderr)
     return 2
