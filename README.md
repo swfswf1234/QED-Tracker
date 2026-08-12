@@ -1,7 +1,5 @@
 # QED-Tracker
 
-[![CI](https://github.com/swfswf1234/QED-Tracker/actions/workflows/ci.yml/badge.svg?branch=release)](https://github.com/swfswf1234/QED-Tracker/actions/workflows/ci.yml)
-
 QED-Tracker 是一个本地优先的 PDF 获取组件，聚焦教材、习题集和 arXiv 论文。它负责发现、下载、PDF 校验、SHA-256 去重和本地资源清单，也能通过百炼根据研究目标规划 arXiv 检索并生成可审阅的论文推荐；需要进一步处理时，再将 PDF 显式交付给相邻项目 Axiom-Flow。
 
 项目以 8901 HTTP 服务（`/api/v1`）运行，写操作（下载、评估、推荐）经后台任务执行并以任务状态轮询暴露；资源事实以单资源 JSON 存于数据根，MySQL `qt_resources` 为查询/展示索引（无密码时降级运行）。包内冻结的 `math-qe` 目录保存 13 门课程的教材与习题集目标，但下载能力不依赖该目录。
