@@ -43,6 +43,7 @@ Thumbs.db
 
 # local service logs
 tracker8901*.log
+serve-8901*.log
 /logs/
 dataset/qed-tracker/meta/*.log
 

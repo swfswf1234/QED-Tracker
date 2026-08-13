@@ -24,9 +24,10 @@ from qed_tracker.application.catalog_evaluate import CatalogEvaluator
 from qed_tracker.application.papers import PaperService
 from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key
-from qed_tracker.db.models import ResourceStatus
+from qed_tracker.db.models import DownloadStatus, ResourceStatus
 from qed_tracker.db.registry import ResourceRegistry
 from qed_tracker.db.repository import InvalidTransition, ResourceRepository
+from qed_tracker.db.selection_repository import ThreeTableRepository
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
 from qed_tracker.models import Candidate, CatalogTarget, ResourceKind
@@ -46,13 +47,32 @@ class BookDownloadRequest(BaseModel):
 class Application:
     """共享的服务容器：任务执行与只读端点复用同一批资源服务。"""
 
-    def __init__(self, settings: Settings, *, book_providers=None, papers_provider=None, downloader=None, repository=None, advisor=None):
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        book_providers=None,
+        papers_provider=None,
+        downloader=None,
+        repository=None,
+        advisor=None,
+        three_table_repository=None,
+    ):
         self.settings = settings
         inventory = Inventory(settings.data_root)
-        downloader = downloader or DownloadManager(proxy=settings.proxy, timeout=settings.timeout_seconds, retries=settings.retries, tls_verify=settings.tls_verify)
+        downloader = downloader or DownloadManager(
+            proxy=settings.proxy,
+            timeout=settings.timeout_seconds,
+            retries=settings.retries,
+            tls_verify=settings.tls_verify,
+        )
         self.resources = ResourceService(inventory, downloader)
-        providers = book_providers if book_providers is not None else create_book_providers(
-            settings.sources, proxy=settings.proxy, timeout=settings.timeout_seconds, tls_verify=settings.tls_verify
+        providers = (
+            book_providers
+            if book_providers is not None
+            else create_book_providers(
+                settings.sources, proxy=settings.proxy, timeout=settings.timeout_seconds, tls_verify=settings.tls_verify
+            )
         )
         self.books = BookService(providers, self.resources)
         self.papers = PaperService(papers_provider or ArxivProvider(retries=settings.retries), self.resources)
@@ -64,6 +84,11 @@ class Application:
             repository = ResourceRepository(session_factory(self._db_engine))
         self.repository = repository
         self.registry = ResourceRegistry(repository)
+        self._three_table_repository = three_table_repository
+        if three_table_repository is None and settings.db_configured:
+            from qed_tracker.database import session_factory
+
+            self._three_table_repository = ThreeTableRepository(session_factory(self._db_engine))
         if advisor is None and settings.llm_configured:
             advisor = BailianBookAdvisor(
                 api_key=llm_api_key(),
@@ -227,9 +252,24 @@ def create_app(
     extra_handlers: dict[str, Any] | None = None,
     repository: ResourceRepository | None = None,
     advisor=None,
+    three_table_repository: ThreeTableRepository | None = None,
 ) -> FastAPI:
-    app = Application(settings, book_providers=book_providers, papers_provider=papers_provider, downloader=downloader, repository=repository, advisor=advisor)
-    manager = TaskManager(TaskStore(settings.state_dir / "tasks"), {**{"books/download": _make_download_handler(app), "catalog/evaluate": _make_evaluate_handler(app)}, **(extra_handlers or {})})
+    app = Application(
+        settings,
+        book_providers=book_providers,
+        papers_provider=papers_provider,
+        downloader=downloader,
+        repository=repository,
+        advisor=advisor,
+        three_table_repository=three_table_repository,
+    )
+    manager = TaskManager(
+        TaskStore(settings.state_dir / "tasks"),
+        {
+            **{"books/download": _make_download_handler(app), "catalog/evaluate": _make_evaluate_handler(app)},
+            **(extra_handlers or {}),
+        },
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -435,7 +475,190 @@ def create_app(
             catalog = load_catalog(catalog_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return {"id": catalog.id, "name": catalog.name, "description": catalog.description, "status": catalog.status, "targets": [asdict(target) for target in catalog.targets]}
+        return {
+            "id": catalog.id,
+            "name": catalog.name,
+            "description": catalog.description,
+            "status": catalog.status,
+            "targets": [asdict(target) for target in catalog.targets],
+        }
+
+    # ---------------- 三表端点（QED-028/029：qt_selections / qt_downloads / qt_sources） ----------------
+    # 契约：根仓库 downloads-three-table-model.md §3.1 + docs/design/three-table-schema.md。
+    # 彻底隐藏语义在数据层实现：rejected/superseded（表1）、rejected/failed（表2）默认过滤。
+
+    def _tt(app: Application) -> ThreeTableRepository:
+        if app._three_table_repository is None:
+            raise HTTPException(status_code=409, detail="数据库未配置：三表端点需 qt_selections 行")
+        return app._three_table_repository
+
+    def _selection_view(repo: ThreeTableRepository, row) -> dict[str, Any]:
+        value = row.to_dict()
+        downloads = repo.list_downloads(row.selection_id)
+        value["downloads"] = [d.to_dict() for d in downloads]
+        value["download_stats"] = {
+            "total": len(downloads),
+            "downloaded": sum(1 for d in downloads if d.status == DownloadStatus.DOWNLOADED.value),
+            "approved": sum(1 for d in downloads if d.status == DownloadStatus.APPROVED.value),
+        }
+        return value
+
+    def _require_selection(repo: ThreeTableRepository, selection_id: str):
+        row = repo.get_selection(selection_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"选课条目不存在：{selection_id}")
+        return row
+
+    def _selection_transition(selection_id: str, op) -> dict[str, Any]:
+        repo = _tt(app)
+        try:
+            row = op(repo, selection_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except InvalidTransition as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return row.to_dict()
+
+    @fastapi_app.get("/api/v1/selections")
+    def selections(
+        course_id: str = "",
+        status: str = "",
+    ) -> list[dict[str, Any]]:
+        """表1 列表：默认过滤 rejected/superseded；显式 status 查询同样受隐藏约束。"""
+        return [
+            _selection_view(_tt(app), row)
+            for row in _tt(app).list_selections(course_id=course_id or None, status=status or None)
+        ]
+
+    @fastapi_app.get("/api/v1/selections/{selection_id}")
+    def selection_detail(selection_id: str) -> dict[str, Any]:
+        repo = _tt(app)
+        _require_selection(repo, selection_id)
+        return _selection_view(repo, repo.get_selection(selection_id))
+
+    @fastapi_app.post("/api/v1/selections/{selection_id}/confirm")
+    def selection_confirm(selection_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        note = str(payload.get("note", "")).strip()
+        return _selection_transition(selection_id, lambda repo, sid: repo.confirm_selection(sid, note=note))
+
+    @fastapi_app.post("/api/v1/selections/{selection_id}/backup")
+    def selection_backup(selection_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        note = str(payload.get("note", "")).strip()
+        return _selection_transition(selection_id, lambda repo, sid: repo.backup_selection(sid, note=note))
+
+    @fastapi_app.post("/api/v1/selections/{selection_id}/reject")
+    def selection_reject(selection_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        reason = str(payload.get("reason", "")).strip()
+        if not reason:
+            raise HTTPException(status_code=422, detail="拒绝必须提供原因（reason）")
+        return _selection_transition(
+            selection_id, lambda repo, sid: repo.reject_selection(sid, reason=reason, by="web")
+        )
+
+    @fastapi_app.post("/api/v1/selections/{selection_id}/supersede")
+    def selection_supersede(selection_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        reason = str(payload.get("reason", "")).strip()
+        if not reason:
+            raise HTTPException(status_code=422, detail="过时必须提供原因（reason）")
+        return _selection_transition(
+            selection_id, lambda repo, sid: repo.supersede_selection(sid, reason=reason, by="web")
+        )
+
+    @fastapi_app.get("/api/v1/resources/{selection_id}/downloads")
+    def selection_downloads(selection_id: str) -> list[dict[str, Any]]:
+        """表2 册明细列表：默认过滤 rejected/failed（彻底隐藏）。"""
+        return [d.to_dict() for d in _tt(app).list_downloads(selection_id)]
+
+    @fastapi_app.post("/api/v1/downloads")
+    def create_download(payload: dict[str, Any]) -> dict[str, Any]:
+        """新建表2 候选册（先登记再下载，D7）：candidate 态。roles 省略时继承表1。"""
+        selection_id = str(payload.get("selection_id", "")).strip()
+        if not selection_id:
+            raise HTTPException(status_code=422, detail="必须提供 selection_id")
+        vol = str(payload.get("vol", "")).strip()
+        file_hint = str(payload.get("file_hint", "")).strip()
+        roles = payload.get("roles")
+        repo = _tt(app)
+        _require_selection(repo, selection_id)
+        try:
+            row = repo.create_download(selection_id, vol=vol, file_hint=file_hint, roles=roles)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return row.to_dict()
+
+    @fastapi_app.get("/api/v1/downloads/{download_id}/sources")
+    def download_sources(download_id: str) -> list[dict[str, Any]]:
+        repo = _tt(app)
+        if repo.get_download(download_id, include_hidden=True) is None:
+            raise HTTPException(status_code=404, detail=f"下载明细不存在：{download_id}")
+        return [s.to_dict() for s in repo.list_sources(download_id)]
+
+    @fastapi_app.post("/api/v1/downloads/{download_id}/register")
+    def download_register(download_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        """人工下载登记（QED-021 延续 → 适配表2）：candidate → downloaded 直转（D7 先登记再下载）。"""
+        repo = _tt(app)
+        row = repo.get_download(download_id, include_hidden=True)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"下载明细不存在：{download_id}")
+        relative = str(payload.get("relative_path", "")).strip()
+        if not relative:
+            raise HTTPException(status_code=422, detail="必须提供数据根内相对路径（relative_path）")
+        path = (app.resources.inventory.data_root / relative).resolve()
+        try:
+            path.relative_to(app.resources.inventory.data_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="路径必须在数据根目录内") from exc
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail=f"文件不存在：{relative}")
+        kind = ResourceKind.BOOK
+        if row.roles:
+            if "exercises" in row.roles:
+                kind = ResourceKind.EXERCISE
+            elif "solutions" in row.roles:
+                kind = ResourceKind.SUPPLEMENT
+        selection = repo.get_selection(row.selection_id)
+        title = f"{selection.title} {row.vol or ''}".strip()
+        try:
+            record = app.resources.inventory.register(path, kind=kind, title=title, source={"channel": "manual"})
+        except Exception as exc:  # noqa: BLE001 - PDF 校验失败统一 400
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        try:
+            final = repo.complete_download(
+                download_id,
+                sha256=record.sha256,
+                relative_path=record.file["relative_path"],
+                page_count=record.file["page_count"],
+            )
+        except InvalidTransition as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return final.to_dict()
+
+    @fastapi_app.post("/api/v1/downloads/{download_id}/approve")
+    def download_approve(download_id: str) -> dict[str, Any]:
+        repo = _tt(app)
+        try:
+            row = repo.approve_download(download_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except InvalidTransition as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return row.to_dict()
+
+    @fastapi_app.post("/api/v1/downloads/{download_id}/reject")
+    def download_reject(download_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        reason = str(payload.get("reason", "")).strip()
+        if not reason:
+            raise HTTPException(status_code=422, detail="拒绝必须提供原因（reason）")
+        repo = _tt(app)
+        try:
+            row = repo.reject_download(download_id, reason=reason, by="web")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except InvalidTransition as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return row.to_dict()
 
     @fastapi_app.get("/api/v1/tasks")
     def tasks() -> list[dict[str, Any]]:
