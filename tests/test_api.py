@@ -65,7 +65,13 @@ class FakeArxiv:
         return None
 
 
-def make_client(tmp_path: Path, *, candidate: Candidate | None = None, handlers: dict | None = None, downloader: DownloadManager | None = None, repository=None) -> TestClient:
+def make_client(
+    tmp_path: Path,
+    *,
+    candidate: Candidate | None = None,
+    handlers: dict | None = None,
+    downloader: DownloadManager | None = None,
+) -> TestClient:
     # 测试隔离：强制无数据库凭据（降级路径），不依赖本机环境
     from dataclasses import replace
 
@@ -73,34 +79,10 @@ def make_client(tmp_path: Path, *, candidate: Candidate | None = None, handlers:
     from qed_tracker.api.main import create_app
 
     providers = [FakeProvider(candidate)] if candidate else None
-    app = create_app(settings, book_providers=providers, papers_provider=FakeArxiv(), downloader=downloader, extra_handlers=handlers, repository=repository)
-    return TestClient(app)
-
-
-def _file_repository(tmp_path):
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-
-    from qed_tracker.db.models import Base
-    from qed_tracker.db.repository import ResourceRepository
-
-    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, expire_on_commit=False)
-    return ResourceRepository(lambda: factory())
-
-
-def _seed_confirmed(repository, *, title="Topology 2nd Edition", provider_id="x3", download_url="https://example.test/t.pdf"):
-    row = repository.upsert_candidate(
-        title=title,
-        authors=["James Munkres"],
-        language="English",
-        kind="book",
-        source={"provider": "fake", "provider_id": provider_id, "download_url": download_url},
-        catalog_ref={"catalog_id": "math-qe", "target_id": "03-munkres", "course_id": "03_topology"},
+    app = create_app(
+        settings, book_providers=providers, papers_provider=FakeArxiv(), downloader=downloader, extra_handlers=handlers
     )
-    repository.confirm(row.resource_id)
-    return row.resource_id
+    return TestClient(app)
 
 
 def _wait_finished(client: TestClient, task_id: str, timeout: float = 5.0) -> dict:
@@ -123,7 +105,9 @@ def test_health_returns_ok(tmp_path):
 
 
 def test_books_search_is_sync_and_returns_candidates(tmp_path):
-    candidate = Candidate("fake", "x1", "Topology", ("James Munkres",), "English", download_url="https://example.test/t.pdf")
+    candidate = Candidate(
+        "fake", "x1", "Topology", ("James Munkres",), "English", download_url="https://example.test/t.pdf"
+    )
     with make_client(tmp_path, candidate=candidate) as client:
         response = client.get("/api/v1/books/search", params={"q": "topology"})
         assert response.status_code == 200
@@ -131,30 +115,6 @@ def test_books_search_is_sync_and_returns_candidates(tmp_path):
         assert isinstance(items, list)
         assert items[0]["title"] == "Topology"
         assert items[0]["provider"] == "fake"
-
-
-def test_resources_endpoint_lists_inventory(tmp_path, pdf_bytes):
-    with make_client(tmp_path, downloader=mock_downloader(pdf_bytes)) as client:
-        empty = client.get("/api/v1/resources")
-        assert empty.status_code == 200
-        assert empty.json() == []
-        # 登记一个资源后应可列出
-        from qed_tracker.application.resources import ResourceService
-        from qed_tracker.inventory import Inventory
-
-        settings = load_settings(data_root=tmp_path)
-        service = ResourceService(Inventory(settings.data_root), mock_downloader(pdf_bytes))
-        try:
-            service.download_candidate(
-                Candidate("fake", "x2", "Algebra", ("Lang",), "English", download_url="https://example.test/a.pdf"),
-                kind="book",
-                destination_dir=settings.data_root / "raw" / "books" / "inbox",
-            )
-        finally:
-            service.close()
-        response = client.get("/api/v1/resources")
-        assert response.status_code == 200
-        assert response.json()[0]["title"] == "Algebra"
 
 
 def test_catalogs_endpoint_lists_builtin_catalogs(tmp_path):
@@ -165,27 +125,13 @@ def test_catalogs_endpoint_lists_builtin_catalogs(tmp_path):
         assert "math-qe" in ids
 
 
-def test_download_task_submits_and_polls_to_success(tmp_path, pdf_bytes):
-    candidate = Candidate("fake", "x3", "Topology 2nd Edition", ("James Munkres",), "English", download_url="https://example.test/t.pdf")
-    repository = _file_repository(tmp_path)
-    resource_id = _seed_confirmed(repository)
-    with make_client(tmp_path, candidate=candidate, downloader=mock_downloader(pdf_bytes), repository=repository) as client:
-        response = client.post("/api/v1/tasks/books/download", json={"resource_id": resource_id})
-        assert response.status_code == 202
-        task_id = response.json()["task_id"]
-        data = _wait_finished(client, task_id)
-        assert data["status"] == "succeeded"
-        assert (tmp_path / "raw" / "books" / "math-qe" / "03_topology").exists()
-        assert list((tmp_path / "raw" / "books" / "math-qe" / "03_topology").glob("*.pdf"))
+def test_task_records_are_persisted_under_meta_tasks(tmp_path):
+    def ok_handler(params, progress):
+        progress(100, "done")
+        return {"ok": True}
 
-
-def test_task_records_are_persisted_under_meta_tasks(tmp_path, pdf_bytes):
-    candidate = Candidate("fake", "x4", "Analysis", ("Rudin",), "English", download_url="https://example.test/a.pdf")
-    repository = _file_repository(tmp_path)
-    resource_id = _seed_confirmed(repository, title="Analysis", provider_id="x4", download_url="https://example.test/a.pdf")
-    with make_client(tmp_path, candidate=candidate, downloader=mock_downloader(pdf_bytes), repository=repository) as client:
-        response = client.post("/api/v1/tasks/books/download", json={"resource_id": resource_id})
-        task_id = response.json()["task_id"]
+    with make_client(tmp_path, handlers={"persist": ok_handler}) as client:
+        task_id = client.post("/api/v1/tasks/persist", json={}).json()["task_id"]
         _wait_finished(client, task_id)
         assert (tmp_path / "meta" / "tasks" / f"{task_id}.json").exists()
 
@@ -207,21 +153,9 @@ def test_concurrency_is_capped_at_two(tmp_path):
             assert _wait_finished(client, task_id)["status"] == "succeeded"
 
 
-def test_duplicate_download_is_idempotent(tmp_path, pdf_bytes):
-    candidate = Candidate("fake", "x5", "Topology 2nd Edition", ("James Munkres",), "English", download_url="https://example.test/t.pdf")
-    repository = _file_repository(tmp_path)
-    resource_id = _seed_confirmed(repository, provider_id="x5")
-    with make_client(tmp_path, candidate=candidate, downloader=mock_downloader(pdf_bytes), repository=repository) as client:
-        first = client.post("/api/v1/tasks/books/download", json={"resource_id": resource_id})
-        first_id = first.json()["task_id"]
-        _wait_finished(client, first_id)
-        second = client.post("/api/v1/tasks/books/download", json={"resource_id": resource_id})
-        assert second.status_code == 409  # 下载后已非 confirmed，不可重复触发
-        pdfs = list((tmp_path / "raw" / "books" / "math-qe" / "03_topology").glob("*.pdf"))
-        assert len(pdfs) == 1
-
-
 def test_cors_allows_frontend_origin(tmp_path):
     with make_client(tmp_path) as client:
-        response = client.options("/api/v1/health", headers={"Origin": "http://127.0.0.1:8903", "Access-Control-Request-Method": "GET"})
+        response = client.options(
+            "/api/v1/health", headers={"Origin": "http://127.0.0.1:8903", "Access-Control-Request-Method": "GET"}
+        )
         assert response.headers.get("access-control-allow-origin") == "http://127.0.0.1:8903"

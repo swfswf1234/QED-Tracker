@@ -18,7 +18,7 @@
 | 能力 | 端口/形态 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 8901 HTTP 服务（`/api/v1`） | 8901 | 已服务化 | FastAPI + 后台任务轮询（并发上限 2）；只读查询同步、轻量状态迁移同步；长操作走任务。 |
-| MySQL 登记索引 | 共享 `qed` 库 `qt_resources` | 已实现 | JSON 事实源双写查询索引；无 `QED_DB_PASSWORD` 降级运行；review_note 留痕（QED-020）。 |
+| MySQL 登记索引 | 共享 `qed` 库三表 `qt_selections`/`qt_downloads`/`qt_sources` | 已实现 | 教材册级明细登记（QED-028/029）；无 `QED_DB_PASSWORD` 降级运行；qt_resources 已退役（QED-030）。 |
 | CLI | `qed-tracker` | 已实现（未转客户端） | 命令树/退出码/机器输出；`serve` 入口；CLI 闭环命令（catalog evaluate / resources …）未实现，属 QED-010。 |
 | 教材来源 | IA / Open Library / Google Books / libgen_li | 已实现 | libgen_li 发现专用（恒 metadata_only，人工下载后登记）；annas_archive/zlib 退役。 |
 | arXiv 与论文发现 | arXiv + 百炼 | 已实现 | 检索计划 + 可审阅评分，不写资源事实、不自动下载。 |
@@ -32,8 +32,7 @@
   全量 221 passed + 3 skipped）；待人工闭环验证（配置 QWEN_API_KEY → mainline new →
   review → download → approve 移交根仓库，00/01/02 三门基础课）。
 - **课程收集主线（QED-019）**：01 数学分析闭环——catalog 已定稿（01 共 14 目标，54 总），
-  测试全绿；待 8901 重启（迁移 review_note）→ 存量清理 → evaluate 01 → 三态 → 下载/登记 →
-  人工验收。
+  测试全绿；三态评估 → 下载/登记（切三表，QED-030）→ 人工验收。
 - **QED-014 全链路联调**：真实 8901 全链路（评估→确认→下载→验收/删除→登记→qed CLI/8903
   前端展示）待开始；QED-010（CLI 转 HTTP 客户端）与 QED-011（重复下载验证）随其后。
 - **QED-024 套标记字段**：属 Plan 类别（方案确定后再进设计文档），既有 Draft 已归档至

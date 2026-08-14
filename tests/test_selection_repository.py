@@ -7,8 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from qed_tracker.db.models import Base, DownloadStatus, SelectionStatus
-from qed_tracker.db.repository import InvalidTransition
-from qed_tracker.db.selection_repository import ThreeTableRepository
+from qed_tracker.db.selection_repository import InvalidTransition, ThreeTableRepository
 
 
 @pytest.fixture

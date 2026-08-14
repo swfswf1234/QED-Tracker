@@ -25,10 +25,14 @@ from sqlalchemy.orm import Session
 
 from qed_tracker.database import utc_now
 from qed_tracker.db.models import DownloadStatus, QtDownload, QtSelection, QtSource, SelectionStatus
-from qed_tracker.db.repository import InvalidTransition
 
 _HIDDEN_SELECTION_STATUSES = {SelectionStatus.REJECTED.value, SelectionStatus.SUPERSEDED.value}
 _HIDDEN_DOWNLOAD_STATUSES = {DownloadStatus.REJECTED.value, DownloadStatus.FAILED.value}
+
+
+class InvalidTransition(RuntimeError):
+    """状态机迁移非法（QED-030 起由本模块定义；旧 qt_resources 存储层已退役）。"""
+
 
 _SELECTION_TRANSITIONS: dict[SelectionStatus, set[SelectionStatus]] = {
     SelectionStatus.CANDIDATE: {SelectionStatus.CONFIRMED, SelectionStatus.BACKUP, SelectionStatus.REJECTED},
@@ -356,3 +360,71 @@ class ThreeTableRepository:
 
                 statement = statement.where(QtSource.ok == true())
             return list(session.scalars(statement))
+
+    # ---------------- CLI 下载流登记（QED-030） ----------------
+
+    def record_book_download(
+        self,
+        *,
+        course_id: str,
+        set_no: str,
+        title_hint: str,
+        vol_suffix: str,
+        sha256: str,
+        relative_path: str,
+        page_count: int | None = None,
+        channel: str,
+        provider_id: str = "",
+        download_url: str = "",
+    ) -> QtDownload | None:
+        """CLI 下载流登记：定位表1 selection（course+set_no 精确，无套号按标题模糊），
+        匹配表2 册（target 卷后缀），complete_download 回填 + 表3 渠道记录。
+
+        定位失败返回 None（文件已落盘，仅缺登记——不确定候选不自动建册，不动状态机）。
+        """
+        with self._session_factory() as session:
+            selections = list(
+                session.scalars(
+                    select(QtSelection)
+                    .where(QtSelection.course_id == course_id)
+                    .where(QtSelection.status.not_in(_HIDDEN_SELECTION_STATUSES))
+                )
+            )
+        if not selections:
+            return None
+        if set_no:
+            matched = [row for row in selections if (row.set_no or "") == set_no]
+        else:
+            matched = []
+        if not matched:  # 无套号/套号不中 → 标题模糊（先 title 前缀，再标题包含）
+            hint = title_hint.casefold().strip()
+            matched = [row for row in selections if row.title.casefold() == hint]
+            if not matched:
+                matched = [row for row in selections if hint in row.title.casefold()]
+        if not matched:
+            return None
+        selection_id = matched[0].selection_id
+        suffix = vol_suffix.strip()
+        downloads = self.list_downloads(selection_id, include_hidden=True)
+        target = next(
+            (row for row in downloads if suffix and (row.vol or "").endswith(suffix)),
+            None,
+        )
+        if target is None:
+            target = next((row for row in downloads if suffix == "" and (row.vol or "") == ""), None)
+        if target is None:
+            return None
+        self.complete_download(
+            target.download_id,
+            sha256=sha256,
+            relative_path=relative_path,
+            page_count=page_count,
+        )
+        self.add_source(
+            target.download_id,
+            channel=channel,
+            provider_id=provider_id,
+            download_url=download_url,
+            ok=True,
+        )
+        return target

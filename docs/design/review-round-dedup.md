@@ -1,14 +1,14 @@
 # 人工评审优化：同源去重 + review_note（QED-020）
 
 设计状态：Accepted
-实现状态：Implemented
-最后更新：2026-08-12
-关联代码：`src/qed_tracker/application/catalog_evaluate.py`、`src/qed_tracker/db/models.py`、`src/qed_tracker/db/repository.py`、`src/qed_tracker/api/main.py`
-关联测试：`tests/test_catalog_evaluate.py`、`tests/test_resources_api.py`、`tests/test_download_inventory.py`
+实现状态：Retired（QED-030：catalog_evaluate/repository 随 qt_resources 退役，机制承接见下）
+最后更新：2026-08-14
+关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/db/selection_repository.py`、`src/qed_tracker/api/main.py`
+关联测试：`tests/test_selection_repository.py`、`tests/test_selections_api.py`、`tests/test_download_inventory.py`
 关联 ADR：—
 需求方：QED-Engine（REQ-018；QED-020 已完成，见[完成台账](../trackers/completed.md)）
 执行方：QED-Tracker
-接口面：8901 `/api/v1` 资源接口（confirm/backup/reject 增可选 `note` 参数；`/resources` 返回 `review_note` 字段）
+接口面：三表端点（confirm/backup/reject 可带 note；qt_downloads.review_note）
 评审方：用户
 验收标准：见下「成功标准」
 
@@ -25,7 +25,11 @@
 
 ### 1. evaluate 同源去重
 
-`src/qed_tracker/application/catalog_evaluate.py`：
+> 已退役（QED-030）：`catalog_evaluate.py` 任务与 `db/repository.py` 已删除。
+> 教材候选现在由目录运行/下载路径生成：套归属按 `CatalogTarget.note`（QED-024），
+> 下载与三表登记由 `BookService.download` → `record_book_download` 承接。
+
+evaluate 任务（删前语义，位于已删的 `application/catalog_evaluate.py`）：
 
 - 单次 `evaluate()` 调用内维护 `seen_provider_ids: dict[str, str]`（provider_id → 首次目标 id）；
 - 严格匹配命中候选后，若 `candidate.provider_id` 已在本次任务中登记过且
@@ -39,10 +43,14 @@
 
 ### 2. review_note 字段与接口
 
+> 承接（QED-028/030）：review_note 现属三表 `qt_downloads.review_note`，
+> 表1/表2 的 confirm/backup/reject 带 note 由 `selection_repository` 与
+> `/api/v1/selections|downloads` 端点实现（`backup_selection(note=...)` 等）。
+
 - `src/qed_tracker/db/models.py`：`ResourceRow` 增加
   `review_note: Mapped[str] = mapped_column(String(1000), nullable=False, default="")`；
-- Alembic 迁移（qt_resources 增列，default ""）；
-- `src/qed_tracker/db/repository.py`：`confirm` / `mark_backup` / `reject` 接受
+- Alembic 迁移（qt_resources 增列，default ""；该列随 0005 drop）；
+- 已删的 `db/repository.py`：`confirm` / `mark_backup` / `reject` 接受
   `note: str = ""` 参数并写入 `review_note`（追加覆盖，单值字段）；
 - `src/qed_tracker/api/main.py`：confirm/backup/reject 三端点接收可选
   `payload.note`（confirm/backup 当前无 body，改为可选 `_EMPTY_BODY`）；
@@ -66,6 +74,6 @@
 
 ## 关联测试
 
-- `tests/test_catalog_evaluate.py`（去重定向测试）
-- `tests/test_resources_api.py`（review_note 接口测试）
+- `tests/test_selection_repository.py`（表1/表2 状态机 note 参数）
+- `tests/test_selections_api.py`（note 接口契约）
 - `tests/test_download_inventory.py`（如有 schema 影响）

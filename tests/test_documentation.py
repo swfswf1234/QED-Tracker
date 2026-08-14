@@ -1,4 +1,4 @@
-﻿import re
+import re
 import shlex
 from pathlib import Path
 
@@ -48,6 +48,7 @@ REQUIRED_HISTORY_DOCS = {
     Path("docs/history/baselines/math-qe-2026-05.md"),
     Path("docs/history/baselines/catalog-set-field.md"),
     Path("docs/history/baselines/2026-08-service-and-book-download.md"),
+    Path("docs/history/qed-030-retire-qt_resources/index.md"),
 }
 INDEX_DOCS = {
     Path("docs/index.md"),

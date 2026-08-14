@@ -1,7 +1,7 @@
 # 待办列表
 
 状态：Current
-最后更新：2026-08-13
+最后更新：2026-08-14
 
 | ID | 类型 | 状态 | 事项 | 成功标准 |
 | --- | --- | --- | --- | --- |
@@ -15,5 +15,6 @@
 | QED-027 | Plan | 待开始 | 主链路第二版（补齐评审登记的限制）：①版本要素 CLI 闭环（new/review 支持 --edition/--language/--publisher 写入 version）；②人工下载 register 闭环（mainline register <course_id> <entry_id> --path，downloading→downloaded + 登记回填）；③防总评高对比评级（批量预填或注入同课程已在册条目）；④rejected→draft 重试 CLI 出口（设计：docs/design/main-line-curriculum.md「已知限制」） | 四项限制均有 CLI 命令与定向测试；全量门禁全绿；00/01/02 人工闭环验证通过。**2026-08-13 裁决**：本任务被三表重构吸收——①版本要素→表1 version JSON、②人工下载→POST /downloads/{id}/register 适配表2、③防总评对比→表1 evaluation/roles 聚合、④rejected→backup⇄confirmed 可逆 + superseded；随 QED-028/029 一并关闭。 |
 | QED-028 | Plan | 已完成 | [跨项目] 三表数据库重构：qt_selections（选课表，一条=一套书）/ qt_downloads（册级明细）/ qt_sources（渠道尝试）三表 DDL（ORM + Alembic 迁移 0003）+ 状态机（表1 candidate→confirm/backup/reject→superseded；表2 downloading→downloaded→approve/reject、failed 可重试；非法迁移 409）+ 彻底隐藏默认过滤（rejected/superseded 接口不可见）+ 存量一次性迁移合并（qt_resources 10 态 + 主链路 JSON 六态导入三表，幂等可重放，旧存储退役只读）（需求方：QED-Engine REQ-029；2026-08-13 用户裁决三表模型，设计：docs/design/three-table-schema.md，计划：../plans/2026-08-three-table-refactor.md） | 全量门禁 **268 passed + 6 skipped + ruff**（含 db models 12 / repository 17 / 迁移 5 / API 16 / 文档白名单）；真实 MySQL 迁移执行（**17 selections / 12 downloads / 12 sources**，qt_resources 29 行与 meta JSON 未触碰），重跑幂等 skipped=True；回执根仓库 REQ-029 待用户授权提交。 |
 | QED-029 | Plan | 已完成 | [跨项目] 三表 API 改造：8901 新增 GET /selections（列表/详情）、POST /selections/{id}/confirm|backup|reject|supersede、GET /resources/{id}/downloads、POST /downloads/{id}/approve|reject、GET /downloads/{id}/sources、POST /downloads/{id}/register（人工下载登记适配表2）；默认过滤 rejected/superseded/failed（表2 rejected/failed 默认过滤）；旧端点 /resources 过渡保留（退役时序后续定）；回执根仓库 8900 data.py 契约对齐（需求方：QED-Engine REQ-030；2026-08-13 用户裁决，设计：docs/design/three-table-schema.md + 根仓库 downloads-three-table-model.md §3） | 新端点契约测试全绿（tests/test_selections_api.py 16 passed，含默认过滤断言）；8901 真实冒烟通过（列表 15 可见=17-2 隐藏、详情含册明细 roles=textbook、sources=libgen_li、终态 confirm/approve 409、reject 缺 reason 422）；回执根仓库 REQ-030 待用户授权提交。 |
+| QED-030 | Plan | 已完成 | [跨项目] qt_resources 退役：旧表 drop（Alembic 0005）+ 旧代码退役（QtResource ORM/ResourceRepository/ResourceRegistry/catalog_evaluate/migrate_three_table/旧 /resources 8 端点与任务端点）+ BookService 切三表登记（download → record_book_download，vol 后缀映射，无匹配静默）+ CLI/API 适配；12 册明细对照表清理（删除 15 行历史 selection：superseded×5/rejected×1/polya×1/02/06 课程候选×8，保留 4 套 12 册）+ 一次性脚本（regroup/data_fix/intros）删除并归档证据（docs/history/qed-030-retire-qt_resources/）；根仓库 8900 data.py/tracker_client.py/cli.py/前端旧 /resources 与 AI 评估端点同步退役（需求方：QED-Engine；2026-08-13 用户裁决：切三表登记 + 根仓库本轮一起退役 + 脚本删除归档） | QED-Tracker 全量门禁 **189 passed + 2 skipped + ruff check**；真实 MySQL 0005 迁移执行（alembic=0005，qt_resources 消失，证据 29 行已归档）；8901 重启冒烟（4 selections/12 downloads/16 sources、旧 /resources 与旧任务端点全 404、终态 409/reject 422/register 404 边界）；根仓库 **196 passed + ruff**（data.py/tracker_client/cli/前端 app.js/index.html/契约文档同步）；回执根仓库 REQ-030（含 QED-029 旧端点退役）。 |
 
 规则：任务按类型分类（Plan / Defect / Validation / Candidate），状态只允许 `待开始 / 进行中 / 已完成 / 阻塞`；阻塞必须声明证据、恢复条件和责任位置。任务关闭时从本表移除并追加到[完成台账](completed.md)。

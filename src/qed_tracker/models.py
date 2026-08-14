@@ -137,6 +137,8 @@ class CatalogTarget:
     required: bool = True
     file_hint: str = ""
     """下载时优先匹配的文件名关键词（archive 同条目多 PDF 时按此选文件，如「习题答案」）。"""
+    note: str = ""
+    """人工备注（如「套1」归组线索），不影响匹配。"""
     roles: tuple[BookRole, ...] = ()
     """书籍角色（多值，方案 A）：空时按 kind 推导（default_roles）。一套书可同时是教材与习题集。"""
 
