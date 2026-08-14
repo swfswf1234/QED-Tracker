@@ -32,6 +32,7 @@ def load_catalog(catalog_id: str) -> Catalog:
         kind=ResourceKind(item["kind"]), title=item["title"], authors=tuple(item.get("authors", [])),
         language=item.get("language", ""), edition=item.get("edition", ""), query=item.get("query", ""),
         required=item.get("required", True), file_hint=item.get("file_hint", ""),
+        note=item.get("note", ""),
         roles=tuple(BookRole(role) for role in item.get("roles", [])) or default_roles(ResourceKind(item["kind"])),
     ) for item in value["targets"])
     return Catalog(value["id"], value["name"], value.get("description", ""), value["status"], targets)

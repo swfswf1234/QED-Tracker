@@ -1,7 +1,7 @@
-"""数据库连接与迁移入口（qed 库，qt_* 表）。
+"""数据库连接与迁移入口（qed 库，qt_* 三表：selections/downloads/sources，QED-028）。
 
 根 `.env` 的 `QED_DB_*` 由统一 CLI `qed` 注入环境；独立启动无凭据时能力降级，
-engine 构造失败由调用方（ResourceRepository 工厂）捕获并回退为降级模式。
+engine 构造失败由调用方（ThreeTableRepository 工厂）捕获并回退为降级模式。
 """
 
 from __future__ import annotations

@@ -1,0 +1,167 @@
+[
+  {
+    "selection_id": "cand_08522fc93f00fc44014435dd6c813b40",
+    "course_id": "01_math_analysis",
+    "title": "微积分学教程 第一卷 第8版",
+    "set_no": "",
+    "status": "superseded",
+    "note": "",
+    "vols": "[\"v1\", \"v2\", \"v3\"]",
+    "roles": "[\"textbook\"]",
+    "created_at": "2026-08-09T14:01:01"
+  },
+  {
+    "selection_id": "cand_0eee9395e39b25ac60098293b6d187d4",
+    "course_id": "02_linear_algebra",
+    "title": "Linear algebra done right",
+    "set_no": "",
+    "status": "confirmed",
+    "note": "",
+    "vols": "[]",
+    "roles": "[\"textbook\"]",
+    "created_at": "2026-08-06T05:56:02"
+  },
+  {
+    "selection_id": "cand_154741228caf49ff269088d53b51f76e",
+    "course_id": "01_math_analysis",
+    "title": "吉米多维奇数学分析习题集题解",
+    "set_no": "",
+    "status": "superseded",
+    "note": "",
+    "vols": "[\"\"]",
+    "roles": "[\"solutions\"]",
+    "created_at": "2026-08-09T12:01:12"
+  },
+  {
+    "selection_id": "cand_1b6361fc053ae7349428b40654d5c3d8",
+    "course_id": "02_linear_algebra",
+    "title": "线性代数应该这样学",
+    "set_no": "",
+    "status": "candidate",
+    "note": "",
+    "vols": "[]",
+    "roles": "[\"textbook\"]",
+    "created_at": "2026-08-06T05:55:58"
+  },
+  {
+    "selection_id": "cand_29cd436149ef42ca6fa615aaffae94f1",
+    "course_id": "06_functional_analysis",
+    "title": "泛函分析",
+    "set_no": "",
+    "status": "candidate",
+    "note": "",
+    "vols": "[]",
+    "roles": "[\"textbook\"]",
+    "created_at": "2026-08-06T05:45:31"
+  },
+  {
+    "selection_id": "cand_4349cd6a74d442370f8bed71889578ce",
+    "course_id": "02_linear_algebra",
+    "title": "Linear Algebra Done Right 4th Edition Solutions",
+    "set_no": "",
+    "status": "rejected",
+    "note": "",
+    "vols": "[]",
+    "roles": "[\"exercises\"]",
+    "created_at": "2026-08-06T05:56:06"
+  },
+  {
+    "selection_id": "cand_51f8e19fffd624b1e35e01770319d875",
+    "course_id": "01_math_analysis",
+    "title": "数学分析习题课讲义 下册（有书签）",
+    "set_no": "",
+    "status": "superseded",
+    "note": "",
+    "vols": "[\"v1\", \"v2\"]",
+    "roles": "[\"exercises\"]",
+    "created_at": "2026-08-09T14:01:52"
+  },
+  {
+    "selection_id": "cand_60188634ebd5ca4834a86cf96bae7351",
+    "course_id": "01_math_analysis",
+    "title": "数学分析原理",
+    "set_no": "",
+    "status": "superseded",
+    "note": "",
+    "vols": "[\"\"]",
+    "roles": "[\"textbook\"]",
+    "created_at": "2026-08-09T14:00:39"
+  },
+  {
+    "selection_id": "cand_95268230f1a5e3dd59d4e8f357b56493",
+    "course_id": "06_functional_analysis",
+    "title": "泛函分析学习指导",
+    "set_no": "",
+    "status": "candidate",
+    "note": "",
+    "vols": "[]",
+    "roles": "[\"exercises\"]",
+    "created_at": "2026-08-06T05:46:11"
+  },
+  {
+    "selection_id": "cand_a1d824a5342e0dfce1c0668d54999685",
+    "course_id": "06_functional_analysis",
+    "title": "Functional analysis",
+    "set_no": "",
+    "status": "confirmed",
+    "note": "",
+    "vols": "[]",
+    "roles": "[\"textbook\"]",
+    "created_at": "2026-08-06T05:46:00"
+  },
+  {
+    "selection_id": "cand_bc71e77d77d2feb9f14d7f99d20f69c2",
+    "course_id": "01_math_analysis",
+    "title": "Problems and Theorems in Analysis I: Series. Integral Calculus. Theory of Functions",
+    "set_no": "",
+    "status": "confirmed",
+    "note": "",
+    "vols": "[]",
+    "roles": "[\"exercises\"]",
+    "created_at": "2026-08-09T14:02:06"
+  },
+  {
+    "selection_id": "cand_c9aed41a3fb596ab604c17e321e27ea6",
+    "course_id": "02_linear_algebra",
+    "title": "线性代数习题集",
+    "set_no": "",
+    "status": "candidate",
+    "note": "",
+    "vols": "[]",
+    "roles": "[\"exercises\"]",
+    "created_at": "2026-08-06T05:56:04"
+  },
+  {
+    "selection_id": "cand_d6761d8fb8425f2ee59b101cf76538b6",
+    "course_id": "06_functional_analysis",
+    "title": "泛函分析",
+    "set_no": "",
+    "status": "candidate",
+    "note": "",
+    "vols": "[]",
+    "roles": "[\"textbook\"]",
+    "created_at": "2026-08-06T05:46:09"
+  },
+  {
+    "selection_id": "cand_e73352aa5a8fc9da96230c5e7fc1ad1d",
+    "course_id": "01_math_analysis",
+    "title": "数学分析陈纪修 第三版 课本及答案",
+    "set_no": "",
+    "status": "rejected",
+    "note": "",
+    "vols": "[]",
+    "roles": "[\"exercises\"]",
+    "created_at": "2026-08-06T07:11:19"
+  },
+  {
+    "selection_id": "cand_f8ab5040b1bcb0381a7a32ca743faa21",
+    "course_id": "01_math_analysis",
+    "title": "吉米多维奇数学分析习题集",
+    "set_no": "",
+    "status": "superseded",
+    "note": "",
+    "vols": "[\"\"]",
+    "roles": "[\"exercises\"]",
+    "created_at": "2026-08-06T05:43:49"
+  }
+]

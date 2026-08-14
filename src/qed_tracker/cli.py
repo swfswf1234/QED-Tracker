@@ -183,14 +183,32 @@ def _display_candidates(candidates: list[Candidate]) -> None:
 
 
 def _book_service(settings: Settings, names: tuple[str, ...] | None = None) -> BookService:
-    providers = create_book_providers(names or settings.sources, proxy=settings.proxy, timeout=settings.timeout_seconds, tls_verify=settings.tls_verify)
-    downloader = DownloadManager(proxy=settings.proxy, timeout=settings.timeout_seconds, retries=settings.retries, tls_verify=settings.tls_verify)
-    return BookService(providers, ResourceService(Inventory(settings.data_root), downloader))
+    providers = create_book_providers(
+        names or settings.sources,
+        proxy=settings.proxy,
+        timeout=settings.timeout_seconds,
+        tls_verify=settings.tls_verify,
+    )
+    downloader = DownloadManager(
+        proxy=settings.proxy, timeout=settings.timeout_seconds, retries=settings.retries, tls_verify=settings.tls_verify
+    )
+    three_table = None
+    if settings.db_configured:
+        from qed_tracker.database import create_engine_for, session_factory
+        from qed_tracker.db.selection_repository import ThreeTableRepository
+
+        three_table = ThreeTableRepository(session_factory(create_engine_for(settings)))
+    return BookService(providers, ResourceService(Inventory(settings.data_root), downloader), three_table=three_table)
 
 
 def _paper_service(settings: Settings, *, with_advisor: bool = False) -> PaperService:
     provider = ArxivProvider(retries=settings.retries)
-    manager = DownloadManager(proxy=settings.proxy, timeout=max(settings.timeout_seconds, 120), retries=settings.retries, tls_verify=settings.tls_verify)
+    manager = DownloadManager(
+        proxy=settings.proxy,
+        timeout=max(settings.timeout_seconds, 120),
+        retries=settings.retries,
+        tls_verify=settings.tls_verify,
+    )
     resources = ResourceService(Inventory(settings.data_root), manager)
     advisor = None
     if with_advisor:
@@ -218,11 +236,20 @@ def _display_selection(report: dict) -> None:
 def _books(args, settings: Settings) -> int:
     inventory = Inventory(settings.data_root)
     if args.books_command == "fetch-url":
-        manager = DownloadManager(proxy=settings.proxy, timeout=settings.timeout_seconds, retries=settings.retries, tls_verify=settings.tls_verify)
+        manager = DownloadManager(
+            proxy=settings.proxy,
+            timeout=settings.timeout_seconds,
+            retries=settings.retries,
+            tls_verify=settings.tls_verify,
+        )
         resources = ResourceService(inventory, manager)
         try:
-            candidate = Candidate("url", args.url, args.title, tuple(args.author), args.language, page_url=args.url, download_url=args.url)
-            record = resources.download_candidate(candidate, kind=ResourceKind(args.kind), destination_dir=settings.data_root / "raw" / "books" / "inbox")
+            candidate = Candidate(
+                "url", args.url, args.title, tuple(args.author), args.language, page_url=args.url, download_url=args.url
+            )
+            record = resources.download_candidate(
+                candidate, kind=ResourceKind(args.kind), destination_dir=settings.data_root / "raw" / "books" / "inbox"
+            )
             _print(record.to_dict(), args.json)
             return 0
         finally:
@@ -241,7 +268,9 @@ def _books(args, settings: Settings) -> int:
             print("没有搜索结果", file=sys.stderr)
             return 3
         if args.pick is None:
-            _print([_candidate_dict(item) for item in candidates], True) if args.json else _display_candidates(candidates)
+            _print([_candidate_dict(item) for item in candidates], True) if args.json else _display_candidates(
+                candidates
+            )
             return 0
         pick = args.pick
         if pick < 1 or pick > len(candidates):
@@ -265,7 +294,9 @@ def _papers(args, settings: Settings) -> int:
                 _print(list(list_paper_profiles()), args.json)
                 return 0
             profile = load_paper_profile(args.profile)
-            _print(asdict(profile), True) if args.json else print(json.dumps(asdict(profile), ensure_ascii=False, indent=2))
+            _print(asdict(profile), True) if args.json else print(
+                json.dumps(asdict(profile), ensure_ascii=False, indent=2)
+            )
             return 0
         except ValueError as exc:
             _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
@@ -275,8 +306,18 @@ def _papers(args, settings: Settings) -> int:
         if args.papers_command == "selections":
             if args.selections_command == "list":
                 reports = service.list_selections()
-                summaries = [{"selection_id": item["selection_id"], "status": item["status"], "created_at": item["created_at"], "profile": item["profile"]["id"]} for item in reports]
-                _print(summaries, args.json) if args.json else print("\n".join(f"{item['selection_id']} | {item['status']} | {item['profile']}" for item in summaries))
+                summaries = [
+                    {
+                        "selection_id": item["selection_id"],
+                        "status": item["status"],
+                        "created_at": item["created_at"],
+                        "profile": item["profile"]["id"],
+                    }
+                    for item in reports
+                ]
+                _print(summaries, args.json) if args.json else print(
+                    "\n".join(f"{item['selection_id']} | {item['status']} | {item['profile']}" for item in summaries)
+                )
                 return 0
             if args.selections_command == "show":
                 report = service.get_selection(args.selection_id)
@@ -289,7 +330,9 @@ def _papers(args, settings: Settings) -> int:
             return 4 if failures else 0
         if args.papers_command == "recommend":
             profile = load_paper_profile(args.profile)
-            report = service.recommend(profile, goal=args.goal, categories=args.categories, limit=args.limit, top=args.top)
+            report = service.recommend(
+                profile, goal=args.goal, categories=args.categories, limit=args.limit, top=args.top
+            )
             _print(report, True) if args.json else _display_selection(report)
             return 0 if report["status"] == "ranked" else 3
         if args.papers_command == "get":
@@ -323,8 +366,19 @@ def _catalog(args, settings: Settings) -> int:
         return 0
     catalog = load_catalog(args.catalog_id)
     if args.catalog_command == "show":
-        value = {"id": catalog.id, "name": catalog.name, "description": catalog.description, "status": catalog.status, "targets": [asdict(target) for target in catalog.targets]}
-        _print(value, True) if args.json else print("\n".join(f"{target.id}: {target.course_name} | {target.kind.value} | {target.title}" for target in catalog.targets))
+        value = {
+            "id": catalog.id,
+            "name": catalog.name,
+            "description": catalog.description,
+            "status": catalog.status,
+            "targets": [asdict(target) for target in catalog.targets],
+        }
+        _print(value, True) if args.json else print(
+            "\n".join(
+                f"{target.id}: {target.course_name} | {target.kind.value} | {target.title}"
+                for target in catalog.targets
+            )
+        )
         return 0
     try:
         service = _book_service(settings)
@@ -337,7 +391,18 @@ def _catalog(args, settings: Settings) -> int:
             args.report.parent.mkdir(parents=True, exist_ok=True)
             args.report.write_text(attempts_markdown(catalog, attempts), encoding="utf-8")
         if args.json:
-            _print([{"target": asdict(item.target), "status": item.status, "reason": item.reason, "resource": item.record.to_dict() if item.record else None} for item in attempts], True)
+            _print(
+                [
+                    {
+                        "target": asdict(item.target),
+                        "status": item.status,
+                        "reason": item.reason,
+                        "resource": item.record.to_dict() if item.record else None,
+                    }
+                    for item in attempts
+                ],
+                True,
+            )
         else:
             for item in attempts:
                 print(f"[{item.status}] {item.target.id} | {item.target.title} | {item.reason}")
@@ -350,7 +415,12 @@ def _inventory(args, settings: Settings) -> int:
     inventory = Inventory(settings.data_root)
     if args.inventory_command == "list":
         records = inventory.list(args.kind)
-        _print([record.to_dict() for record in records], args.json) if args.json else print("\n".join(f"{record.resource_id} | {record.kind} | {record.title} | {record.file['relative_path']}" for record in records))
+        _print([record.to_dict() for record in records], args.json) if args.json else print(
+            "\n".join(
+                f"{record.resource_id} | {record.kind} | {record.title} | {record.file['relative_path']}"
+                for record in records
+            )
+        )
         return 0
     if args.inventory_command == "scan":
         roots = args.roots or [settings.data_root]
@@ -360,7 +430,11 @@ def _inventory(args, settings: Settings) -> int:
         return 4 if errors else 0
     if args.inventory_command == "verify":
         results = inventory.verify()
-        _print([{"resource_id": record.resource_id, "status": status} for record, status in results], True) if args.json else print("\n".join(f"[{status}] {record.resource_id} {record.title}" for record, status in results))
+        _print(
+            [{"resource_id": record.resource_id, "status": status} for record, status in results], True
+        ) if args.json else print(
+            "\n".join(f"[{status}] {record.resource_id} {record.title}" for record, status in results)
+        )
         return 4 if any(status != "ok" for _, status in results) else 0
     raise ValueError(f"未知 inventory 命令：{args.inventory_command}")
 
@@ -379,7 +453,9 @@ def _axiom(args, settings: Settings) -> int:
         if not path.is_absolute():
             path = settings.data_root / path
         resource = inventory.register(path, kind=ResourceKind.BOOK, title=path.stem)
-    client = AxiomClient(args.axiom_url or settings.axiom_url, timeout=max(settings.timeout_seconds, 120), tls_verify=settings.tls_verify)
+    client = AxiomClient(
+        args.axiom_url or settings.axiom_url, timeout=max(settings.timeout_seconds, 120), tls_verify=settings.tls_verify
+    )
     try:
         result = client.push(resource, inventory, parse=args.parse, page_start=args.page_start, page_end=args.page_end)
         _print(result, True if args.json else False)
@@ -390,15 +466,30 @@ def _axiom(args, settings: Settings) -> int:
 
 def _config(args, settings: Settings) -> int:
     if args.config_command == "show":
-        _print({
-            "data_root": str(settings.data_root), "proxy": settings.proxy, "timeout_seconds": settings.timeout_seconds,
-            "retries": settings.retries, "sources": list(settings.sources), "axiom_url": settings.axiom_url,
-            "tls_verify": settings.tls_verify, "llm_model": settings.llm_model, "llm_base_url": settings.llm_base_url,
-            "llm_timeout_seconds": settings.llm_timeout_seconds, "llm_call_budget": settings.llm_call_budget,
-            "llm_max_tokens": settings.llm_max_tokens, "port": settings.port, "tracker_url": settings.tracker_url,
-            "db_host": settings.db_host, "db_port": settings.db_port, "db_name": settings.db_name,
-            "db_user": settings.db_user, "db_configured": settings.db_configured,
-        }, True)
+        _print(
+            {
+                "data_root": str(settings.data_root),
+                "proxy": settings.proxy,
+                "timeout_seconds": settings.timeout_seconds,
+                "retries": settings.retries,
+                "sources": list(settings.sources),
+                "axiom_url": settings.axiom_url,
+                "tls_verify": settings.tls_verify,
+                "llm_model": settings.llm_model,
+                "llm_base_url": settings.llm_base_url,
+                "llm_timeout_seconds": settings.llm_timeout_seconds,
+                "llm_call_budget": settings.llm_call_budget,
+                "llm_max_tokens": settings.llm_max_tokens,
+                "port": settings.port,
+                "tracker_url": settings.tracker_url,
+                "db_host": settings.db_host,
+                "db_port": settings.db_port,
+                "db_name": settings.db_name,
+                "db_user": settings.db_user,
+                "db_configured": settings.db_configured,
+            },
+            True,
+        )
         return 0
     raise ValueError(f"未知 config 命令：{args.config_command}")
 
@@ -434,7 +525,9 @@ def _courses(args, settings: Settings) -> int:
         print(f"{curriculum.name}（{curriculum.subject}）：{curriculum.description}")
         for course in curriculum.courses:
             prefix = " " if course.prerequisites else "*"
-            print(f"{prefix} {course.course_id} {course.name} [{course.stage}] 前置: {', '.join(course.prerequisites) or '-'}")
+            print(
+                f"{prefix} {course.course_id} {course.name} [{course.stage}] 前置: {', '.join(course.prerequisites) or '-'}"
+            )
     return 0
 
 
@@ -454,6 +547,7 @@ def _load_curriculum(subject_or_course_id: str) -> Curriculum:
 
 def _mainline_advisor(*, api_key: str, model: str, base_url: str, timeout: float, call_budget: int, max_tokens: int):
     from qed_tracker.main_line.advisor import MainLineAdvisor
+
     return MainLineAdvisor(
         api_key=api_key,
         model=model,
@@ -500,11 +594,15 @@ def _mainline(args, settings: Settings) -> int:
             curriculum = load_course("math")
             course = next(c for c in curriculum.courses if c.course_id == args.course)
         except (ValueError, StopIteration):
-            _print({"error": f"未知课程：{args.course}"}, True) if args.json else print(f"ERROR: 未知课程：{args.course}", file=sys.stderr)
+            _print({"error": f"未知课程：{args.course}"}, True) if args.json else print(
+                f"ERROR: 未知课程：{args.course}", file=sys.stderr
+            )
             return 2
         entry_id = _entry_slug(args.title, args.course)
         if store.get(args.course, entry_id) is not None:
-            _print({"error": f"教材条目已存在：{entry_id}"}, True) if args.json else print(f"ERROR: 教材条目已存在：{entry_id}", file=sys.stderr)
+            _print({"error": f"教材条目已存在：{entry_id}"}, True) if args.json else print(
+                f"ERROR: 教材条目已存在：{entry_id}", file=sys.stderr
+            )
             return 2
         advisor = _mainline_advisor(
             api_key=llm_api_key(),
@@ -521,7 +619,9 @@ def _mainline(args, settings: Settings) -> int:
                 authors=args.author,
             )
         except ValueError as exc:
-            _print({"error": f"LLM 预填失败：{exc}"}, True) if args.json else print(f"ERROR: LLM 预填失败：{exc}", file=sys.stderr)
+            _print({"error": f"LLM 预填失败：{exc}"}, True) if args.json else print(
+                f"ERROR: LLM 预填失败：{exc}", file=sys.stderr
+            )
             return 2
         finally:
             advisor.close()
@@ -538,7 +638,9 @@ def _mainline(args, settings: Settings) -> int:
         except ValueError as exc:
             _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-        _print(entry.to_dict(), True) if args.json else print(f"已创建条目 {entry.entry_id}（{entry.status}），请 review 定稿")
+        _print(entry.to_dict(), True) if args.json else print(
+            f"已创建条目 {entry.entry_id}（{entry.status}），请 review 定稿"
+        )
         return 0
 
     if args.mainline_command == "review":
@@ -562,16 +664,23 @@ def _mainline(args, settings: Settings) -> int:
     if args.mainline_command == "download":
         entry = store.get(args.course_id, args.entry_id)
         if entry is None:
-            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr)
+            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(
+                f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr
+            )
             return 2
         if entry.status not in ("reviewed", "downloading"):
-            _print({"error": f"只有 reviewed/downloading 条目可下载（当前 {entry.status}）"}, True) if args.json else print(f"ERROR: 只有 reviewed/downloading 条目可下载（当前 {entry.status}）", file=sys.stderr)
+            _print(
+                {"error": f"只有 reviewed/downloading 条目可下载（当前 {entry.status}）"}, True
+            ) if args.json else print(
+                f"ERROR: 只有 reviewed/downloading 条目可下载（当前 {entry.status}）", file=sys.stderr
+            )
             return 2
         try:
             # reviewed → downloading（CLI 显式触发下载）；成功后 downloading → downloaded
             if entry.status == MainLineStatus.REVIEWED.value:
                 store.transition(args.course_id, args.entry_id, MainLineStatus.DOWNLOADING)
             from qed_tracker.models import Availability, ResourceKind
+
             service = _book_service(settings)
             try:
                 query = f"{entry.title} {' '.join(entry.authors)}".strip()
@@ -587,63 +696,96 @@ def _mainline(args, settings: Settings) -> int:
                             for link in c.links:
                                 print(f"  - {link.label}: {link.url}")
                     store.record_channel(args.course_id, args.entry_id, "search", False, "无自动可下载候选")
-                    _print({"error": "无自动可下载候选，请人工下载后使用 register 登记"}, True) if args.json else print("WARN: 无自动可下载候选，请人工下载后使用 register 登记", file=sys.stderr)
+                    _print({"error": "无自动可下载候选，请人工下载后使用 register 登记"}, True) if args.json else print(
+                        "WARN: 无自动可下载候选，请人工下载后使用 register 登记", file=sys.stderr
+                    )
                     return 3
                 candidate = downloadable[0]
                 record = service.download(candidate, kind=ResourceKind.BOOK)
                 store.record_channel(args.course_id, args.entry_id, candidate.provider, True, record.resource_id)
-                store.update(args.course_id, args.entry_id, resource_id=record.resource_id, final_path=str(record.absolute_path(settings.data_root)))
+                store.update(
+                    args.course_id,
+                    args.entry_id,
+                    resource_id=record.resource_id,
+                    final_path=str(record.absolute_path(settings.data_root)),
+                )
                 store.transition(args.course_id, args.entry_id, MainLineStatus.DOWNLOADED)
-                _print({"resource_id": record.resource_id, "path": record.file["relative_path"]}, True) if args.json else print(f"已下载：{record.file['relative_path']}")
+                _print(
+                    {"resource_id": record.resource_id, "path": record.file["relative_path"]}, True
+                ) if args.json else print(f"已下载：{record.file['relative_path']}")
                 return 0
             finally:
                 service.close()
         except Exception as exc:  # noqa: BLE001 - CLI 顶层兜底
             store.record_channel(args.course_id, args.entry_id, "download", False, str(exc)[:300])
-            _print({"error": f"下载失败：{exc}"}, True) if args.json else print(f"ERROR: 下载失败：{exc}", file=sys.stderr)
+            _print({"error": f"下载失败：{exc}"}, True) if args.json else print(
+                f"ERROR: 下载失败：{exc}", file=sys.stderr
+            )
             return 2
 
     if args.mainline_command == "verify":
         entry = store.get(args.course_id, args.entry_id)
         if entry is None:
-            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr)
+            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(
+                f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr
+            )
             return 2
         if not entry.final_path:
-            _print({"error": "条目缺少文件路径（final_path），请先执行 download"}, True) if args.json else print("ERROR: 条目缺少文件路径（final_path），请先执行 download", file=sys.stderr)
+            _print({"error": "条目缺少文件路径（final_path），请先执行 download"}, True) if args.json else print(
+                "ERROR: 条目缺少文件路径（final_path），请先执行 download", file=sys.stderr
+            )
             return 2
         path = Path(entry.final_path)
         if not path.is_file():
-            _print({"error": f"文件不存在：{path}"}, True) if args.json else print(f"ERROR: 文件不存在：{path}", file=sys.stderr)
+            _print({"error": f"文件不存在：{path}"}, True) if args.json else print(
+                f"ERROR: 文件不存在：{path}", file=sys.stderr
+            )
             return 3
         try:
             from qed_tracker.downloader import inspect_pdf
+
             digest, size, pages = inspect_pdf(path)
-            _print({"path": str(path), "sha256": digest[:16], "size_bytes": size, "page_count": pages}, True) if args.json else print(f"OK: {path} | sha256={digest[:16]}... | {size} bytes | {pages} 页")
+            _print(
+                {"path": str(path), "sha256": digest[:16], "size_bytes": size, "page_count": pages}, True
+            ) if args.json else print(f"OK: {path} | sha256={digest[:16]}... | {size} bytes | {pages} 页")
             return 0
         except Exception as exc:  # noqa: BLE001
-            _print({"error": f"校验失败：{exc}"}, True) if args.json else print(f"ERROR: 校验失败：{exc}", file=sys.stderr)
+            _print({"error": f"校验失败：{exc}"}, True) if args.json else print(
+                f"ERROR: 校验失败：{exc}", file=sys.stderr
+            )
             return 2
 
     if args.mainline_command == "approve":
         entry = store.get(args.course_id, args.entry_id)
         if entry is None:
-            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr)
+            _print({"error": f"条目不存在：{args.entry_id}"}, True) if args.json else print(
+                f"ERROR: 条目不存在：{args.entry_id}", file=sys.stderr
+            )
             return 2
         if entry.status != "downloaded":
-            _print({"error": f"只有 downloaded 条目可验收（当前 {entry.status}）"}, True) if args.json else print(f"ERROR: 只有 downloaded 条目可验收（当前 {entry.status}）", file=sys.stderr)
+            _print({"error": f"只有 downloaded 条目可验收（当前 {entry.status}）"}, True) if args.json else print(
+                f"ERROR: 只有 downloaded 条目可验收（当前 {entry.status}）", file=sys.stderr
+            )
             return 2
         if not entry.final_path:
-            _print({"error": "条目缺少已下载文件（final_path）"}, True) if args.json else print("ERROR: 条目缺少已下载文件（final_path）", file=sys.stderr)
+            _print({"error": "条目缺少已下载文件（final_path）"}, True) if args.json else print(
+                "ERROR: 条目缺少已下载文件（final_path）", file=sys.stderr
+            )
             return 2
         source = Path(entry.final_path)
         if not source.is_file():
-            _print({"error": f"文件不存在：{source}"}, True) if args.json else print(f"ERROR: 文件不存在：{source}", file=sys.stderr)
+            _print({"error": f"文件不存在：{source}"}, True) if args.json else print(
+                f"ERROR: 文件不存在：{source}", file=sys.stderr
+            )
             return 3
         try:
             from qed_tracker.downloader import inspect_pdf
+
             inspect_pdf(source)  # 验收前校验 PDF 完整性
         except Exception as exc:  # noqa: BLE001
-            _print({"error": f"PDF 校验失败：{exc}"}, True) if args.json else print(f"ERROR: PDF 校验失败：{exc}", file=sys.stderr)
+            _print({"error": f"PDF 校验失败：{exc}"}, True) if args.json else print(
+                f"ERROR: PDF 校验失败：{exc}", file=sys.stderr
+            )
             return 2
         # 复制 + 登记同步：目标 = 根仓库 dataset/raw/books/math-qe/<course>/
         try:
@@ -651,14 +793,19 @@ def _mainline(args, settings: Settings) -> int:
             target_dir.mkdir(parents=True, exist_ok=True)
             target = target_dir / source.name
             if target.exists() and target.resolve() != source.resolve():
-                _print({"error": f"移交目标已存在：{target}"}, True) if args.json else print(f"ERROR: 移交目标已存在：{target}", file=sys.stderr)
+                _print({"error": f"移交目标已存在：{target}"}, True) if args.json else print(
+                    f"ERROR: 移交目标已存在：{target}", file=sys.stderr
+                )
                 return 2
             import shutil
+
             shutil.copy2(source, target)
             store.update(args.course_id, args.entry_id, final_path=str(target))
             store.transition(args.course_id, args.entry_id, MainLineStatus.APPROVED)
         except Exception as exc:  # noqa: BLE001 - CLI 顶层兜底
-            _print({"error": f"移交失败：{exc}"}, True) if args.json else print(f"ERROR: 移交失败：{exc}", file=sys.stderr)
+            _print({"error": f"移交失败：{exc}"}, True) if args.json else print(
+                f"ERROR: 移交失败：{exc}", file=sys.stderr
+            )
             return 2
         _print({"final_path": str(target)}, True) if args.json else print(f"验收通过，已移交根仓库：{target}")
         print("提示：课程 related_targets 回填待二次确认评估后人工执行（courses/math.json）", file=sys.stderr)
@@ -698,7 +845,9 @@ def _load_root_env(start: Path) -> Path | None:
 
     独立启动 `qed-tracker serve` 时补上根仓库统一配置，保持与 `qed` 注入环境一致。
     """
-    env_path = next((candidate / ".env" for candidate in [start, *start.parents] if (candidate / ".env").is_file()), None)
+    env_path = next(
+        (candidate / ".env" for candidate in [start, *start.parents] if (candidate / ".env").is_file()), None
+    )
     if env_path is None:
         return None
     for raw in env_path.read_text(encoding="utf-8").splitlines():
@@ -719,7 +868,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "serve":
             _load_root_env(Path.cwd())
         settings = _settings(args)
-        handlers = {"books": _books, "papers": _papers, "catalog": _catalog, "inventory": _inventory, "axiom": _axiom, "config": _config, "courses": _courses, "mainline": _mainline, "serve": _serve}
+        handlers = {
+            "books": _books,
+            "papers": _papers,
+            "catalog": _catalog,
+            "inventory": _inventory,
+            "axiom": _axiom,
+            "config": _config,
+            "courses": _courses,
+            "mainline": _mainline,
+            "serve": _serve,
+        }
         return handlers[args.command](args, settings)
     except (ValueError, OSError, RuntimeError) as exc:
         if args.json:
