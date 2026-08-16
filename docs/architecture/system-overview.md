@@ -62,7 +62,7 @@ flowchart LR
 | `inventory.py` | 保存单资源 JSON、完整性结果和 Axiom 传输记录（`manifest.jsonl` 已停用）。 |
 | `catalog.py` | 读取包内只读目录数据。 |
 | `database.py` | 按 `QED_DB_*` 构造 SQLAlchemy 引擎与会话工厂（服务启动与冒烟复用）。 |
-| `db/` | SQLAlchemy ORM（三表 + 状态枚举）、三表状态机仓库（selection_repository）、Alembic 迁移与 `upgrade_database()` 入口（qt_resources 已退役 QED-030）。 |
+| `db/` | SQLAlchemy ORM（五层 + 状态枚举）、五层仓库（knowledge_repository）、Alembic 迁移与 `upgrade_database()` 入口（qt_resources 已退役 QED-030）。 |
 | `profiles.py` | 加载并校验内置或自定义论文目标档案。 |
 | `selection_store.py` | 原子保存与读取独立论文选择报告。 |
 | `axiom.py` | 执行健康检查、multipart 上传和可选解析请求。 |
@@ -112,7 +112,7 @@ PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resourc
 | 3. 相同 SHA-256 只保留一条资源记录，重复文件由资源服务移除 | 符合 | `inventory.py` 幂等复用 + `db/models.py`（qt_sources.sha256 唯一）；`tests/test_db_models.py`（source 唯一约束） |
 | 4. `inventory scan` 只接受数据根内部路径，不移动或删除已有 PDF | 符合 | `inventory.py`（relative_to 校验 + scan 只登记）；`tests/test_download_inventory.py` |
 | 5. 包内目录是可选输入；`math-qe` 永久标记 `frozen` | 符合 | `catalog.py` + `catalogs/math-qe.json`（status=frozen）；`tests/test_config_catalog_matching.py` |
-| 6. 登记顺序落盘 → 资源 JSON → 三表登记，任一步失败可重放 | 符合 | `db/selection_repository.py`（record_book_download/register 幂等）；`tests/test_selection_repository.py`、`tests/test_selections_api.py` |
+| 6. 登记顺序落盘 → 资源 JSON → 三表登记，任一步失败可重放 | 符合 | `db/knowledge_repository.py`（record_book_download/register 幂等）；`tests/test_knowledge_repository.py`、`tests/test_selections_api.py` |
 | 7. LLM 只生成检索计划与可审阅评分，不写资源事实、不自动下载 | 符合 | `providers/bailian.py`/`book_advisor.py` 只产出评估；`tests/test_bailian_advisor.py`、`tests/test_paper_application.py` |
 | 8. 长操作经后台任务（并发上限 2）轮询；轻量状态迁移同步；非法迁移 409 | 符合 | `api/main.py` + `api/tasks.py`；`tests/test_api.py`、`tests/test_selections_api.py` |
 | 8901 服务端口与 `/api/v1` 前缀（根仓库 ADR 0002） | 符合 | `api/main.py`（FastAPI 8901）；`tests/test_api.py` |

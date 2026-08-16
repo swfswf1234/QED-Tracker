@@ -599,6 +599,11 @@ def _mainline(args, settings: Settings) -> int:
     repo = _curriculum_repository(settings)
     if repo is not None:
         set_repository(repo)
+    if args.mainline_command == "new" and repo is None:
+        _print({"error": "数据库未配置：mainline new 需读取 qed_course 课程体系"}, True) if args.json else print(
+            "ERROR: 数据库未配置：mainline new 需读取 qed_course 课程体系", file=sys.stderr
+        )
+        return 2
     store = EntryStore(settings.data_root)
 
     if args.mainline_command == "list":

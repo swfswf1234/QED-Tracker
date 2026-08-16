@@ -3,17 +3,17 @@
 设计状态：Accepted
 实现状态：Implemented
 最后更新：2026-08-12
-关联代码：`src/qed_tracker/courses.py`、`src/qed_tracker/courses/math.json`、`src/qed_tracker/main_line/`（store.py/advisor.py）、`src/qed_tracker/cli.py`（courses/mainline 命令组）、`src/qed_tracker/providers/books.py`（UTF-8 解码修复）
+关联代码：`src/qed_tracker/courses.py`、`src/qed_tracker/migrations/data/math.json`、`src/qed_tracker/main_line/`（store.py/advisor.py）、`src/qed_tracker/cli.py`（courses/mainline 命令组）、`src/qed_tracker/providers/books.py`（UTF-8 解码修复）
 关联测试：`tests/test_courses.py`、`tests/test_main_line_store.py`、`tests/test_main_line_advisor.py`、`tests/test_main_line_cli.py`、`tests/test_encoding_regression.py`
 关联 ADR：—
 需求方：QED-Engine（8903 前端知识链路；根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md) 五阶段对齐）
 执行方：QED-Tracker
 上承架构：[主链路架构](../architecture/main-line.md)（Accepted，QED-026 已实现，见[实现计划](../plans/2026-08-main-line-curriculum.md)）
 
-## 1. 课程体系数据模型（courses/math.json）
+## 1. 课程体系数据模型（migrations/data/math.json）
 
-**绝对路径**：`D:\coding\QED-Engine\QED-Tracker\src\qed_tracker\courses\math.json`
-（与 catalogs/math-qe.json 同级；`pyproject.toml` `package-data` 增加 `courses/*.json`）
+**绝对路径**：`D:\coding\QED-Engine\QED-Tracker\src\qed_tracker\migrations\data\math.json`
+（`pyproject.toml` `package-data` 含 `migrations/data/*.json`）
 
 ### schema
 

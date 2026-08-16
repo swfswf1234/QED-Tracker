@@ -3,8 +3,8 @@
 设计状态：Accepted
 实现状态：Retired（QED-030：catalog_evaluate/repository 随 qt_resources 退役，机制承接见下）
 最后更新：2026-08-14
-关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/db/selection_repository.py`、`src/qed_tracker/api/main.py`
-关联测试：`tests/test_selection_repository.py`、`tests/test_selections_api.py`、`tests/test_download_inventory.py`
+关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/api/main.py`
+关联测试：`tests/test_knowledge_repository.py`、`tests/test_selections_api.py`、`tests/test_download_inventory.py`
 关联 ADR：—
 需求方：QED-Engine（REQ-018；QED-020 已完成，见[完成台账](../trackers/completed.md)）
 执行方：QED-Tracker
@@ -44,7 +44,7 @@ evaluate 任务（删前语义，位于已删的 `application/catalog_evaluate.p
 ### 2. review_note 字段与接口
 
 > 承接（QED-028/030）：review_note 现属三表 `qt_downloads.review_note`，
-> 表1/表2 的 confirm/backup/reject 带 note 由 `selection_repository` 与
+> 表1/表2 的 confirm/backup/reject 带 note 由 `knowledge_repository` 与
 > `/api/v1/selections|downloads` 端点实现（`backup_selection(note=...)` 等）。
 
 - `src/qed_tracker/db/models.py`：`ResourceRow` 增加
@@ -74,6 +74,6 @@ evaluate 任务（删前语义，位于已删的 `application/catalog_evaluate.p
 
 ## 关联测试
 
-- `tests/test_selection_repository.py`（表1/表2 状态机 note 参数）
+- `tests/test_knowledge_repository.py`（状态机 note 参数）
 - `tests/test_selections_api.py`（note 接口契约）
 - `tests/test_download_inventory.py`（如有 schema 影响）

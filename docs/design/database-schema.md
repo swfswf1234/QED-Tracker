@@ -4,9 +4,9 @@
 实现状态：Plan
 最后更新：2026-08-16
 需求方：QED-Engine（根仓库 REQ-026/REQ-029/REQ-030；2026-08-16 用户裁决知识层次重构）
-关联代码：`src/qed_tracker/db/`（models/selection_repository/migrations）、`src/qed_tracker/database.py`、
-`src/qed_tracker/courses.py`（courses/math.json，规划退役）
-关联测试：`tests/test_db_models.py`、`tests/test_selection_repository.py`、`tests/test_selections_api.py`、
+关联代码：`src/qed_tracker/db/`（models/knowledge_repository/migrations）、`src/qed_tracker/database.py`、
+`src/qed_tracker/courses.py`（migrations/data/math.json，规划退役）
+关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_selections_api.py`、
 `tests/test_db_three_table_smoke.py`、`tests/test_courses.py`（实现轮同步更新）
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)；根仓库 [ADR 0003](../../../docs/adr/0003-shared-qed-database-independence.md)（命名空间隔离）与 [ADR 0009](../../../docs/adr/0009-shared-qed-tables.md)（2026-08-16：新增 qed_* 共享表族）
 
@@ -249,7 +249,7 @@ CREATE TABLE qt_sources (
 
 | 存量 | 映射目标 |
 | --- | --- |
-| `courses/math.json` | qed_domain（subject/stages/name/description）+ qed_course（courses[]，sort_order=数组序） |
+| `src/qed_tracker/migrations/data/math.json` | qed_domain（subject/stages/name/description）+ qed_course（courses[]，sort_order=数组序） |
 | `qt_selections`（一套书） | qt_knowledge（kind=tutorial；set_no；name=套名；textbook_ref/exercise_ref 由决定书行回填；简介先留空待 LLM 预填）+ 拆出书行 |
 | `qt_selections.authors/roles/version` | 各书行 |
 | `qt_downloads`（一册） | qt_books（一册一行：title 拆分卷名 → part；display_title=title+part；sha256/relative_path/page_count/status 映射；absolute_path 由 relative_path 拼数据根） |
@@ -267,7 +267,8 @@ CREATE TABLE qt_sources (
     （Alembic 建表维护），其他项目只读不写；共享表 schema 变更须先经根仓库登记。
 - 根仓库 `docs/design/database-design.md` 登记 qed_* 表清单与所有权；
   `docs/design/service-contracts.md` 同步「共享表 + 只读」约定。
-- 本仓库 `courses/math.json` 退役（数据迁入 qed_course；`pyproject.toml` package-data 同步移除）。
+- 本仓库课程体系 JSON 退役为运行数据源（迁移种子保留于 `src/qed_tracker/migrations/data/math.json`，
+  数据迁入 qed_course；`pyproject.toml` package-data 改含 `migrations/data/*.json`）。
 
 ## 接口/契约影响
 

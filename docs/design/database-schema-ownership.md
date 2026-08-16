@@ -4,8 +4,8 @@
 实现状态：Retired（QED-030：qt_resources 已 drop；2026-08-16 知识层次重构后整体被
 [database-schema.md](database-schema.md) 取代）
 最后更新：2026-08-16
-关联代码：`src/qed_tracker/db/`（models/selection_repository/migrations）、`src/qed_tracker/database.py`
-关联测试：`tests/test_db_models.py`、`tests/test_selection_repository.py`、`tests/test_db_three_table_smoke.py`
+关联代码：`src/qed_tracker/db/`（models/knowledge_repository/migrations）、`src/qed_tracker/database.py`
+关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_db_three_table_smoke.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)；承接根仓库 ADR 0003（共享 qed 库、表命名空间隔离）
 需求方：QED-Engine（根仓库 REQ-026，QED-023；2026-08-09 用户裁决：qt_* 表结构由本仓库确认并维护）
 

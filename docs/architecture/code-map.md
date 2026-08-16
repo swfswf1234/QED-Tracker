@@ -37,12 +37,12 @@
 | `src/qed_tracker/axiom.py` | Axiom-Flow HTTP 客户端（健康检查/上传/可选解析） | Current | `docs/design/tracker-service.md`（外部接口：Axiom-Flow 消费面） | `tests/test_axiom.py` | 默认不解析，不自动重试。 |
 | `src/qed_tracker/cli.py` | 唯一用户入口：命令树、机器输出、稳定退出码、serve | Current | `docs/design/tracker-service.md`、`docs/design/main-line-curriculum.md`（courses/mainline 命令组） | `tests/test_cli_architecture.py`、`tests/test_main_line_cli.py` | 闭环命令属 QED-010 未实现（见 tracker-service.md）。 |
 | `src/qed_tracker/courses.py` | 学科课程体系加载（包内 JSON，数学范本 14 门，含先修关系 DAG） | Current | `docs/design/main-line-curriculum.md` | `tests/test_courses.py` | 主链路课程梳理；与 catalogs/ 同模式。 |
-| `src/qed_tracker/courses/math.json` | 课程体系数据（14 门课程，三大无前置基础课） | Current | `docs/design/main-line-curriculum.md` | `tests/test_courses.py` | related_targets 只关联已二次确认评估目标（当前全空）。 |
+| `src/qed_tracker/migrations/data/math.json` | 课程体系种子数据（14 门课程，三大无前置基础课；qed_domain/qed_course 迁移与测试种子） | Current | `docs/design/main-line-curriculum.md`、`docs/design/database-schema.md` | `tests/test_courses.py`、`tests/test_migrate_knowledge.py` | related_targets 只关联已二次确认评估目标（当前全空）。 |
 | `src/qed_tracker/main_line/store.py` | 主链路教材条目存储（meta/main-line/ 五要素 + 状态机 + 渠道记录） | Current | `docs/design/main-line-curriculum.md` | `tests/test_main_line_store.py`、`tests/test_main_line_cli.py` | 与 evaluate/资源体系解耦；reject_reason 留痕。 |
 | `src/qed_tracker/main_line/advisor.py` | 主链路 LLM 预填（参照顶尖大学 + 防总评高校准，可审阅） | Current | `docs/design/main-line-curriculum.md` | `tests/test_main_line_advisor.py` | 模型不写资源事实。 |
 | `src/qed_tracker/database.py` | SQLAlchemy 引擎与会话工厂（按 `QED_DB_*`） | Current | `docs/design/tracker-service.md` | `tests/test_db_models.py` | 服务启动与冒烟复用。 |
 | `src/qed_tracker/db/models.py` | 三表 ORM（QtSelection/QtDownload/QtSource）与状态枚举（SelectionStatus/DownloadStatus） | Current | `docs/design/three-table-schema.md` | `tests/test_db_models.py` | 三表 `_HIDDEN_*` 彻底隐藏语义（QED-028）；qt_resources 已退役（QED-030）。 |
-| `src/qed_tracker/db/selection_repository.py` | 三表仓库（QED-028）：表1/表2 状态机 + 彻底隐藏过滤 + 确定性幂等 ID + 教材下载三表登记入口（QED-030） | Current | `docs/design/three-table-schema.md` | `tests/test_selection_repository.py`、`tests/test_selections_api.py` | backup⇄confirmed 可逆、D7 candidate→downloaded 直转；`record_book_download` 供 BookService 切三表登记。 |
+| `src/qed_tracker/db/knowledge_repository.py` | 五层仓库（QED-031）：qt_knowledge/qt_books 状态机 + 彻底隐藏过滤 + 确定性幂等 ID + 教材下载登记入口 | Current | `docs/design/database-schema.md` | `tests/test_knowledge_repository.py`、`tests/test_selections_api.py` | backup⇄confirmed 可逆、candidate→downloaded 仅 register 直转（需 sha256+path）；`record_book_download` 供 BookService 切登记。 |
 | `src/qed_tracker/migrations/versions/0001_qt_resources.py` | Alembic 建表迁移（qt_resources，链上保留，0005 已 drop） | Historical | `docs/design/tracker-service.md` | — | 纯 ASCII。 |
 | `src/qed_tracker/migrations/versions/0002_review_note.py` | review_note 增列迁移（QED-020，链上保留，0005 已 drop） | Historical | `docs/design/review-round-dedup.md` | — | 纯 ASCII。 |
 | `src/qed_tracker/migrations/versions/0003_three_table.py` | 三表建表迁移（QED-028） | Current | `docs/design/three-table-schema.md` | `tests/test_db_three_table_smoke.py` | 真实 MySQL 已 upgrade（alembic_version 将推进至 0005_drop_resources）。 |
@@ -66,7 +66,7 @@
 | `tests/test_cli_architecture.py` | CLI 命令树与退出码 | `docs/design/tracker-service.md` |
 | `tests/test_axiom.py` | Axiom 客户端 | `docs/design/tracker-service.md`（外部接口：Axiom-Flow 消费面） |
 | `tests/test_db_models.py` | ORM 模型与状态枚举 | `docs/design/tracker-service.md`、`docs/design/three-table-schema.md` |
-| `tests/test_selection_repository.py` | 三表仓库状态机/隐藏/幂等 | `docs/design/three-table-schema.md` |
+| `tests/test_knowledge_repository.py` | 五层仓库状态机/隐藏/幂等 | `docs/design/database-schema.md` |
 | `tests/test_selections_api.py` | 三表 API 契约与彻底隐藏 | `docs/design/three-table-schema.md`、`docs/design/tracker-service.md` |
 | `tests/test_db_three_table_smoke.py` | 真实 MySQL 三表契约冒烟（默认 skip） | `docs/design/three-table-schema.md` |
 | `tests/test_data_layout.py` | 数据布局与路径解析 | `docs/design/tracker-service.md` |
