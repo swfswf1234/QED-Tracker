@@ -38,57 +38,33 @@ SMOKE_ENABLED = os.environ.get("QED_DB_SMOKE") == "1" and bool(
 
 pytestmark = pytest.mark.skipif(not SMOKE_ENABLED, reason="仅本机 MySQL 冒烟（设置 QED_DB_SMOKE=1 启用）")
 
-SELECTION_COLUMNS = {
-    "selection_id",
-    "course_id",
-    "title",
-    "authors",
-    "roles",
-    "version",
-    "vols",
-    "set_no",
-    "evaluation",
-    "note",
-    "status",
-    "reject_reason",
-    "rejected_by",
-    "supersede_reason",
-    "created_at",
-    "confirmed_at",
-    "superseded_at",
-    "rejected_at",
+DOMAIN_COLUMNS = {
+    "domain_id", "name", "description", "stages", "created_by", "updated_by", "created_at", "updated_at",
 }
 
-DOWNLOAD_COLUMNS = {
-    "download_id",
-    "selection_id",
-    "vol",
-    "roles",
-    "file_hint",
-    "sha256",
-    "relative_path",
-    "page_count",
-    "status",
-    "reject_reason",
-    "rejected_by",
-    "review_note",
-    "created_at",
-    "downloaded_at",
-    "approved_at",
-    "rejected_at",
+COURSE_COLUMNS = {
+    "course_id", "domain_id", "sort_order", "name", "aliases", "stage", "prerequisites",
+    "related_targets", "note", "created_by", "updated_by", "created_at", "updated_at",
+}
+
+KNOWLEDGE_COLUMNS = {
+    "knowledge_id", "domain_id", "course_id", "kind", "set_no", "name", "textbook_ref", "exercise_ref",
+    "textbook_intro", "exercise_intro", "materials_intro", "status", "reject_reason", "supersede_reason",
+    "created_by", "updated_by", "created_at", "confirmed_at", "completed_at", "rejected_at",
+    "superseded_at", "updated_at",
+}
+
+BOOK_COLUMNS = {
+    "book_id", "knowledge_id", "kind", "roles", "title", "part", "display_title", "file_name",
+    "authors", "language", "version", "source", "original_url", "sha256", "relative_path",
+    "absolute_path", "page_count", "status", "reject_reason", "rejected_by", "supersede_reason",
+    "review_note", "created_by", "updated_by", "created_at", "decided_at", "downloaded_at",
+    "verified_at", "rejected_at", "superseded_at", "updated_at",
 }
 
 SOURCE_COLUMNS = {
-    "source_id",
-    "download_id",
-    "channel",
-    "provider_id",
-    "page_url",
-    "download_url",
-    "file_keywords",
-    "ok",
-    "note",
-    "attempted_at",
+    "source_id", "book_id", "channel", "provider_id", "page_url", "download_url",
+    "file_keywords", "ok", "note", "attempted_at",
 }
 
 
@@ -108,17 +84,18 @@ def _connect():
     return settings, conn
 
 
-def test_upgrade_creates_three_tables_with_contract_columns():
+def test_upgrade_creates_five_tables_with_contract_columns():
     from qed_tracker.config import load_settings
     from qed_tracker.database import upgrade_database
 
-    upgrade_database(load_settings())  # 幂等：已到 head 则空操作；只建新表不动旧数据
+    upgrade_database(load_settings())  # 幂等：已到 head 则空操作
     settings, conn = _connect()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT table_name, column_name FROM information_schema.columns "
-                "WHERE table_schema=%s AND table_name IN ('qt_selections','qt_downloads','qt_sources')",
+                "WHERE table_schema=%s AND table_name IN "
+                "('qed_domain','qed_course','qt_knowledge','qt_books','qt_sources')",
                 (settings.db_name,),
             )
             columns: dict[str, set[str]] = {}
@@ -126,7 +103,8 @@ def test_upgrade_creates_three_tables_with_contract_columns():
                 columns.setdefault(table, set()).add(column)
             cur.execute(
                 "SELECT table_name, index_name FROM information_schema.statistics "
-                "WHERE table_schema=%s AND table_name IN ('qt_selections','qt_downloads','qt_sources')",
+                "WHERE table_schema=%s AND table_name IN "
+                "('qed_domain','qed_course','qt_knowledge','qt_books','qt_sources')",
                 (settings.db_name,),
             )
             indexes: dict[str, set[str]] = {}
@@ -134,12 +112,16 @@ def test_upgrade_creates_three_tables_with_contract_columns():
                 indexes.setdefault(table, set()).add(index)
     finally:
         conn.close()
-    assert columns["qt_selections"] == SELECTION_COLUMNS
-    assert columns["qt_downloads"] == DOWNLOAD_COLUMNS
+    assert columns["qed_domain"] == DOMAIN_COLUMNS
+    assert columns["qed_course"] == COURSE_COLUMNS
+    assert columns["qt_knowledge"] == KNOWLEDGE_COLUMNS
+    assert columns["qt_books"] == BOOK_COLUMNS
     assert columns["qt_sources"] == SOURCE_COLUMNS
-    assert {"ix_qt_selections_course", "ix_qt_selections_status"} <= indexes["qt_selections"]
-    assert {"uq_qt_downloads_sha256", "ix_qt_downloads_selection", "ix_qt_downloads_status"} <= indexes["qt_downloads"]
-    assert {"ix_qt_sources_download"} <= indexes["qt_sources"]
+    assert {"ix_qed_course_domain"} <= indexes["qed_course"]
+    assert {"ix_qt_knowledge_course", "ix_qt_knowledge_status"} <= indexes["qt_knowledge"]
+    assert {"uq_qt_books_knowledge_title_part", "uq_qt_books_sha256",
+            "ix_qt_books_knowledge", "ix_qt_books_status"} <= indexes["qt_books"]
+    assert {"ix_qt_sources_book"} <= indexes["qt_sources"]
 
 
 def test_legacy_tables_untouched_after_upgrade():
