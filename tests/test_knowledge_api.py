@@ -147,3 +147,46 @@ def test_sources_endpoint(client, repo):
     rows = client.get(f"/api/v1/books/{book.book_id}/sources").json()
     assert len(rows) == 1
     assert rows[0]["channel"] == "manual"
+
+
+def test_knowledge_detail_unknown_404(client):
+    assert client.get("/api/v1/knowledge/kn_nope").status_code == 404
+
+
+def test_book_transition_unknown_404(client):
+    assert client.post("/api/v1/books/bk_nope/decide").status_code == 404
+
+
+def test_book_register_rejects_non_pdf(client, repo, tmp_path):
+    knowledge = _seed_knowledge(repo)
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
+    rel = "raw/books/not_pdf.txt"
+    target = tmp_path / rel
+    target.parent.mkdir(parents=True)
+    target.write_text("not a pdf", encoding="utf-8")
+    response = client.post(f"/api/v1/books/{book.book_id}/register", json={"relative_path": rel})
+    assert response.status_code == 400
+    assert repo.get_book(book.book_id).status == BookStatus.CANDIDATE.value  # 状态不变
+
+
+def test_book_register_rejects_path_traversal(client, repo):
+    knowledge = _seed_knowledge(repo)
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
+    response = client.post(f"/api/v1/books/{book.book_id}/register", json={"relative_path": "../escape.pdf"})
+    assert response.status_code == 400
+
+
+def test_complete_validates_sha256_format(client, repo):
+    knowledge = _seed_knowledge(repo)
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
+    response = client.post(f"/api/v1/books/{book.book_id}/complete",
+                           json={"sha256": "not-hex", "relative_path": "raw/books/x.pdf"})
+    assert response.status_code == 422
+
+
+def test_knowledge_rejected_hidden_in_list(client, repo):
+    _seed_knowledge(repo)
+    _seed_knowledge(repo, name="坏书", status="rejected")
+    response = client.get("/api/v1/knowledge?status=rejected")
+    assert response.status_code == 200
+    assert response.json() == []

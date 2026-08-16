@@ -10,9 +10,9 @@
 
 from __future__ import annotations
 
+import re
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from pathlib import Path
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Query
@@ -321,7 +321,7 @@ def create_app(
             page_url=str(payload.get("page_url", "")),
             download_url=str(payload.get("download_url", "")),
             file_keywords=str(payload.get("file_keywords", "")),
-            ok=bool(payload.get("ok", False)),
+            ok=payload.get("ok") is True,
             note=str(payload.get("note", "")),
         )
         return row.to_dict()
@@ -343,13 +343,13 @@ def create_app(
             raise HTTPException(status_code=400, detail="路径必须在数据根目录内") from exc
         if not path.is_file():
             raise HTTPException(status_code=404, detail=f"文件不存在：{relative}")
-        from qed_tracker.downloader import inspect_pdf
+        from qed_tracker.downloader import inspect_pdf, safe_filename
 
         try:
             digest, size, pages = inspect_pdf(path)
         except Exception as exc:  # noqa: BLE001 - PDF 校验失败统一 400
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        file_name = f"{row.display_title and Path(row.display_title).stem or 'book'}_{digest[:8]}.pdf"
+        file_name = f"{safe_filename(row.display_title or 'book')}_{digest[:8]}.pdf"
         try:
             final = repo.complete_download(
                 book_id,
@@ -385,13 +385,18 @@ def create_app(
         relative_path = str(payload.get("relative_path", "")).strip()
         if not sha256 or not relative_path:
             raise HTTPException(status_code=422, detail="sha256 与 relative_path 必填")
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", sha256):
+            raise HTTPException(status_code=422, detail="sha256 必须为 64 位十六进制")
+        page_count = payload.get("page_count")
+        if page_count is not None and type(page_count) is not int:
+            raise HTTPException(status_code=422, detail="page_count 必须为整数")
         repo = _kn(app)
         try:
             row = repo.complete_download(
                 book_id,
                 sha256=sha256,
                 relative_path=relative_path,
-                page_count=payload.get("page_count"),
+                page_count=page_count,
                 absolute_path=str(payload.get("absolute_path", "")),
                 file_name=str(payload.get("file_name", "")),
             )
