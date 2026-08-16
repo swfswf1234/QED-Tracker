@@ -16,23 +16,6 @@ from qed_tracker.providers.books import BookProvider, ProviderError
 logger = logging.getLogger("qed_tracker.books")
 
 
-def _set_no_of_note(note: str) -> str:
-    """catalog target note 里的「套一/套二/套三」→ "1"/"2"/"3"（无则空串）。"""
-    digits = {"一": "1", "二": "2", "三": "3", "四": "4", "五": "5"}
-    for key, value in digits.items():
-        if f"套{key}" in note:
-            return value
-    return ""
-
-
-def _vol_suffix_of_target(target_id: str) -> str:
-    """target_id 尾部卷标记（-v1/-answers/-上 等）→ 卷后缀；无卷返回空串。"""
-    tail = target_id.rsplit("-", 1)[-1]
-    if tail.startswith("v") or tail in ("answers", "上册", "下册", "上", "下", "missing"):
-        return tail
-    return ""
-
-
 @dataclass(frozen=True, slots=True)
 class RankedCandidate:
     candidate: Candidate
@@ -48,11 +31,9 @@ class CatalogAttempt:
 
 
 class BookService:
-    def __init__(self, providers: Iterable[BookProvider], resources: ResourceService, three_table=None):
+    def __init__(self, providers: Iterable[BookProvider], resources: ResourceService):
         self.providers = list(providers)
         self.resources = resources
-        # QED-030：CLI 下载流登记（可选注入；无 DB 时仅文件 + 本地清单，行为不变）
-        self.three_table = three_table
         self.failures: list[tuple[str, str]] = []
 
     def close(self) -> None:
@@ -128,23 +109,6 @@ class BookService:
         record = self.resources.download_candidate(
             resolved, kind=kind, destination_dir=destination, catalog_target=catalog_target
         )
-        # QED-030：三表登记（定位失败静默——文件已落盘，仅缺登记；例外吞掉不阻断下载结果）
-        if self.three_table is not None and catalog_target is not None:
-            try:
-                self.three_table.record_book_download(
-                    course_id=catalog_target.course_id,
-                    set_no=_set_no_of_note(catalog_target.note),
-                    title_hint=catalog_target.title,
-                    vol_suffix=_vol_suffix_of_target(catalog_target.id),
-                    sha256=record.sha256,
-                    relative_path=record.file["relative_path"],
-                    page_count=record.file.get("page_count", 0),
-                    channel=resolved.provider,
-                    provider_id=resolved.provider_id,
-                    download_url=resolved.download_url or "",
-                )
-            except Exception as exc:  # noqa: BLE001 - 登记失败不影响下载结果，记日志
-                logger.warning("三表登记失败（target=%s）：%s", catalog_target.id, exc)
         return record
 
     def run_catalog(

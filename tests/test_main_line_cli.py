@@ -1,63 +1,138 @@
+"""主链路 CLI（mainline 五层状态机映射）与 migrate 子命令测试（QED-031 任务 7）。
+
+行为断言直接调用 `_mainline_impl(args, repo, settings)`（SQLite repo 注入），
+解析断言走 `build_parser`；DB 门禁（db_configured=False → exit 2）走 `main`。
+"""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
-import httpx
 import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
+from qed_tracker.application.books import RankedCandidate
 from qed_tracker.cli import build_parser, main
-from qed_tracker.main_line.store import EntryStore
+from qed_tracker.config import load_settings
+from qed_tracker.database import utc_now
+from qed_tracker.db.knowledge_repository import KnowledgeRepository
+from qed_tracker.db.models import Base, QedCourse, QedDomain
+from qed_tracker.models import Availability, Candidate, DownloadLink
 
 
-@pytest.fixture(autouse=True)
-def _reset_curriculum_repository():
-    from qed_tracker.courses import set_repository
-
-    set_repository(None)
-    yield
-    set_repository(None)
-
-
-def _seed_curriculum_repository():
-    """用真实 migrations/data/math.json 种子构建 SQLite 内存 KnowledgeRepository（14 门课程）。"""
-    import json as json_module
-    from importlib.resources import files
-
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-
-    from qed_tracker.database import utc_now
-    from qed_tracker.db.knowledge_repository import KnowledgeRepository
-    from qed_tracker.db.models import Base, QedCourse, QedDomain
-
-    engine = create_engine("sqlite:///:memory:")
+@pytest.fixture
+def repo(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'cli.db'}")
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = factory()
     now = utc_now()
-    value = json_module.loads(
-        files("qed_tracker").joinpath("migrations", "data", "math.json").read_text(encoding="utf-8")
-    )
-    session.add(
-        QedDomain(
-            domain_id=value["subject"], name=value["name"], description=value.get("description", ""),
-            stages=value["stages"], created_at=now, updated_at=now,
-        )
-    )
-    for index, item in enumerate(value["courses"]):
-        session.add(
-            QedCourse(
-                course_id=item["course_id"], domain_id=value["subject"], sort_order=index, name=item["name"],
-                aliases=item.get("aliases", []), stage=item["stage"],
-                prerequisites=item.get("prerequisites", []), related_targets=item.get("related_targets", []),
-                note=item.get("note", ""), created_at=now, updated_at=now,
-            )
-        )
+    session.add(QedDomain(domain_id="math", name="数学", description="d", stages=["本科基础"],
+                          created_at=now, updated_at=now))
+    session.add(QedCourse(course_id="01_math_analysis", domain_id="math", sort_order=1, name="数学分析",
+                          aliases=[], stage="本科基础", prerequisites=[], related_targets=[],
+                          created_at=now, updated_at=now))
     session.commit()
-    session.close()
-    return KnowledgeRepository(factory)
+    yield KnowledgeRepository(factory)
+    engine.dispose()
 
+
+@pytest.fixture(autouse=True)
+def _courses_repository(repo):
+    from qed_tracker.courses import set_repository
+
+    set_repository(repo)
+    yield
+    set_repository(None)
+
+
+def _args(**kw) -> SimpleNamespace:
+    defaults = {
+        "mainline_command": None,
+        "course": "",
+        "title": "",
+        "author": [],
+        "knowledge_id": "",
+        "intro": None,
+        "version": None,
+        "reason": "",
+        "json": False,
+    }
+    defaults.update(kw)
+    return SimpleNamespace(**defaults)
+
+
+def _settings(tmp_path: Path):
+    return load_settings(data_root=tmp_path)
+
+
+def _prefill_response() -> dict:
+    return {
+        "evaluation": {"source": "llm", "text": "经典教材", "authority": "高", "set_candidate": "套一"},
+        "advice": {"download": "recommended", "reason": "MIT 指定"},
+    }
+
+
+class _FakeAdvisor:
+    def __init__(self, calls: list | None = None):
+        self.calls = calls if calls is not None else []
+
+    def prefill(self, *, course, title, authors, **kw):
+        self.calls.append({"course": course, "title": title, "authors": authors})
+        return _prefill_response()
+
+    def close(self):
+        pass
+
+
+def _record_with(path: str, page_count: int = 1):
+    from qed_tracker.models import ResourceRecord
+
+    return ResourceRecord(
+        resource_id="sha256:test",
+        kind="book",
+        title="数学分析原理",
+        authors=[],
+        language="zh",
+        year="",
+        identifiers={},
+        source={},
+        file={"sha256": "0" * 64, "relative_path": path, "page_count": page_count},
+    )
+
+
+class _FakeBookService:
+    """无 three_table 依赖的书籍服务替身：search/download/close。"""
+
+    failures: list[tuple[str, str]] = []
+
+    def __init__(self, candidates=None, *, error=None, data_root=None, pdf_bytes=None):
+        self.candidates = candidates if candidates is not None else []
+        self.error = error
+        self.data_root = data_root
+        self.pdf_bytes = pdf_bytes
+
+    def search(self, query, *, limit=10):
+        if self.error:
+            raise RuntimeError(self.error)
+        return [RankedCandidate(c) for c in self.candidates]
+
+    def download(self, candidate, *, kind):
+        rel = "raw/books/inbox/math_analysis.pdf"
+        if self.data_root is not None and self.pdf_bytes is not None:
+            path = self.data_root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(self.pdf_bytes)
+        return _record_with(rel)
+
+    def close(self):
+        pass
+
+
+# ---------------- 解析 ----------------
 
 def test_courses_list_parses() -> None:
     parser = build_parser()
@@ -81,524 +156,533 @@ def test_mainline_list_parses() -> None:
     assert args.course == "01_math_analysis"
 
 
-def _with_curriculum_repo(tmp_path, monkeypatch):
+def test_mainline_review_parses_with_intro_and_version() -> None:
+    parser = build_parser()
+    args = parser.parse_args([
+        "mainline", "review", "kn_1", "--intro", "经典教材。", "--version", "第8版",
+    ])
+    assert args.mainline_command == "review"
+    assert args.knowledge_id == "kn_1"
+    assert args.intro == "经典教材。"
+    assert args.version == "第8版"
+
+
+def test_mainline_download_uses_knowledge_id() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["mainline", "download", "kn_1"])
+    assert args.mainline_command == "download"
+    assert args.knowledge_id == "kn_1"
+
+
+def test_migrate_subcommand_parses() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["migrate"])
+    assert args.command == "migrate"
+    assert args.drop_legacy is False
+
+
+def test_migrate_subcommand_parses_drop_legacy() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["migrate", "--drop-legacy"])
+    assert args.command == "migrate"
+    assert args.drop_legacy is True
+
+
+# ---------------- DB 门禁 ----------------
+
+def test_courses_show_requires_db(tmp_path, capsys) -> None:
+    assert main(["--data-root", str(tmp_path), "courses", "show", "01_math_analysis"]) == 2
+    assert "数据库未配置" in capsys.readouterr().err
+
+
+def test_mainline_list_requires_db(tmp_path, capsys) -> None:
+    assert main(["--data-root", str(tmp_path), "mainline", "list", "--course", "01_math_analysis"]) == 2
+    assert "数据库未配置" in capsys.readouterr().err
+
+
+def test_migrate_requires_db(tmp_path, capsys) -> None:
+    assert main(["--data-root", str(tmp_path), "migrate"]) == 2
+    assert "数据库未配置" in capsys.readouterr().err
+
+
+# ---------------- new ----------------
+
+def test_mainline_new_creates_draft_knowledge(tmp_path, repo, monkeypatch, capsys) -> None:
     import qed_tracker.cli as cli_module
 
-    monkeypatch.setattr(cli_module, "_curriculum_repository", lambda settings: _seed_curriculum_repository())
+    calls: list = []
+    monkeypatch.setattr(cli_module, "_mainline_advisor", lambda **kw: _FakeAdvisor(calls))
+    args = _args(mainline_command="new", course="01_math_analysis", title="数学分析原理", author=["Rudin"])
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
 
-
-def test_courses_show_resolves_course_id_to_subject(tmp_path, capsys, monkeypatch) -> None:
-    _with_curriculum_repo(tmp_path, monkeypatch)
-    assert main(["--data-root", str(tmp_path), "courses", "show", "01_math_analysis"]) == 0
+    items = repo.list_knowledge(course_id="01_math_analysis")
+    assert len(items) == 1
+    assert items[0].status == "draft"
+    assert items[0].kind == "tutorial"
+    assert len(calls) == 1  # LLM 预填只出建议，不落 evaluation 字段
     out = capsys.readouterr().out
-    assert "数学" in out
-    assert out.count("\n") >= 14
+    assert "已创建条目" in out
+    assert "MIT 指定" in out
 
 
-def test_courses_show_unknown_errors(tmp_path, capsys, monkeypatch) -> None:
-    _with_curriculum_repo(tmp_path, monkeypatch)
-    assert main(["--data-root", str(tmp_path), "courses", "show", "nope"]) == 2
-    assert "未知" in capsys.readouterr().err
-
-
-def test_courses_list_outputs_subjects(tmp_path, capsys, monkeypatch) -> None:
-    _with_curriculum_repo(tmp_path, monkeypatch)
-    assert main(["--data-root", str(tmp_path), "courses", "list"]) == 0
-    out = capsys.readouterr().out
-    assert "math" in out
-
-
-def test_courses_show_unknown_json_structured_error(tmp_path, capsys, monkeypatch) -> None:
-    _with_curriculum_repo(tmp_path, monkeypatch)
-    assert main(["--data-root", str(tmp_path), "--json", "courses", "show", "nope"]) == 2
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["error"].startswith("未知学科课程体系")
-    assert "nope" in payload["error"]
-
-
-def test_mainline_list_empty_returns_0(tmp_path, capsys) -> None:
-    assert main(["--data-root", str(tmp_path), "mainline", "list", "--course", "01_math_analysis"]) == 0
-    assert capsys.readouterr().out == ""
-
-
-def _run_mainline_new(tmp_path: Path, monkeypatch, handler, title: str = "数学分析原理") -> int:
-    import qed_tracker.cli as cli_module
-    from qed_tracker.cli import main as cli_main
-
-    monkeypatch.setenv("QWEN_API_KEY", "test-key")
-
-    def fake_advisor(*, api_key, model, base_url, timeout, call_budget, max_tokens, client=None):
-        from qed_tracker.main_line.advisor import MainLineAdvisor
-        return MainLineAdvisor(
-            api_key=api_key, model=model, base_url=base_url, timeout=timeout,
-            call_budget=call_budget, max_tokens=max_tokens,
-            client=httpx.Client(transport=httpx.MockTransport(handler)),
-        )
-
-    monkeypatch.setattr(cli_module, "_mainline_advisor", fake_advisor)
-    monkeypatch.setattr(cli_module, "_curriculum_repository", lambda settings: _seed_curriculum_repository())
-    return cli_main(
-        ["--data-root", str(tmp_path), "mainline", "new",
-         "--course", "01_math_analysis", "--title", title],
-    )
-
-
-def _prefill_response() -> dict:
-    return {
-        "evaluation": {"text": "经典教材", "authority": "高", "set_candidate": "套一"},
-        "advice": {"download": "recommended", "reason": "MIT 指定"},
-    }
-
-
-def test_mainline_new_creates_entry_with_llm_prefill(tmp_path: Path, monkeypatch) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = {
-            "evaluation": {"text": "经典教材", "authority": "高", "set_candidate": "套一"},
-            "advice": {"download": "recommended", "reason": "MIT 指定"},
-        }
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(payload, ensure_ascii=False)}, "finish_reason": "stop"}]})
-
-    result = _run_mainline_new(tmp_path, monkeypatch, handler)
-    assert result == 0
-    store = EntryStore(tmp_path)
-    entries = store.list_course("01_math_analysis")
-    assert len(entries) == 1
-    entry = entries[0]
-    assert entry.evaluation["authority"] == "高"
-    assert entry.evaluation["source"] == "llm"
-    assert entry.status == "draft"
-
-
-def test_mainline_new_chinese_title_unique_slug(tmp_path: Path, monkeypatch) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(_prefill_response(), ensure_ascii=False)}, "finish_reason": "stop"}]})
-
-    result = _run_mainline_new(tmp_path, monkeypatch, handler, title="数学分析原理")
-    assert result == 0
-    result = _run_mainline_new(tmp_path, monkeypatch, handler, title="数学分析教程")
-    assert result == 0
-    store = EntryStore(tmp_path)
-    entries = store.list_course("01_math_analysis")
-    assert len(entries) == 2
-    assert entries[0].entry_id != entries[1].entry_id
-
-
-def test_mainline_new_duplicate_entry_no_llm_call(tmp_path: Path, monkeypatch) -> None:
-    calls: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(request)
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(_prefill_response(), ensure_ascii=False)}, "finish_reason": "stop"}]})
-
-    result = _run_mainline_new(tmp_path, monkeypatch, handler)
-    assert result == 0
-    assert len(calls) == 1
-    result = _run_mainline_new(tmp_path, monkeypatch, handler)
-    assert result == 2
-    assert len(calls) == 1
-
-
-def test_mainline_review_transitions_to_reviewed(tmp_path: Path) -> None:
-    from qed_tracker.cli import main as cli_main
-
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "review", "01_math_analysis", "e1"])
-    assert result == 0
-    entry = store.get("01_math_analysis", "e1")
-    assert entry.status == "reviewed"
-
-
-def test_mainline_reject_persists_reason(tmp_path: Path) -> None:
-    from qed_tracker.cli import main as cli_main
-
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "reject", "01_math_analysis", "e1", "--reason", "非经典"])
-    assert result == 0
-    entry = store.get("01_math_analysis", "e1")
-    assert entry.status == "rejected"
-    assert entry.reject_reason == "非经典"
-
-
-def test_channel_summary_aggregates(tmp_path: Path) -> None:
-    store = EntryStore(tmp_path)
-    store.create({
-        "entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": [],
-        "channels": [
-            {"channel": "internet_archive", "ok": True, "note": ""},
-            {"channel": "google_books", "ok": False, "note": "429"},
-        ],
-    })
-    stats = store.channel_stats()
-    assert stats["internet_archive"] == {"ok": 1, "fail": 0}
-    assert stats["google_books"] == {"ok": 0, "fail": 1}
-
-
-def _record_with(path: str):
-    from qed_tracker.models import ResourceRecord
-
-    return ResourceRecord(
-        resource_id="sha256:test",
-        kind="book",
-        title="数学分析原理",
-        authors=[],
-        language="zh",
-        year="",
-        identifiers={},
-        source={},
-        file={"sha256": "0" * 64, "relative_path": path},
-    )
-
-
-def test_mainline_download_success(tmp_path: Path, monkeypatch, capsys) -> None:
-    from qed_tracker.application.books import RankedCandidate
-    from qed_tracker.cli import main as cli_main
-    from qed_tracker.main_line.store import MainLineStatus
-    from qed_tracker.models import Candidate
-
-    candidate = Candidate("internet_archive", "ia-1", "数学分析原理", download_url="https://example.test/book.pdf")
-
-    class FakeBookService:
-        failures: list[tuple[str, str]] = []
-
-        def search(self, query, *, limit=10):
-            return [RankedCandidate(candidate)]
-
-        def download(self, candidate, *, kind):
-            return _record_with("raw/books/inbox/math_analysis.pdf")
-
-        def close(self):
-            pass
-
+def test_mainline_new_duplicate_returns_2_no_llm_call(tmp_path, repo, monkeypatch) -> None:
     import qed_tracker.cli as cli_module
 
-    monkeypatch.setattr(cli_module, "_book_service", lambda settings: FakeBookService())
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "数学分析原理", "authors": ["Rudin"]})
-    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "download", "01_math_analysis", "e1"])
-    assert result == 0
+    calls: list = []
+    monkeypatch.setattr(cli_module, "_mainline_advisor", lambda **kw: _FakeAdvisor(calls))
+    args = _args(mainline_command="new", course="01_math_analysis", title="数学分析原理")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert len(calls) == 1  # 重复检测在 LLM 调用之前
+
+
+def test_mainline_new_unknown_course_returns_2(tmp_path, repo, monkeypatch) -> None:
+    import qed_tracker.cli as cli_module
+
+    calls: list = []
+    monkeypatch.setattr(cli_module, "_mainline_advisor", lambda **kw: _FakeAdvisor(calls))
+    args = _args(mainline_command="new", course="99_nope", title="数学分析原理")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert len(calls) == 0
+
+
+# ---------------- review / reject ----------------
+
+def test_mainline_review_confirms_knowledge(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    args = _args(mainline_command="review", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+
+    updated = repo.get_knowledge(knowledge.knowledge_id)
+    assert updated.status == "confirmed"
+    assert updated.textbook_ref["title"] == "数学分析原理"
+    assert "教材与习题集配套资源" in updated.textbook_intro
+    assert "已定稿" in capsys.readouterr().out
+
+
+def test_mainline_review_custom_intro_and_version(tmp_path, repo) -> None:
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    args = _args(mainline_command="review", knowledge_id=knowledge.knowledge_id,
+                 intro="MIT 指定教材。", version="第8版")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+
+    updated = repo.get_knowledge(knowledge.knowledge_id)
+    assert updated.textbook_intro == "MIT 指定教材。"
+    assert updated.textbook_ref["version"] == "第8版"
+
+
+def test_mainline_review_invalid_transition_returns_2(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={}, textbook_intro="x")
+    args = _args(mainline_command="review", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert "状态迁移非法" in capsys.readouterr().err
+
+
+def test_mainline_reject_persists_reason(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    args = _args(mainline_command="reject", knowledge_id=knowledge.knowledge_id, reason="非经典")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+    assert repo.get_knowledge(knowledge.knowledge_id) is None  # rejected 彻底隐藏
+    assert repo.get_knowledge(knowledge.knowledge_id, include_hidden=True).reject_reason == "非经典"
+    assert "已否定" in capsys.readouterr().out
+
+
+def test_mainline_review_missing_knowledge_returns_2(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    args = _args(mainline_command="review", knowledge_id="kn_missing")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert "知识行不存在" in capsys.readouterr().err
+
+
+# ---------------- download ----------------
+
+def test_mainline_download_happy_path(tmp_path, repo, monkeypatch, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    monkeypatch.setattr(cli_module, "_book_service", lambda s: _FakeBookService(
+        candidates=[Candidate("internet_archive", "ia-1", "数学分析原理",
+                              download_url="https://example.test/book.pdf")],
+    ))
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+
+    args = _args(mainline_command="download", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+
+    book = repo.list_books(knowledge.knowledge_id)[0]
+    assert book.status == "downloaded"
+    assert book.sha256 == "0" * 64
+    assert book.relative_path == "raw/books/inbox/math_analysis.pdf"
+    assert book.file_name == "math_analysis.pdf"
+    assert book.page_count == 1
     assert "已下载" in capsys.readouterr().out
-    entry = store.get("01_math_analysis", "e1")
-    assert entry.status == MainLineStatus.DOWNLOADED.value
-    assert entry.resource_id == "sha256:test"
-    assert entry.final_path == str(tmp_path / "raw/books/inbox/math_analysis.pdf")
-    assert entry.channels[-1]["channel"] == "internet_archive"
-    assert entry.channels[-1]["ok"] is True
-    assert entry.channels[-1]["note"] == "sha256:test"
+    sources = repo.list_sources(book.book_id)
+    assert sources[-1].channel == "internet_archive"
+    assert sources[-1].ok is True
 
 
-def test_mainline_download_no_candidates_returns_3(tmp_path: Path, monkeypatch, capsys) -> None:
-    from qed_tracker.application.books import RankedCandidate
-    from qed_tracker.cli import main as cli_main
-    from qed_tracker.main_line.store import MainLineStatus
-    from qed_tracker.models import Availability, Candidate, DownloadLink
+def test_mainline_download_requires_confirmed(tmp_path, repo, monkeypatch, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    monkeypatch.setattr(cli_module, "_book_service", lambda s: _FakeBookService())
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    args = _args(mainline_command="download", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert "confirmed" in capsys.readouterr().err
+    assert repo.list_books(knowledge.knowledge_id) == []
+
+
+def test_mainline_download_no_candidates_returns_3(tmp_path, repo, monkeypatch, capsys) -> None:
+    import qed_tracker.cli as cli_module
 
     candidate = Candidate(
         "libgen_li", "lg-1", "数学分析原理",
         availability=Availability.METADATA_ONLY,
         links=(DownloadLink("torrent", "https://example.test/book.torrent"),),
     )
+    monkeypatch.setattr(cli_module, "_book_service", lambda s: _FakeBookService(candidates=[candidate]))
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
 
-    class FakeBookService:
-        failures: list[tuple[str, str]] = []
-
-        def search(self, query, *, limit=10):
-            return [RankedCandidate(candidate)]
-
-        def close(self):
-            pass
-
-    import qed_tracker.cli as cli_module
-
-    monkeypatch.setattr(cli_module, "_book_service", lambda settings: FakeBookService())
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "数学分析原理", "authors": []})
-    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "download", "01_math_analysis", "e1"])
-    assert result == 3
+    args = _args(mainline_command="download", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 3
     assert "人工下载指引" in capsys.readouterr().out
-    entry = store.get("01_math_analysis", "e1")
-    assert entry.channels[-1]["channel"] == "search"
-    assert entry.channels[-1]["ok"] is False
-    assert entry.channels[-1]["note"] == "无自动可下载候选"
+
+    book = repo.list_books(knowledge.knowledge_id)[0]
+    assert book.status == "failed"  # 无候选也落 failed，可重试
+    sources = repo.list_sources(book.book_id)
+    assert sources[-1].channel == "search"
+    assert sources[-1].ok is False
 
 
-def test_mainline_download_failure_records_channel(tmp_path: Path, monkeypatch) -> None:
-    from qed_tracker.cli import main as cli_main
-    from qed_tracker.main_line.store import MainLineStatus
-
-    class FakeBookService:
-        failures: list[tuple[str, str]] = []
-
-        def search(self, query, *, limit=10):
-            raise RuntimeError("来源不可用")
-
-        def close(self):
-            pass
-
+def test_mainline_download_failure_fails_book(tmp_path, repo, monkeypatch, capsys) -> None:
     import qed_tracker.cli as cli_module
 
-    monkeypatch.setattr(cli_module, "_book_service", lambda settings: FakeBookService())
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "数学分析原理", "authors": []})
-    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "download", "01_math_analysis", "e1"])
-    assert result == 2
-    entry = store.get("01_math_analysis", "e1")
-    assert entry.channels[-1]["channel"] == "download"
-    assert entry.channels[-1]["ok"] is False
-    assert "来源不可用" in entry.channels[-1]["note"]
+    monkeypatch.setattr(cli_module, "_book_service", lambda s: _FakeBookService(error="来源不可用"))
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+
+    args = _args(mainline_command="download", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert "下载失败" in capsys.readouterr().err
+
+    book = repo.list_books(knowledge.knowledge_id)[0]
+    assert book.status == "failed"
+    sources = repo.list_sources(book.book_id)
+    assert sources[-1].channel == "download"
+    assert sources[-1].ok is False
+    assert "来源不可用" in sources[-1].note
 
 
-def test_mainline_download_missing_entry_returns_2(tmp_path: Path, capsys) -> None:
-    from qed_tracker.cli import main as cli_main
-
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "download", "01_math_analysis", "nope"])
-    assert result == 2
-    assert "条目不存在" in capsys.readouterr().err
-
-
-def test_mainline_download_requires_reviewed_status(tmp_path: Path, monkeypatch) -> None:
-    from qed_tracker.cli import main as cli_main
-
-    class FakeBookService:
-        failures: list[tuple[str, str]] = []
-
-        def search(self, query, *, limit=10):
-            raise AssertionError("门禁失效：draft 条目不应触发 search")
-
-        def close(self):
-            pass
-
+def test_mainline_download_missing_knowledge_returns_2(tmp_path, repo, monkeypatch, capsys) -> None:
     import qed_tracker.cli as cli_module
 
-    monkeypatch.setattr(cli_module, "_book_service", lambda settings: FakeBookService())
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "数学分析原理", "authors": []})
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "download", "01_math_analysis", "e1"])
-    assert result == 2
-    entry = store.get("01_math_analysis", "e1")
-    assert entry.status == "draft"
-    assert len(entry.channels) == 0
+    monkeypatch.setattr(cli_module, "_book_service", lambda s: _FakeBookService())
+    args = _args(mainline_command="download", knowledge_id="kn_missing")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert "知识行不存在" in capsys.readouterr().err
 
 
-def test_mainline_verify_missing_final_path(tmp_path: Path, capsys) -> None:
-    from qed_tracker.cli import main as cli_main
+def test_mainline_download_retry_from_failed(tmp_path, repo, monkeypatch) -> None:
+    import qed_tracker.cli as cli_module
 
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "verify", "01_math_analysis", "e1"])
-    assert result == 2
-    assert "final_path" in capsys.readouterr().err
+    calls: list[str] = []
+
+    def fake(settings):
+        calls.append("search")
+        if len(calls) == 1:
+            raise RuntimeError("首次失败")
+        return _FakeBookService(candidates=[Candidate("internet_archive", "ia-1", "数学分析原理",
+                                                      download_url="https://example.test/book.pdf")])
+
+    monkeypatch.setattr(cli_module, "_book_service", fake)
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+
+    args = _args(mainline_command="download", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+
+    book = repo.list_books(knowledge.knowledge_id)[0]
+    assert book.status == "downloaded"  # failed → downloading 重试成功
 
 
-def test_mainline_verify_success(tmp_path: Path, capsys, pdf_bytes: bytes) -> None:
-    from qed_tracker.cli import main as cli_main
+# ---------------- verify / approve ----------------
 
-    pdf = tmp_path / "book.pdf"
+def test_mainline_verify_success(tmp_path, repo, monkeypatch, pdf_bytes, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                            title="数学分析原理", authors=[])
+    repo.decide_book(book.book_id)
+    repo.start_download(book.book_id)
+    pdf = tmp_path / "raw" / "books" / "inbox" / "math_analysis.pdf"
+    pdf.parent.mkdir(parents=True, exist_ok=True)
     pdf.write_bytes(pdf_bytes)
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": [], "final_path": str(pdf)})
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "verify", "01_math_analysis", "e1"])
-    assert result == 0
-    out = capsys.readouterr().out
-    assert "sha256=" in out
-    assert "页" in out
+    repo.complete_download(book.book_id, sha256="0" * 64, relative_path="raw/books/inbox/math_analysis.pdf",
+                           page_count=1, absolute_path=str(pdf), file_name=pdf.name)
+
+    args = _args(mainline_command="verify", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+    assert repo.get_book(book.book_id).status == "verified"
+    assert "已校验" in capsys.readouterr().out
 
 
-def test_mainline_verify_missing_file_returns_3(tmp_path: Path, capsys) -> None:
-    from qed_tracker.cli import main as cli_main
+def test_mainline_verify_missing_downloaded_book_returns_2(tmp_path, repo, monkeypatch, capsys) -> None:
+    import qed_tracker.cli as cli_module
 
-    store = EntryStore(tmp_path)
-    store.create({
-        "entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": [],
-        "final_path": str(tmp_path / "missing.pdf"),
-    })
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "verify", "01_math_analysis", "e1"])
-    assert result == 3
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+    args = _args(mainline_command="verify", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert "请先执行 download" in capsys.readouterr().err
+
+
+def test_mainline_verify_missing_file_returns_3(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                            title="数学分析原理", authors=[])
+    repo.decide_book(book.book_id)
+    repo.start_download(book.book_id)
+    repo.complete_download(book.book_id, sha256="0" * 64, relative_path="raw/books/inbox/missing.pdf")
+
+    args = _args(mainline_command="verify", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 3
     assert "文件不存在" in capsys.readouterr().err
 
 
-def test_mainline_verify_invalid_pdf_returns_2(tmp_path: Path, capsys) -> None:
-    from qed_tracker.cli import main as cli_main
+def test_mainline_approve_copies_and_completes(tmp_path, repo, monkeypatch, pdf_bytes, capsys) -> None:
+    import qed_tracker.cli as cli_module
 
-    pdf = tmp_path / "fake.pdf"
-    pdf.write_text("not a pdf", encoding="utf-8")
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": [], "final_path": str(pdf)})
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "verify", "01_math_analysis", "e1"])
-    assert result == 2
-    assert "校验失败" in capsys.readouterr().err
+    root_dataset = tmp_path / "root-dataset"
+    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(root_dataset))
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                            title="数学分析原理", authors=[])
+    repo.decide_book(book.book_id)
+    repo.start_download(book.book_id)
+    pdf = tmp_path / "raw" / "books" / "inbox" / "math_analysis.pdf"
+    pdf.parent.mkdir(parents=True, exist_ok=True)
+    pdf.write_bytes(pdf_bytes)
+    repo.complete_download(book.book_id, sha256="0" * 64, relative_path="raw/books/inbox/math_analysis.pdf",
+                           page_count=1, absolute_path=str(pdf), file_name=pdf.name)
+    repo.verify_book(book.book_id)
+
+    args = _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+
+    target = root_dataset / "raw" / "books" / "math-qe" / "01_math_analysis" / "math_analysis.pdf"
+    assert target.is_file()
+    assert target.read_bytes() == pdf_bytes
+    assert repo.get_knowledge(knowledge.knowledge_id).status == "completed"  # 全部书行 verified 后自动完成
+    assert "验收通过" in capsys.readouterr().out
 
 
-def test_mainline_channels_command_prints_summary(tmp_path: Path, capsys) -> None:
-    from qed_tracker.cli import main as cli_main
+def test_mainline_approve_requires_verified_book(tmp_path, repo, monkeypatch, capsys) -> None:
+    import qed_tracker.cli as cli_module
 
-    store = EntryStore(tmp_path)
-    store.create({
-        "entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": [],
-        "channels": [{"channel": "internet_archive", "ok": True, "note": ""}],
-    })
-    store.create({
-        "entry_id": "e2", "course_id": "02_linear_algebra", "title": "T2", "authors": [],
-        "channels": [{"channel": "internet_archive", "ok": False, "note": "404"}, {"channel": "google_books", "ok": True, "note": ""}],
-    })
-    assert cli_main(["--data-root", str(tmp_path), "mainline", "channels"]) == 0
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+    args = _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert "请先执行 verify" in capsys.readouterr().err
+
+
+# ---------------- 全链路 ----------------
+
+def test_mainline_full_flow(tmp_path, repo, monkeypatch, pdf_bytes) -> None:
+    import qed_tracker.cli as cli_module
+
+    monkeypatch.setattr(cli_module, "_book_service", lambda s: _FakeBookService(
+        candidates=[Candidate("internet_archive", "ia-1", "数学分析原理",
+                              download_url="https://example.test/book.pdf")],
+        data_root=tmp_path, pdf_bytes=pdf_bytes,
+    ))
+    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(tmp_path / "root-dataset"))
+    monkeypatch.setattr(cli_module, "_mainline_advisor", lambda **kw: _FakeAdvisor())
+    settings = _settings(tmp_path)
+
+    assert cli_module._mainline_impl(
+        _args(mainline_command="new", course="01_math_analysis", title="数学分析原理", author=["Rudin"]),
+        repo, settings) == 0
+    knowledge = repo.list_knowledge(course_id="01_math_analysis")[0]
+    assert knowledge.status == "draft"
+
+    assert cli_module._mainline_impl(
+        _args(mainline_command="review", knowledge_id=knowledge.knowledge_id), repo, settings) == 0
+    assert repo.get_knowledge(knowledge.knowledge_id).status == "confirmed"
+
+    assert cli_module._mainline_impl(
+        _args(mainline_command="download", knowledge_id=knowledge.knowledge_id), repo, settings) == 0
+    book = repo.list_books(knowledge.knowledge_id)[0]
+    assert book.status == "downloaded"
+
+    assert cli_module._mainline_impl(
+        _args(mainline_command="verify", knowledge_id=knowledge.knowledge_id), repo, settings) == 0
+    assert repo.get_book(book.book_id).status == "verified"
+
+    assert cli_module._mainline_impl(
+        _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id), repo, settings) == 0
+    assert repo.get_knowledge(knowledge.knowledge_id).status == "completed"
+    target = tmp_path / "root-dataset" / "raw" / "books" / "math-qe" / "01_math_analysis" / "math_analysis.pdf"
+    assert target.is_file()
+    assert target.read_bytes() == pdf_bytes
+
+
+# ---------------- list / channels ----------------
+
+def test_mainline_list_shows_books(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="1", name="数学分析 套一")
+    repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                     title="数学分析 套一", authors=[])
+    args = _args(mainline_command="list", course="01_math_analysis")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+    out = capsys.readouterr().out
+    assert knowledge.knowledge_id in out
+    assert "数学分析 套一" in out
+
+
+def test_mainline_list_json(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                     title="数学分析原理", authors=[])
+    args = _args(mainline_command="list", course="01_math_analysis", json=True)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["knowledge_id"] == knowledge.knowledge_id
+    assert payload[0]["books"][0]["status"] == "candidate"
+
+
+def test_mainline_channels_aggregates(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+    first = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                             title="数学分析原理", authors=[])
+    second = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                              title="数学分析原理", part="第一册", authors=[])
+    repo.add_source(first.book_id, channel="internet_archive", ok=True, note="sha256:a")
+    repo.add_source(first.book_id, channel="google_books", ok=False, note="429")
+    repo.add_source(second.book_id, channel="internet_archive", ok=False, note="404")
+
+    args = _args(mainline_command="channels")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
     out = capsys.readouterr().out
     assert "internet_archive" in out
     assert "google_books" in out
     assert "成功" in out
 
 
-def test_mainline_channels_json_output(tmp_path: Path, capsys) -> None:
-    from qed_tracker.cli import main as cli_main
+def test_mainline_channels_json(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
 
-    store = EntryStore(tmp_path)
-    store.create({
-        "entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": [],
-        "channels": [{"channel": "internet_archive", "ok": True, "note": ""}],
-    })
-    store.create({
-        "entry_id": "e2", "course_id": "02_linear_algebra", "title": "T2", "authors": [],
-        "channels": [{"channel": "internet_archive", "ok": False, "note": "404"}],
-    })
-    assert cli_main(["--data-root", str(tmp_path), "--json", "mainline", "channels"]) == 0
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    first = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                             title="数学分析原理", authors=[])
+    second = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                              title="数学分析原理", part="第一册", authors=[])
+    repo.add_source(first.book_id, channel="internet_archive", ok=True, note="")
+    repo.add_source(second.book_id, channel="internet_archive", ok=False, note="404")
+
+    args = _args(mainline_command="channels", json=True)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["channels"]["internet_archive"] == {"ok": 1, "fail": 1}
 
 
-def test_approve_copies_file_to_root(tmp_path: Path, monkeypatch, pdf_bytes: bytes) -> None:
-    import qed_tracker.cli as cli_module
-    from qed_tracker.cli import main as cli_main
-    from qed_tracker.main_line.store import MainLineStatus
+# ---------------- migrate ----------------
 
-    source_dir = tmp_path / "dataset" / "qed-tracker" / "raw" / "books" / "math-qe" / "01_math_analysis"
-    source_dir.mkdir(parents=True)
-    source = source_dir / "math-analysis.pdf"
-    source.write_bytes(pdf_bytes)
+def test_migrate_command_happy_path(tmp_path, monkeypatch, capsys) -> None:
+    import qed_tracker.database as database_module
 
-    root_dataset = tmp_path / "root-dataset"
-    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(root_dataset))
+    engine = create_engine(f"sqlite:///{tmp_path / 'migrate.db'}")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE qt_selections (selection_id VARCHAR(100) PRIMARY KEY, course_id VARCHAR(64),"
+            " title VARCHAR(500), authors JSON, roles JSON, version JSON, vols JSON, set_no VARCHAR(4),"
+            " evaluation JSON, note VARCHAR(1000), status VARCHAR(24), reject_reason VARCHAR(1000),"
+            " rejected_by VARCHAR(16), supersede_reason VARCHAR(1000), created_at DATETIME,"
+            " confirmed_at DATETIME, superseded_at DATETIME, rejected_at DATETIME)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE qt_downloads (download_id VARCHAR(100) PRIMARY KEY, selection_id VARCHAR(100),"
+            " vol VARCHAR(32), roles JSON, file_hint VARCHAR(200), sha256 VARCHAR(64),"
+            " relative_path VARCHAR(500), page_count INT, status VARCHAR(24), reject_reason VARCHAR(1000),"
+            " rejected_by VARCHAR(16), review_note VARCHAR(1000), created_at DATETIME,"
+            " downloaded_at DATETIME, approved_at DATETIME, rejected_at DATETIME)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE qt_sources (source_id VARCHAR(100) PRIMARY KEY, download_id VARCHAR(100),"
+            " channel VARCHAR(24), provider_id VARCHAR(200), page_url VARCHAR(1000),"
+            " download_url VARCHAR(1000), file_keywords VARCHAR(500), ok TINYINT(1),"
+            " note VARCHAR(1000), attempted_at DATETIME)"
+        ))
+        conn.execute(text(
+            "INSERT INTO qt_selections VALUES"
+            " ('cand_1','01_math_analysis','微积分学教程',"
+            " json_array('菲赫金哥尔茨'),json_array('textbook'),json_object('edition','第8版'),"
+            " json_array('v1'),'2','', '', 'confirmed','','','',"
+            " '2026-08-01 10:00:00','2026-08-02 10:00:00',NULL,NULL)"
+        ))
+        conn.execute(text(
+            "INSERT INTO qt_downloads VALUES"
+            " ('dl_1','cand_1','v1',json_array('textbook'),'',"
+            " 'aaaa','raw/books/math-qe/01_math_analysis/x_v1.pdf',100,'downloaded','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00',NULL,NULL)"
+        ))
+        conn.execute(text(
+            "INSERT INTO qt_sources VALUES"
+            " ('src_1','dl_1','manual','','','http://x','',1,'','2026-08-03 10:00:00')"
+        ))
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(database_module, "create_engine_for", lambda settings: engine)
+    monkeypatch.setenv("QED_DB_PASSWORD", "test")
 
-    store = EntryStore(tmp_path / "dataset" / "qed-tracker")
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
-    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
-    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADING)
-    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADED)
-    store.update("01_math_analysis", "e1", final_path=str(source))
+    assert main(["--data-root", str(tmp_path), "migrate"]) == 0
+    assert "迁移完成" in capsys.readouterr().out
 
-    result = cli_main(["--data-root", str(tmp_path / "dataset" / "qed-tracker"), "mainline", "approve", "01_math_analysis", "e1"])
-    assert result == 0
-    target = root_dataset / "raw" / "books" / "math-qe" / "01_math_analysis" / "math-analysis.pdf"
-    assert target.is_file()
-    assert target.read_bytes() == pdf_bytes
-    entry = store.get("01_math_analysis", "e1")
-    assert entry.status == "approved"
-    assert entry.final_path == str(target)
-
-
-def test_approve_non_downloaded_status_returns_2(tmp_path: Path, capsys) -> None:
-    from qed_tracker.cli import main as cli_main
-
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "approve", "01_math_analysis", "e1"])
-    assert result == 2
-    assert "只有 downloaded" in capsys.readouterr().err
-
-
-def test_approve_missing_final_path_returns_2(tmp_path: Path, capsys) -> None:
-    from qed_tracker.cli import main as cli_main
-    from qed_tracker.main_line.store import MainLineStatus
-
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
-    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
-    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADING)
-    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADED)
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "approve", "01_math_analysis", "e1"])
-    assert result == 2
-    assert "final_path" in capsys.readouterr().err
-
-
-def test_approve_missing_source_file_returns_3(tmp_path: Path, capsys) -> None:
-    from qed_tracker.cli import main as cli_main
-    from qed_tracker.main_line.store import MainLineStatus
-
-    store = EntryStore(tmp_path)
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
-    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
-    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADING)
-    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADED)
-    store.update("01_math_analysis", "e1", final_path=str(tmp_path / "missing.pdf"))
-    result = cli_main(["--data-root", str(tmp_path), "mainline", "approve", "01_math_analysis", "e1"])
-    assert result == 3
-    assert "文件不存在" in capsys.readouterr().err
-
-
-def test_approve_handoff_failure_returns_2(tmp_path: Path, monkeypatch, capsys, pdf_bytes: bytes) -> None:
-    import shutil
-
-    import qed_tracker.cli as cli_module
-    from qed_tracker.cli import main as cli_main
-    from qed_tracker.main_line.store import MainLineStatus
-
-    source_dir = tmp_path / "dataset" / "qed-tracker" / "raw" / "books" / "math-qe" / "01_math_analysis"
-    source_dir.mkdir(parents=True)
-    source = source_dir / "math-analysis.pdf"
-    source.write_bytes(pdf_bytes)
-    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(tmp_path / "root-dataset"))
-
-    store = EntryStore(tmp_path / "dataset" / "qed-tracker")
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
-    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
-    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADING)
-    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADED)
-    store.update("01_math_analysis", "e1", final_path=str(source))
-
-    def boom(*args, **kwargs):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(shutil, "copy2", boom)
-    result = cli_main(
-        ["--data-root", str(tmp_path / "dataset" / "qed-tracker"), "--json", "mainline", "approve", "01_math_analysis", "e1"]
-    )
-    assert result == 2
-    payload = json.loads(capsys.readouterr().out)
-    assert "移交失败" in payload["error"]
-    entry = store.get("01_math_analysis", "e1")
-    assert entry.status == "downloaded"
-    assert entry.final_path == str(source)
-
-
-def test_approve_existing_target_returns_2(tmp_path: Path, monkeypatch, capsys, pdf_bytes: bytes) -> None:
-    import qed_tracker.cli as cli_module
-    from qed_tracker.cli import main as cli_main
-    from qed_tracker.main_line.store import MainLineStatus
-
-    source_dir = tmp_path / "dataset" / "qed-tracker" / "raw" / "books" / "math-qe" / "01_math_analysis"
-    source_dir.mkdir(parents=True)
-    source = source_dir / "math-analysis.pdf"
-    source.write_bytes(pdf_bytes)
-
-    root_dataset = tmp_path / "root-dataset"
-    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(root_dataset))
-    target = root_dataset / "raw" / "books" / "math-qe" / "01_math_analysis" / "math-analysis.pdf"
-    target.parent.mkdir(parents=True)
-    target.write_bytes(b"other bytes")
-
-    store = EntryStore(tmp_path / "dataset" / "qed-tracker")
-    store.create({"entry_id": "e1", "course_id": "01_math_analysis", "title": "T1", "authors": []})
-    store.transition("01_math_analysis", "e1", MainLineStatus.REVIEWED)
-    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADING)
-    store.transition("01_math_analysis", "e1", MainLineStatus.DOWNLOADED)
-    store.update("01_math_analysis", "e1", final_path=str(source))
-
-    result = cli_main(["--data-root", str(tmp_path / "dataset" / "qed-tracker"), "mainline", "approve", "01_math_analysis", "e1"])
-    assert result == 2
-    assert "移交目标已存在" in capsys.readouterr().err
-    assert target.read_bytes() == b"other bytes"
-    entry = store.get("01_math_analysis", "e1")
-    assert entry.status == "downloaded"
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM qt_knowledge")).fetchone()[0] == 1
+        assert conn.execute(text("SELECT COUNT(*) FROM qt_books")).fetchone()[0] == 1
+        assert conn.execute(text("SELECT COUNT(*) FROM qt_sources")).fetchone()[0] == 1
+        assert conn.execute(text("SELECT COUNT(*) FROM qed_domain")).fetchone()[0] >= 1
+    engine.dispose()

@@ -7,12 +7,8 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import httpx
 
-from qed_tracker.main_line.store import EntryStore
 from qed_tracker.providers.books import InternetArchiveProvider, LibgenLiProvider, _decode_text
 
 # 2026-08-09 真实 libgen.li 页面结构（与 tests/test_book_providers.py 同步）
@@ -41,20 +37,6 @@ def _with_charset(content: bytes, charset: str) -> httpx.Response:
         )
 
     return handler
-
-
-def test_entry_store_writes_utf8(tmp_path: Path) -> None:
-    store = EntryStore(tmp_path)
-    store.create({
-        "entry_id": "cn-test", "course_id": "01_math_analysis", "title": "数学分析原理",
-        "authors": ["Rudin"], "version": {"detail": "中译本"},
-    })
-    raw = (tmp_path / "meta" / "main-line" / "01_math_analysis" / "cn-test.json").read_bytes()
-    raw.decode("utf-8")  # 必须能被 UTF-8 解码
-    value = json.loads(raw.decode("utf-8"))
-    assert value["title"] == "数学分析原理"
-    assert value["authors"] == ["Rudin"]
-    assert "中译本" in value["version"]["detail"]
 
 
 def test_decode_text_roundtrip() -> None:
