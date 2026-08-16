@@ -81,7 +81,7 @@ QED-Tracker 客户端（`src/qed_tracker/axiom.py`）只消费以下 3 个端点
 | 端口 | Axiom-Flow 默认 `8902`（根仓库 ADR 0002；保留 8000 兼容） |
 | 数据边界 | QED-Tracker 不导入 Axiom-Flow Python 包、不访问其 MySQL（`af_*` 表）、不写入其数据目录；交接只走 HTTP API |
 | dataset | Axiom-Flow 解析产物指向根仓库 `dataset/axiom-flow/parsed/`（Phase 3，ALN-003）；QED-Tracker 移交 PDF 见 [主链路设计](main-line-curriculum.md) |
-| qed 库 | 共享实例、表命名空间隔离（`qt_*` / `af_*`），见 [数据库设计](database-schema-ownership.md) |
+| qed 库 | 共享实例、表命名空间隔离（`qt_*` / `af_*` / 共享 `qed_*`），见 [数据库设计](database-schema.md) |
 | 前端入口 | 8903 前端只连 8900 网关（ADR 0007），浏览器不直连 8902 |
 
 ### 传输记录（客户端行为事实）

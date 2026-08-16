@@ -1,16 +1,18 @@
 # 数据库设计：qt_* 表结构（qed 库）
 
-设计状态：Accepted
-实现状态：Retired（QED-030：qt_resources 已 drop，表结构事实源移交 [three-table-schema.md](three-table-schema.md)）
-最后更新：2026-08-14
+设计状态：Retired
+实现状态：Retired（QED-030：qt_resources 已 drop；2026-08-16 知识层次重构后整体被
+[database-schema.md](database-schema.md) 取代）
+最后更新：2026-08-16
 关联代码：`src/qed_tracker/db/`（models/selection_repository/migrations）、`src/qed_tracker/database.py`
 关联测试：`tests/test_db_models.py`、`tests/test_selection_repository.py`、`tests/test_db_three_table_smoke.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)；承接根仓库 ADR 0003（共享 qed 库、表命名空间隔离）
 需求方：QED-Engine（根仓库 REQ-026，QED-023；2026-08-09 用户裁决：qt_* 表结构由本仓库确认并维护）
 
-> **退役声明（QED-030）**：本文描述的 qt_resources 登记索引已随 0005_drop_resources 删除，
-> 现行表结构见 [three-table-schema.md](three-table-schema.md)（表1/表2/表3）。
-> 本文仅作为 QED-023 时代设计留档，不再作为当前依据。
+> **退役声明（2026-08-16）**：本文描述的 qt_resources 登记索引已随 0005_drop_resources 删除；
+> QED-028 三表模型（qt_selections/qt_downloads/qt_sources）已随知识层次重构被
+> [database-schema.md](database-schema.md)（qed_domain/qed_course/qt_knowledge/qt_books/qt_sources
+> 五层模型）取代。**本文仅作历史留档，不再作为当前依据。**
 
 > 本文是 **QED-Tracker 数据库设计的事实源文档**：qed 库 `qt_*` 表的清单、结构、索引与迁移。
 > 跨项目约定（共享 qed 库实例、表命名空间隔离）见根仓库 ADR 0003 与

@@ -1,7 +1,7 @@
 # 设计索引
 
 状态：Current
-最后更新：2026-08-12
+最后更新：2026-08-16
 
 文档类别固定：设计文档按下列类别维护，不随意增加；新能力先入 [待办列表](../trackers/todo.md)
 为 Plan，方案确定后再进入设计文档（如套标记字段 set_no，见
@@ -31,8 +31,12 @@
 
 ## 数据设计
 
-- [数据库设计](database-schema-ownership.md)（Accepted，QED-023）：qed 库 `qt_*` 表清单、表结构
-  与迁移的事实源文档。
+- [数据库设计](database-schema.md)（Accepted，2026-08-16 用户裁决知识层次重构）：qed 库
+  `qed_*`（共享）与 `qt_*`（QED-Tracker 私有）表族**唯一事实源文档**——领域/课程/知识行/
+  书行/渠道五层模型（qed_domain → qed_course → qt_knowledge → qt_books → qt_sources）、
+  状态机、文件命名（物理名/展示名）、存量迁移与共享表所有权。
+  - 取代留档：`database-schema-ownership.md`（QED-023，Retired）与
+    `three-table-schema.md`（QED-028，被取代）不再作为当前实现依据。
 
 ## 治理
 

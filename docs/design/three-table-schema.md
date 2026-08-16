@@ -1,16 +1,19 @@
 # 三表模型数据库设计：qt_selections / qt_downloads / qt_sources
 
-设计状态：Accepted
-实现状态：Implemented
-最后更新：2026-08-14
+设计状态：Superseded
+实现状态：Superseded（2026-08-16：被 [database-schema.md](database-schema.md) 知识层次重构
+（qed_domain/qed_course/qt_knowledge/qt_books/qt_sources）取代）
+最后更新：2026-08-16
 关联代码：`src/qed_tracker/db/`（models/selection_repository/migrations）、`src/qed_tracker/database.py`
 关联测试：`tests/test_db_models.py`、`tests/test_selection_repository.py`、`tests/test_selections_api.py`、`tests/test_db_three_table_smoke.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)；承接根仓库 ADR 0003（共享 qed 库、表命名空间隔离）
 需求方：QED-Engine（根仓库 REQ-029/REQ-030，QED-028/029；2026-08-13 用户裁决三表模型）
 模型视图与 API 契约：根仓库 [downloads-three-table-model.md](../../../docs/design/downloads-three-table-model.md)
 
-> 本文是 **三表 DDL 与迁移的事实源文档**（qed 库 `qt_*` 表族之一）。
-> 根仓库本文件只保存模型视图与契约；本文件为数据库层详设，最终确认与维护责任在本仓库。
+> **取代声明（2026-08-16）**：本文描述的 qt_selections/qt_downloads/qt_sources 三表模型已被
+> [database-schema.md](database-schema.md)（领域 → 课程 → 知识行 → 书行 → 渠道五层模型）取代：
+> qt_selections → qt_knowledge + qt_books，qt_downloads → qt_books（一册一行，title+part），
+> qt_sources 外键改挂书行。**本文仅作历史留档（QED-028/029 时代），不再作为实现依据。**
 
 ## 背景与动机
 
