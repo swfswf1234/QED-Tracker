@@ -1,12 +1,6 @@
-"""三表 ORM 模型与状态枚举的定向测试（SQLite 内存，不访问公网）。
-
-QED-030：qt_resources 旧表已退役（不再有 ORM 模型），本文件只覆盖
-qt_selections / qt_downloads / qt_sources 三表契约。
-"""
+"""五表模型（qed_domain/qed_course/qt_knowledge/qt_books/qt_sources）ORM 断言。"""
 
 from __future__ import annotations
-
-from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine
@@ -14,66 +8,13 @@ from sqlalchemy.orm import sessionmaker
 
 from qed_tracker.db.models import (
     Base,
-    DownloadStatus,
-    QtDownload,
-    QtSelection,
+    BookStatus,
+    KnowledgeStatus,
+    QedCourse,
+    QedDomain,
+    QtBook,
     QtSource,
-    SelectionStatus,
 )
-
-SELECTION_CONTRACT_FIELDS = {
-    "selection_id",
-    "course_id",
-    "title",
-    "authors",
-    "roles",
-    "version",
-    "vols",
-    "set_no",
-    "evaluation",
-    "note",
-    "status",
-    "reject_reason",
-    "rejected_by",
-    "supersede_reason",
-    "created_at",
-    "confirmed_at",
-    "superseded_at",
-    "rejected_at",
-}
-
-DOWNLOAD_CONTRACT_FIELDS = {
-    "download_id",
-    "selection_id",
-    "vol",
-    "roles",
-    "file_hint",
-    "sha256",
-    "relative_path",
-    "page_count",
-    "status",
-    "reject_reason",
-    "rejected_by",
-    "review_note",
-    "intro",
-    "created_at",
-    "downloaded_at",
-    "approved_at",
-    "rejected_at",
-}
-
-SOURCE_CONTRACT_FIELDS = {
-    "source_id",
-    "download_id",
-    "channel",
-    "provider_id",
-    "page_url",
-    "download_url",
-    "file_keywords",
-    "ok",
-    "note",
-    "attempted_at",
-}
 
 
 @pytest.fixture
@@ -85,108 +26,38 @@ def session():
     engine.dispose()
 
 
-# --- 三表模型（QED-028，迁移 0003） ---
-
-
-def test_selection_status_enum_members():
-    assert {s.value for s in SelectionStatus} == {"candidate", "confirmed", "backup", "rejected", "superseded"}
-
-
-def test_download_status_enum_members():
-    assert {s.value for s in DownloadStatus} == {
-        "candidate",
-        "downloading",
-        "downloaded",
-        "approved",
-        "rejected",
-        "failed",
+def test_enums_complete() -> None:
+    assert {s.value for s in KnowledgeStatus} == {"draft", "confirmed", "completed", "rejected", "superseded"}
+    assert {s.value for s in BookStatus} == {
+        "candidate", "decided", "downloading", "downloaded", "verified",
+        "failed", "rejected", "superseded",
     }
 
 
-def test_selection_table_contract(session):
-    columns = {column.name for column in QtSelection.__table__.columns}
-    assert columns == SELECTION_CONTRACT_FIELDS
-    assert QtSelection.__tablename__ == "qt_selections"
+def test_legacy_three_tables_gone() -> None:
+    """替换重构：旧三表模型不再存在（drop 由迁移/脚本负责，ORM 无残留）。"""
+    tables = {t.name for t in Base.metadata.sorted_tables}
+    assert "qt_selections" not in tables
+    assert "qt_downloads" not in tables
 
 
-def test_download_table_contract(session):
-    columns = {column.name for column in QtDownload.__table__.columns}
-    assert columns == DOWNLOAD_CONTRACT_FIELDS
-    assert QtDownload.__tablename__ == "qt_downloads"
-    assert "uq_qt_downloads_sha256" in {c.name for c in QtDownload.__table__.constraints}
-
-
-def test_source_table_contract(session):
-    columns = {column.name for column in QtSource.__table__.columns}
-    assert columns == SOURCE_CONTRACT_FIELDS
-    assert QtSource.__tablename__ == "qt_sources"
-
-
-def test_three_table_round_trip(session):
-    selection = QtSelection(
-        selection_id="cand_abc",
-        course_id="01_math_analysis",
-        title="微积分学教程",
-        authors=["菲赫金哥尔茨"],
-        roles=["textbook"],
-        version={"edition": "第8版", "language": "zh"},
-        vols=["v1", "v2", "v3"],
-        created_at=datetime.now(UTC).replace(tzinfo=None),
-    )
-    session.add(selection)
+def test_shared_tables_exist(session) -> None:
+    tables = {t.name for t in Base.metadata.sorted_tables}
+    assert {QedDomain.__tablename__, QedCourse.__tablename__} <= tables
+    now = __import__("qed_tracker.database", fromlist=["utc_now"]).utc_now()
+    domain = QedDomain(domain_id="math", name="数学", description="d", stages=["本科基础"], created_at=now, updated_at=now)
+    session.add(domain)
     session.commit()
-
-    download = QtDownload(
-        download_id="download_v1",
-        selection_id=selection.selection_id,
-        vol="v1",
-        roles=["textbook"],
-        sha256="e" * 64,
-        relative_path="raw/books/math-qe/01_math_analysis/v1.pdf",
-        status="approved",
-        created_at=datetime.now(UTC).replace(tzinfo=None),
-    )
-    session.add(download)
-    session.commit()
-
-    source = QtSource(
-        source_id="src_1",
-        download_id=download.download_id,
-        channel="manual",
-        ok=1,
-        attempted_at=datetime.now(UTC).replace(tzinfo=None),
-    )
-    session.add(source)
-    session.commit()
-
-    loaded = session.get(QtSelection, "cand_abc")
-    assert loaded.vols == ["v1", "v2", "v3"]
-    assert loaded.roles == ["textbook"]
-    assert loaded.to_dict()["status"] == "candidate"
-    assert session.get(QtDownload, "download_v1").sha256 == "e" * 64
-    assert session.get(QtSource, "src_1").ok == 1
+    assert session.get(QedDomain, "math") is not None
 
 
-def test_download_roles_override_inherit(session):
-    """册级 roles 独立列：answers 册可显式覆盖为 solutions。"""
-    selection = QtSelection(
-        selection_id="cand_sel",
-        course_id="01_math_analysis",
-        title="数学分析",
-        authors=["陈纪修"],
-        roles=["textbook"],
-        version={},
-        vols=["v1", "v2", "answers"],
-        created_at=datetime.now(UTC).replace(tzinfo=None),
-    )
-    session.add(selection)
-    answers = QtDownload(
-        download_id="download_answers",
-        selection_id=selection.selection_id,
-        vol="answers",
-        roles=["solutions"],
-        created_at=datetime.now(UTC).replace(tzinfo=None),
-    )
-    session.add(answers)
-    session.commit()
-    assert session.get(QtDownload, "download_answers").roles == ["solutions"]
+def test_qt_books_unique_constraints() -> None:
+    table = QtBook.__table__
+    names = {c.name for c in table.constraints}
+    assert "uq_qt_books_knowledge_title_part" in names
+    assert "uq_qt_books_sha256" in names
+
+
+def test_qt_sources_foreign_key_to_books() -> None:
+    fk = next(fk for fk in QtSource.__table__.foreign_keys if fk.parent.name == "book_id")
+    assert fk.column.table.name == "qt_books"
