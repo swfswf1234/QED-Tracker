@@ -59,6 +59,7 @@ def _args(**kw) -> SimpleNamespace:
         "intro": None,
         "version": None,
         "reason": "",
+        "book": "",
         "json": False,
     }
     defaults.update(kw)
@@ -174,6 +175,20 @@ def test_mainline_download_uses_knowledge_id() -> None:
     assert args.knowledge_id == "kn_1"
 
 
+def test_mainline_verify_approve_book_option_parses() -> None:
+    parser = build_parser()
+    verify = parser.parse_args(["mainline", "verify", "kn_1", "--book", "bk_1"])
+    assert verify.mainline_command == "verify"
+    assert verify.knowledge_id == "kn_1"
+    assert verify.book == "bk_1"
+    approve = parser.parse_args(["mainline", "approve", "kn_1", "--book", "bk_2"])
+    assert approve.mainline_command == "approve"
+    assert approve.knowledge_id == "kn_1"
+    assert approve.book == "bk_2"
+    no_book = parser.parse_args(["mainline", "approve", "kn_1"])
+    assert no_book.book is None
+
+
 def test_migrate_subcommand_parses() -> None:
     parser = build_parser()
     args = parser.parse_args(["migrate"])
@@ -203,6 +218,43 @@ def test_mainline_list_requires_db(tmp_path, capsys) -> None:
 def test_migrate_requires_db(tmp_path, capsys) -> None:
     assert main(["--data-root", str(tmp_path), "migrate"]) == 2
     assert "数据库未配置" in capsys.readouterr().err
+
+
+def test_mainline_db_error_returns_2(tmp_path, monkeypatch, capsys) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    import qed_tracker.cli as cli_module
+    import qed_tracker.database as database_module
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'mainline.db'}")
+
+    def _boom(args, repo, settings):
+        raise OperationalError("SELECT", {}, "server closed connection")
+
+    monkeypatch.setattr(database_module, "create_engine_for", lambda settings: engine)
+    monkeypatch.setattr(cli_module, "_mainline_impl", _boom)
+    monkeypatch.setenv("QED_DB_PASSWORD", "test")
+    assert main(["--data-root", str(tmp_path), "mainline", "list", "--course", "01_math_analysis"]) == 2
+    assert "数据库错误" in capsys.readouterr().err
+    engine.dispose()
+
+
+def test_migrate_db_error_returns_2(tmp_path, monkeypatch, capsys) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    import qed_tracker.database as database_module
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'migrate.db'}")
+
+    def boom():
+        raise OperationalError("SELECT", {}, "server closed connection")
+
+    monkeypatch.setattr(database_module, "create_engine_for", lambda settings: engine)
+    monkeypatch.setattr(database_module, "session_factory", lambda engine: boom)
+    monkeypatch.setenv("QED_DB_PASSWORD", "test")
+    assert main(["--data-root", str(tmp_path), "migrate"]) == 2
+    assert "数据库错误" in capsys.readouterr().err
+    engine.dispose()
 
 
 # ---------------- new ----------------
@@ -306,6 +358,14 @@ def test_mainline_review_missing_knowledge_returns_2(tmp_path, repo, capsys) -> 
     args = _args(mainline_command="review", knowledge_id="kn_missing")
     assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
     assert "知识行不存在" in capsys.readouterr().err
+
+
+def test_reject_missing_knowledge_returns_2(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    args = _args(mainline_command="reject", knowledge_id="kn_missing", reason="测试")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
+    assert "不存在" in capsys.readouterr().err
 
 
 # ---------------- download ----------------
@@ -426,6 +486,31 @@ def test_mainline_download_retry_from_failed(tmp_path, repo, monkeypatch) -> Non
     assert book.status == "downloaded"  # failed → downloading 重试成功
 
 
+def test_download_already_downloaded_shortcircuits(tmp_path, repo, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                            title="数学分析原理", authors=[])
+    repo.decide_book(book.book_id)
+    repo.start_download(book.book_id)
+    repo.complete_download(book.book_id, sha256="0" * 64, relative_path="raw/books/inbox/math_analysis.pdf",
+                           page_count=1, file_name="math_analysis.pdf")
+
+    before = len(repo.list_sources(book.book_id))
+    args = _args(mainline_command="download", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+    assert "已下载，请执行 verify" in capsys.readouterr().out
+    assert len(repo.list_sources(book.book_id)) == before  # 已下载短路，不重新搜索
+    assert repo.get_book(book.book_id).status == "downloaded"
+
+    repo.verify_book(book.book_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+    assert "已下载，请执行 approve" in capsys.readouterr().out
+
+
 # ---------------- verify / approve ----------------
 
 def test_mainline_verify_success(tmp_path, repo, monkeypatch, pdf_bytes, capsys) -> None:
@@ -516,6 +601,86 @@ def test_mainline_approve_requires_verified_book(tmp_path, repo, monkeypatch, ca
     args = _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id)
     assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
     assert "请先执行 verify" in capsys.readouterr().err
+
+
+def test_approve_verify_specific_book_multi_volume(tmp_path, repo, monkeypatch, pdf_bytes, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    root_dataset = tmp_path / "root-dataset"
+    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(root_dataset))
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+    first = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                             title="数学分析原理", part="第一册", authors=[])
+    second = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                              title="数学分析原理", part="第二册", authors=[])
+    vol1 = tmp_path / "raw" / "books" / "inbox" / "vol1.pdf"
+    vol2 = tmp_path / "raw" / "books" / "inbox" / "vol2.pdf"
+    vol1.parent.mkdir(parents=True, exist_ok=True)
+    vol1.write_bytes(pdf_bytes)
+    vol2.write_bytes(pdf_bytes)
+    for book, pdf, digest in ((first, vol1, "1" * 64), (second, vol2, "2" * 64)):
+        repo.decide_book(book.book_id)
+        repo.start_download(book.book_id)
+        repo.complete_download(book.book_id, sha256=digest, relative_path=f"raw/books/inbox/{pdf.name}",
+                               page_count=1, absolute_path=str(pdf), file_name=pdf.name)
+
+    settings = _settings(tmp_path)
+    # 指定书行 verify → approve：vol1 移交，但 vol2 未 verified，知识行不完成（提示）
+    assert cli_module._mainline_impl(
+        _args(mainline_command="verify", knowledge_id=knowledge.knowledge_id, book=first.book_id),
+        repo, settings) == 0
+    assert repo.get_book(first.book_id).status == "verified"
+    assert cli_module._mainline_impl(
+        _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id, book=first.book_id),
+        repo, settings) == 0
+    target1 = root_dataset / "raw" / "books" / "math-qe" / "01_math_analysis" / "vol1.pdf"
+    assert target1.is_file()
+    assert target1.read_bytes() == pdf_bytes
+    assert repo.get_knowledge(knowledge.knowledge_id).status == "confirmed"
+    assert "书行全 verified 后可再次 approve" in capsys.readouterr().err
+    # 缺省 approve：唯一 verified 的 vol1 已移交 → 无新目标，exit 2（死锁防护，不重复复制）
+    assert cli_module._mainline_impl(
+        _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id),
+        repo, settings) == 2
+    assert "移交目标已存在" in capsys.readouterr().err
+    assert target1.is_file()
+    assert target1.read_bytes() == pdf_bytes
+    assert repo.get_knowledge(knowledge.knowledge_id).status == "confirmed"
+    # 第二册 verify → approve → 全部书行 verified，知识行完成
+    assert cli_module._mainline_impl(
+        _args(mainline_command="verify", knowledge_id=knowledge.knowledge_id, book=second.book_id),
+        repo, settings) == 0
+    assert cli_module._mainline_impl(
+        _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id, book=second.book_id),
+        repo, settings) == 0
+    target2 = root_dataset / "raw" / "books" / "math-qe" / "01_math_analysis" / "vol2.pdf"
+    assert target2.is_file()
+    assert target2.read_bytes() == pdf_bytes
+    assert repo.get_knowledge(knowledge.knowledge_id).status == "completed"
+
+
+def test_approve_missing_source_file_returns_3(tmp_path, repo, monkeypatch, capsys) -> None:
+    import qed_tracker.cli as cli_module
+
+    root_dataset = tmp_path / "root-dataset"
+    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(root_dataset))
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="", name="数学分析原理")
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
+                            title="数学分析原理", authors=[])
+    repo.decide_book(book.book_id)
+    repo.start_download(book.book_id)
+    repo.complete_download(book.book_id, sha256="0" * 64, relative_path="raw/books/inbox/missing.pdf",
+                           page_count=1, absolute_path=str(tmp_path / "raw" / "books" / "inbox" / "missing.pdf"),
+                           file_name="missing.pdf")
+    repo.verify_book(book.book_id)
+
+    args = _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 3
+    assert "文件不存在" in capsys.readouterr().err
 
 
 # ---------------- 全链路 ----------------

@@ -145,8 +145,10 @@ def build_parser() -> argparse.ArgumentParser:
     mainline_download.add_argument("knowledge_id")
     mainline_verify = mainline_commands.add_parser("verify", help="校验已下载文件")
     mainline_verify.add_argument("knowledge_id")
+    mainline_verify.add_argument("--book", help="指定书行 book_id（缺省取首个已下载书行）")
     mainline_approve = mainline_commands.add_parser("approve", help="验收通过 → 移交根仓库")
     mainline_approve.add_argument("knowledge_id")
+    mainline_approve.add_argument("--book", help="指定书行 book_id（缺省取首个未移交的 verified 书行）")
     mainline_reject = mainline_commands.add_parser("reject", help="验收不通过（填原因）")
     mainline_reject.add_argument("knowledge_id")
     mainline_reject.add_argument("--reason", required=True)
@@ -582,12 +584,19 @@ def _migrate(args, settings: Settings) -> int:
         return 2
     from qed_tracker.application.migrate_knowledge import migrate_curriculum, migrate_legacy_data
     from qed_tracker.database import create_engine_for, session_factory
+    from qed_tracker.db.knowledge_repository import InvalidTransition
 
     engine = create_engine_for(settings)
     factory = session_factory(engine)
     try:
         migrate_curriculum(factory)
         stats = migrate_legacy_data(factory, drop_legacy=args.drop_legacy)
+    except (KeyError, InvalidTransition, ValueError) as exc:
+        _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # noqa: BLE001 - DB 故障兜底
+        _print({"error": f"数据库错误：{exc}"}, True) if args.json else print(f"ERROR: 数据库错误：{exc}", file=sys.stderr)
+        return 2
     finally:
         engine.dispose()
     _print({"seeded": True, **stats}, True) if args.json else print(
@@ -600,7 +609,7 @@ def _migrate(args, settings: Settings) -> int:
 
 def _mainline(args, settings: Settings) -> int:
     from qed_tracker.courses import set_repository
-    from qed_tracker.db.knowledge_repository import KnowledgeRepository
+    from qed_tracker.db.knowledge_repository import InvalidTransition, KnowledgeRepository
 
     if not settings.db_configured:
         _print({"error": "数据库未配置：主链路需 qt_knowledge/qt_books 表"}, True) if args.json else print(
@@ -615,6 +624,12 @@ def _mainline(args, settings: Settings) -> int:
     try:
         set_repository(repo)
         return _mainline_impl(args, repo, settings)
+    except (KeyError, InvalidTransition, ValueError) as exc:
+        _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # noqa: BLE001 - DB 故障兜底
+        _print({"error": f"数据库错误：{exc}"}, True) if args.json else print(f"ERROR: 数据库错误：{exc}", file=sys.stderr)
+        return 2
     finally:
         engine.dispose()
 
@@ -751,11 +766,16 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
                 f"ERROR: 只有 confirmed 知识行可下载（当前 {knowledge.status}）", file=sys.stderr
             )
             return 2
-        book = next(
-            (b for b in repo.list_books(knowledge.knowledge_id) if b.status in ("candidate", "decided", "failed")),
-            None,
-        )
+        books = repo.list_books(knowledge.knowledge_id)
+        book = next((b for b in books if b.status in ("candidate", "decided", "failed")), None)
         if book is None:
+            done = next((b for b in books if b.status in ("downloaded", "verified")), None)
+            if done is not None:
+                action = "approve（或 reject 重选）" if done.status == "verified" else "verify（或 reject 重选）"
+                _print({"book_id": done.book_id, "status": done.status, "message": "已下载"}, True) if args.json else print(
+                    f"已下载，请执行 {action}"
+                )
+                return 0
             book = repo.create_book(
                 knowledge.knowledge_id, kind="textbook", roles=["textbook"], title=knowledge.name, authors=[]
             )
@@ -826,12 +846,26 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
                 f"ERROR: 知识行不存在：{args.knowledge_id}", file=sys.stderr
             )
             return 2
-        book = next((b for b in repo.list_books(knowledge.knowledge_id) if b.status == "downloaded"), None)
-        if book is None:
-            _print({"error": "没有已下载（downloaded）的书行，请先执行 download"}, True) if args.json else print(
-                "ERROR: 没有已下载（downloaded）的书行，请先执行 download", file=sys.stderr
-            )
-            return 2
+        books = repo.list_books(knowledge.knowledge_id)
+        if args.book:
+            book = next((b for b in books if b.book_id == args.book), None)
+            if book is None:
+                _print({"error": f"书行不存在：{args.book}"}, True) if args.json else print(
+                    f"ERROR: 书行不存在：{args.book}", file=sys.stderr
+                )
+                return 2
+            if book.status != "downloaded":
+                _print({"error": f"书行未下载（当前 {book.status}），无法校验"}, True) if args.json else print(
+                    f"ERROR: 书行未下载（当前 {book.status}），无法校验", file=sys.stderr
+                )
+                return 2
+        else:
+            book = next((b for b in books if b.status == "downloaded"), None)
+            if book is None:
+                _print({"error": "没有已下载（downloaded）的书行，请先执行 download"}, True) if args.json else print(
+                    "ERROR: 没有已下载（downloaded）的书行，请先执行 download", file=sys.stderr
+                )
+                return 2
         path = Path(book.absolute_path or "")
         if not path.is_file():
             path = settings.data_root / Path(book.relative_path)
@@ -866,15 +900,35 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
                 f"ERROR: 知识行不存在：{args.knowledge_id}", file=sys.stderr
             )
             return 2
-        book = next((b for b in repo.list_books(knowledge.knowledge_id) if b.status == "verified"), None)
-        if book is None:
+        verified = [b for b in repo.list_books(knowledge.knowledge_id) if b.status == "verified"]
+        if not verified:
             _print({"error": "没有已验收（verified）的书行，请先执行 verify"}, True) if args.json else print(
                 "ERROR: 没有已验收（verified）的书行，请先执行 verify", file=sys.stderr
             )
             return 2
-        source = Path(book.absolute_path or "")
-        if not source.is_file():
-            source = settings.data_root / Path(book.relative_path)
+
+        def _source(book) -> Path:
+            path = Path(book.absolute_path or "")
+            if not path.is_file():
+                path = settings.data_root / Path(book.relative_path)
+            return path
+
+        def _target(book) -> Path:
+            return Path(_MAINLINE_ROOT_DATASET) / "raw" / "books" / "math-qe" / knowledge.course_id / _source(book).name
+
+        if args.book:
+            book = next((b for b in verified if b.book_id == args.book), None)
+            if book is None:
+                _print({"error": f"书行不存在或未验收：{args.book}"}, True) if args.json else print(
+                    f"ERROR: 书行不存在或未验收：{args.book}", file=sys.stderr
+                )
+                return 2
+        else:
+            book = next(
+                (b for b in verified if not _target(b).exists() or _target(b).resolve() == _source(b).resolve()),
+                verified[0],
+            )
+        source = _source(book)
         if not source.is_file():
             _print({"error": f"文件不存在：{source}"}, True) if args.json else print(
                 f"ERROR: 文件不存在：{source}", file=sys.stderr
