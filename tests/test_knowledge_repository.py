@@ -219,3 +219,44 @@ def test_add_and_list_sources(repo):
     rows = repo.list_sources(book.book_id)
     assert len(rows) == 1
     assert rows[0].channel == "manual"
+
+
+def test_book_same_sha256_reuses_existing(repo):
+    """同 sha256 幂等：新行登记同 sha256 时复用既有行并删除新行。"""
+    knowledge = _knowledge(repo)
+    first = _book(repo, knowledge.knowledge_id)
+    repo.decide_book(first.book_id)
+    repo.start_download(first.book_id)
+    repo.complete_download(first.book_id, sha256="d" * 64, relative_path="raw/books/a.pdf")
+    second = _book(repo, knowledge.knowledge_id, title="另一本同名书")
+    repo.decide_book(second.book_id)
+    repo.start_download(second.book_id)
+    reused = repo.complete_download(second.book_id, sha256="d" * 64, relative_path="raw/books/b.pdf")
+    assert reused.book_id == first.book_id
+    assert repo.get_book(second.book_id, include_hidden=True) is None
+
+
+def test_book_failed_visible_and_blocks_completion(repo):
+    knowledge = _knowledge(repo)
+    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={}, exercise_ref={})
+    book = _book(repo, knowledge.knowledge_id)
+    repo.decide_book(book.book_id)
+    repo.start_download(book.book_id)
+    repo.fail_download(book.book_id)
+    assert len(repo.list_books(knowledge.knowledge_id)) == 1  # failed 可见
+    with pytest.raises(InvalidTransition):
+        repo.complete_knowledge(knowledge.knowledge_id)  # failed 阻塞 completed
+
+
+def test_create_book_unknown_knowledge_raises(repo):
+    with pytest.raises(KeyError):
+        repo.create_book("kn_nonexistent", kind="textbook", title="书")
+
+
+def test_list_sources_ok_only(repo):
+    knowledge = _knowledge(repo)
+    book = _book(repo, knowledge.knowledge_id)
+    repo.add_source(book.book_id, channel="manual", ok=True, download_url="http://a")
+    repo.add_source(book.book_id, channel="internet_archive", ok=False, download_url="http://b")
+    assert len(repo.list_sources(book.book_id)) == 2
+    assert len(repo.list_sources(book.book_id, ok_only=True)) == 1

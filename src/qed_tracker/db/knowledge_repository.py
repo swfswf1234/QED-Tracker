@@ -10,7 +10,7 @@ qed_domain → qed_course → qt_knowledge（一行=一套教程/一组延展资
 - qt_books：candidate → decided → downloading → downloaded → verified；
   candidate/decided/downloaded → rejected；downloading → failed（→downloading 重试）；
   candidate → downloaded 仅人工 register 直转（需 sha256+path）；candidate/decided/downloaded → superseded。
-  verified/rejected/superseded 为终态（彻底隐藏）。
+  verified/rejected/superseded 为终态；rejected/superseded 彻底隐藏（failed 可见，可重试）。
 
 彻底隐藏语义在数据层实现（列表/详情接口默认过滤），前端不依赖展示层过滤。
 """
@@ -34,7 +34,7 @@ class InvalidTransition(RuntimeError):
 
 
 _HIDDEN_KNOWLEDGE_STATUSES = {KnowledgeStatus.REJECTED.value, KnowledgeStatus.SUPERSEDED.value}
-_HIDDEN_BOOK_STATUSES = {BookStatus.REJECTED.value, BookStatus.SUPERSEDED.value, BookStatus.FAILED.value}
+_HIDDEN_BOOK_STATUSES = {BookStatus.REJECTED.value, BookStatus.SUPERSEDED.value}
 
 _KNOWLEDGE_TRANSITIONS: dict[KnowledgeStatus, set[KnowledgeStatus]] = {
     KnowledgeStatus.DRAFT: {KnowledgeStatus.CONFIRMED, KnowledgeStatus.REJECTED},
@@ -263,6 +263,9 @@ class KnowledgeRepository:
         with self._session_factory() as session:
             row = session.get(QtBook, book_id)
             if row is None:
+                knowledge = session.get(QtKnowledge, knowledge_id)
+                if knowledge is None:
+                    raise KeyError(f"知识行不存在：{knowledge_id}")
                 row = QtBook(
                     book_id=book_id,
                     knowledge_id=knowledge_id,
@@ -300,9 +303,7 @@ class KnowledgeRepository:
                 return None
             return row
 
-    def _transition_book(
-        self, book_id: str, target: BookStatus, *, require_filed: bool = False, **fields: Any
-    ) -> QtBook:
+    def _transition_book(self, book_id: str, target: BookStatus, **fields: Any) -> QtBook:
         with self._session_factory() as session:
             row = session.get(QtBook, book_id)
             if row is None:
@@ -310,8 +311,6 @@ class KnowledgeRepository:
             current = BookStatus(row.status)
             if target not in _BOOK_TRANSITIONS[current]:
                 raise InvalidTransition(f"书行状态迁移非法：{current.value} → {target.value}")
-            if require_filed and not (row.sha256 and row.relative_path):
-                raise InvalidTransition("进入 downloaded 前必须已登记 sha256 + relative_path")
             row.status = target.value
             for key, value in fields.items():
                 setattr(row, key, value)
@@ -363,7 +362,7 @@ class KnowledgeRepository:
             if row is None:
                 raise KeyError(f"书行不存在：{book_id}")
             current = BookStatus(row.status)
-            if current not in (BookStatus.DOWNLOADING, BookStatus.CANDIDATE, BookStatus.DECIDED):
+            if current not in (BookStatus.DOWNLOADING, BookStatus.CANDIDATE):
                 raise InvalidTransition(f"书行状态迁移非法：{current.value} → downloaded")
             row.sha256 = sha256
             row.relative_path = relative_path
