@@ -46,7 +46,7 @@ _KNOWLEDGE_TRANSITIONS: dict[KnowledgeStatus, set[KnowledgeStatus]] = {
 
 _BOOK_TRANSITIONS: dict[BookStatus, set[BookStatus]] = {
     BookStatus.CANDIDATE: {
-        BookStatus.DECIDED, BookStatus.DOWNLOADING, BookStatus.DOWNLOADED, BookStatus.REJECTED, BookStatus.SUPERSEDED
+        BookStatus.DECIDED, BookStatus.DOWNLOADED, BookStatus.REJECTED, BookStatus.SUPERSEDED
     },
     BookStatus.DECIDED: {BookStatus.DOWNLOADING, BookStatus.REJECTED, BookStatus.SUPERSEDED},
     BookStatus.DOWNLOADING: {BookStatus.DOWNLOADED, BookStatus.FAILED, BookStatus.REJECTED},
@@ -187,12 +187,12 @@ class KnowledgeRepository:
         )
 
     def complete_knowledge(self, knowledge_id: str) -> QtKnowledge:
-        """draft/confirmed → completed（所辖非隐藏书行全部 verified 聚合触发；无书行或全隐藏则不允许）。"""
+        """confirmed → completed（所辖非隐藏书行全部 verified 聚合触发；无书行或全隐藏则不允许）。"""
         with self._session_factory() as session:
             row = session.get(QtKnowledge, knowledge_id)
             if row is None:
                 raise KeyError(f"知识行不存在：{knowledge_id}")
-            if row.status not in (KnowledgeStatus.DRAFT.value, KnowledgeStatus.CONFIRMED.value):
+            if row.status != KnowledgeStatus.CONFIRMED.value:
                 raise InvalidTransition(f"知识行状态迁移非法：{row.status} → completed")
             visible = session.scalar(
                 select(func.count())
@@ -324,7 +324,7 @@ class KnowledgeRepository:
         return self._transition_book(book_id, BookStatus.DECIDED, decided_at=utc_now())
 
     def start_download(self, book_id: str) -> QtBook:
-        """candidate/decided → downloading（任务发起）；failed → downloading（重试）。"""
+        """decided → downloading（任务发起）；failed → downloading（重试）。"""
         return self._transition_book(book_id, BookStatus.DOWNLOADING)
 
     def fail_download(self, book_id: str) -> QtBook:

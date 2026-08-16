@@ -134,6 +134,7 @@ def test_book_complete_requires_sha256(repo):
 def test_book_fail_and_retry(repo):
     knowledge = _knowledge(repo)
     book = _book(repo, knowledge.knowledge_id)
+    repo.decide_book(book.book_id)
     repo.start_download(book.book_id)
     failed = repo.fail_download(book.book_id)
     assert failed.status == BookStatus.FAILED.value
@@ -174,6 +175,13 @@ def test_book_hidden_default(repo):
 
 def test_knowledge_completed_when_all_books_verified(repo):
     knowledge = _knowledge(repo)
+    repo.confirm_knowledge(
+        knowledge.knowledge_id,
+        textbook_ref={"title": "微积分学教程", "version": "第8版"},
+        exercise_ref={"title": "数学分析习题集", "version": "第3版"},
+        textbook_intro="教材简介。",
+        exercise_intro="习题集简介。",
+    )
     book = _book(repo, knowledge.knowledge_id)
     repo.decide_book(book.book_id)
     repo.start_download(book.book_id)
@@ -190,6 +198,15 @@ def test_complete_knowledge_requires_all_verified(repo):
     repo.decide_book(book.book_id)
     with pytest.raises(InvalidTransition):
         repo.complete_knowledge(knowledge.knowledge_id)
+
+
+def test_book_idempotent_create_same_title_part(repo):
+    knowledge = _knowledge(repo)
+    first = _book(repo, knowledge.knowledge_id)
+    second = _book(repo, knowledge.knowledge_id)
+    assert first.book_id == second.book_id
+    different = _book(repo, knowledge.knowledge_id, title="微积分学教程", part="第一册")
+    assert different.book_id != first.book_id
 
 
 # --- 渠道 ---
