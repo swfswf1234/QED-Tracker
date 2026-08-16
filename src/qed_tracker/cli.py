@@ -826,17 +826,34 @@ def _print_channel_summary(store, json_output: bool) -> None:
             print(f"{name:<20} {counts['ok']:>3}  {counts['fail']:>3}")
 
 
-def _serve(args, settings: Settings) -> int:
+def _configure_serve_logging(log_dir: Path) -> None:
+    """serve 日志双通道：stderr + 仓库根 logs/qed-tracker.log（UTF-8）。
+
+    幂等：root 已挂 FileHandler 时跳过（重复调用与 pytest 捕获 handler 均不干扰）；
+    测试通过 monkeypatch 本函数隔离日志目录（不写仓库根 logs/）。
+    """
     import logging
 
+    root = logging.getLogger()
+    if any(isinstance(handler, logging.FileHandler) for handler in root.handlers):
+        return
+    root.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    for handler in (logging.StreamHandler(), logging.FileHandler(log_dir / "qed-tracker.log", encoding="utf-8")):
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+
+
+def _serve(args, settings: Settings) -> int:
     from qed_tracker.api.main import create_app
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    _configure_serve_logging(Path(__file__).resolve().parents[2] / "logs")
     try:
         upgrade_database(settings)
     except Exception as exc:  # 数据库不可用时服务仍可启动（健康/浏览可用，任务明确报错）
         print(f"WARN 数据库迁移跳过：{exc}", file=sys.stderr)
-    uvicorn.run(create_app(settings), host=args.host, port=args.port or settings.port, log_level="info")
+    uvicorn.run(create_app(settings), host=args.host, port=args.port or settings.port, log_level="info", log_config=None)
     return 0
 
 

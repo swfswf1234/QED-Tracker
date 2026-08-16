@@ -29,7 +29,9 @@ qed-tracker serve --port 8901
 
 `serve` 启动工作台 API（默认 `127.0.0.1:8901`，即 `QED_TRACKER_PORT`）。独立启动时自动从
 当前目录向上查找根 `.env` 并注入 `QED_*` 与供应商密钥（不覆盖已显式设置的环境变量）；
-MySQL 迁移失败只警告、服务照常启动（任务会明确报错）。代理访问由 `QED_PROXY=http://127.0.0.1:7890`
+MySQL 迁移失败只警告、服务照常启动（任务会明确报错）。服务日志双通道输出：stderr 与仓库根
+`logs/qed-tracker.log`（UTF-8，追加写；uvicorn 访问日志同通道），不再依赖外部重定向。
+代理访问由 `QED_PROXY=http://127.0.0.1:7890`
 提供，用于绕开对 archive.org、openlibrary.org 等来源的 DNS 污染与限流。
 
 ## 教材与习题集

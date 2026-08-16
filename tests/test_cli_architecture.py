@@ -86,6 +86,7 @@ def test_serve_runs_uvicorn_with_created_app(monkeypatch, tmp_path):
     captured = {}
     monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: None)
     monkeypatch.setattr("qed_tracker.cli.upgrade_database", lambda settings: None)
+    monkeypatch.setattr("qed_tracker.cli._configure_serve_logging", lambda log_dir: None)
     fake_app = object()
     monkeypatch.setattr("qed_tracker.api.main.create_app", lambda settings, **kwargs: fake_app)
     monkeypatch.setattr("qed_tracker.cli.uvicorn.run", lambda app, **kwargs: captured.update({"app": app} | kwargs))
@@ -101,10 +102,34 @@ def test_serve_continues_when_database_migration_fails(monkeypatch, tmp_path, ca
 
     monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: None)
     monkeypatch.setattr("qed_tracker.cli.upgrade_database", boom)
+    monkeypatch.setattr("qed_tracker.cli._configure_serve_logging", lambda log_dir: None)
     monkeypatch.setattr("qed_tracker.api.main.create_app", lambda settings, **kwargs: object())
     monkeypatch.setattr("qed_tracker.cli.uvicorn.run", lambda app, **kwargs: None)
     assert main(["--data-root", str(tmp_path), "serve", "--port", "8901"]) == 0
     assert "MySQL" in capsys.readouterr().err
+
+
+def test_configure_serve_logging_writes_to_logs_dir(tmp_path):
+    """serve 日志落盘传入 log_dir（生产为仓库根 logs/），root 挂 FileHandler 后幂等跳过。"""
+    import logging
+
+    from qed_tracker.cli import _configure_serve_logging
+
+    root = logging.getLogger()
+    original_handlers = list(root.handlers)
+    try:
+        root.handlers.clear()  # 隔离其他测试已挂的 handler，防止幂等跳过
+        _configure_serve_logging(tmp_path)
+        log_file = tmp_path / "qed-tracker.log"
+        assert log_file.exists()
+        logging.getLogger().info("serve-log-probe")
+        assert "serve-log-probe" in log_file.read_text(encoding="utf-8")
+        # 幂等：再次调用不重复挂 handler
+        before = len(logging.getLogger().handlers)
+        _configure_serve_logging(tmp_path)
+        assert len(logging.getLogger().handlers) == before
+    finally:
+        root.handlers[:] = original_handlers
 
 
 def test_serve_loads_root_env_into_environment(monkeypatch, tmp_path):
@@ -127,6 +152,7 @@ def test_serve_loads_root_env_into_environment(monkeypatch, tmp_path):
     seen = []
     monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: seen.append(start) or None)
     monkeypatch.setattr("qed_tracker.cli.upgrade_database", lambda settings: None)
+    monkeypatch.setattr("qed_tracker.cli._configure_serve_logging", lambda log_dir: None)
     monkeypatch.setattr("qed_tracker.api.main.create_app", lambda settings, **kwargs: object())
     monkeypatch.setattr("qed_tracker.cli.uvicorn.run", lambda app, **kwargs: None)
     assert main(["--data-root", str(tmp_path), "serve"]) == 0
