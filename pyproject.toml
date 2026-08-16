@@ -34,7 +34,7 @@ qed-tracker = "qed_tracker.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-qed_tracker = ["catalogs/*.json", "paper_profiles/*.json", "courses/*.json"]
+qed_tracker = ["catalogs/*.json", "paper_profiles/*.json", "migrations/data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

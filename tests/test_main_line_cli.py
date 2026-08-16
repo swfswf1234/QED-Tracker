@@ -4,9 +4,59 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 
 from qed_tracker.cli import build_parser, main
 from qed_tracker.main_line.store import EntryStore
+
+
+@pytest.fixture(autouse=True)
+def _reset_curriculum_repository():
+    from qed_tracker.courses import set_repository
+
+    set_repository(None)
+    yield
+    set_repository(None)
+
+
+def _seed_curriculum_repository():
+    """用真实 migrations/data/math.json 种子构建 SQLite 内存 KnowledgeRepository（14 门课程）。"""
+    import json as json_module
+    from importlib.resources import files
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from qed_tracker.database import utc_now
+    from qed_tracker.db.knowledge_repository import KnowledgeRepository
+    from qed_tracker.db.models import Base, QedCourse, QedDomain
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    session = factory()
+    now = utc_now()
+    value = json_module.loads(
+        files("qed_tracker").joinpath("migrations", "data", "math.json").read_text(encoding="utf-8")
+    )
+    session.add(
+        QedDomain(
+            domain_id=value["subject"], name=value["name"], description=value.get("description", ""),
+            stages=value["stages"], created_at=now, updated_at=now,
+        )
+    )
+    for index, item in enumerate(value["courses"]):
+        session.add(
+            QedCourse(
+                course_id=item["course_id"], domain_id=value["subject"], sort_order=index, name=item["name"],
+                aliases=item.get("aliases", []), stage=item["stage"],
+                prerequisites=item.get("prerequisites", []), related_targets=item.get("related_targets", []),
+                note=item.get("note", ""), created_at=now, updated_at=now,
+            )
+        )
+    session.commit()
+    session.close()
+    return KnowledgeRepository(factory)
 
 
 def test_courses_list_parses() -> None:
@@ -31,25 +81,35 @@ def test_mainline_list_parses() -> None:
     assert args.course == "01_math_analysis"
 
 
-def test_courses_show_resolves_course_id_to_subject(tmp_path, capsys) -> None:
+def _with_curriculum_repo(tmp_path, monkeypatch):
+    import qed_tracker.cli as cli_module
+
+    monkeypatch.setattr(cli_module, "_curriculum_repository", lambda settings: _seed_curriculum_repository())
+
+
+def test_courses_show_resolves_course_id_to_subject(tmp_path, capsys, monkeypatch) -> None:
+    _with_curriculum_repo(tmp_path, monkeypatch)
     assert main(["--data-root", str(tmp_path), "courses", "show", "01_math_analysis"]) == 0
     out = capsys.readouterr().out
     assert "数学" in out
     assert out.count("\n") >= 14
 
 
-def test_courses_show_unknown_errors(tmp_path, capsys) -> None:
+def test_courses_show_unknown_errors(tmp_path, capsys, monkeypatch) -> None:
+    _with_curriculum_repo(tmp_path, monkeypatch)
     assert main(["--data-root", str(tmp_path), "courses", "show", "nope"]) == 2
     assert "未知" in capsys.readouterr().err
 
 
-def test_courses_list_outputs_subjects(tmp_path, capsys) -> None:
+def test_courses_list_outputs_subjects(tmp_path, capsys, monkeypatch) -> None:
+    _with_curriculum_repo(tmp_path, monkeypatch)
     assert main(["--data-root", str(tmp_path), "courses", "list"]) == 0
     out = capsys.readouterr().out
     assert "math" in out
 
 
-def test_courses_show_unknown_json_structured_error(tmp_path, capsys) -> None:
+def test_courses_show_unknown_json_structured_error(tmp_path, capsys, monkeypatch) -> None:
+    _with_curriculum_repo(tmp_path, monkeypatch)
     assert main(["--data-root", str(tmp_path), "--json", "courses", "show", "nope"]) == 2
     payload = json.loads(capsys.readouterr().out)
     assert payload["error"].startswith("未知学科课程体系")
@@ -76,6 +136,7 @@ def _run_mainline_new(tmp_path: Path, monkeypatch, handler, title: str = "数学
         )
 
     monkeypatch.setattr(cli_module, "_mainline_advisor", fake_advisor)
+    monkeypatch.setattr(cli_module, "_curriculum_repository", lambda settings: _seed_curriculum_repository())
     return cli_main(
         ["--data-root", str(tmp_path), "mainline", "new",
          "--course", "01_math_analysis", "--title", title],

@@ -1,7 +1,7 @@
 """五层模型一次性存量迁移（QED-031）：math.json → qed_domain/qed_course；三表 → 新表族。
 
 流程（docs/design/database-schema.md §一次性存量迁移）：
-1. migrate_curriculum：courses/math.json → qed_domain + qed_course（sort_order=数组序，幂等 upsert；
+1. migrate_curriculum：migrations/data/math.json → qed_domain + qed_course（sort_order=数组序，幂等 upsert；
    重跑会用 math.json 覆盖 name/aliases/stage/note —— 该数据由 math.json 拥有）；
 2. migrate_legacy_data：qt_selections → qt_knowledge + 拆书行；qt_downloads → qt_books
    （vol → part，旧 approved → verified，sha256 幂等）；qt_sources 改名 qt_sources_legacy 重建挂 book_id；
@@ -78,14 +78,14 @@ def _domain_for_course(session_factory: Callable[[], Session], course_id: str) -
 
 
 def migrate_curriculum(session_factory: Callable[[], Session], courses_dir: Path | None = None) -> None:
-    """courses/math.json → qed_domain + qed_course（幂等 upsert；目录不存在时跳过）。
+    """migrations/data/math.json → qed_domain + qed_course（幂等 upsert；目录不存在时跳过）。
 
-    courses_dir 默认取包内 courses 目录（`files("qed_tracker").joinpath("courses")`）。
+    courses_dir 默认取包内 migrations/data 目录（`files("qed_tracker").joinpath("migrations", "data")`）。
     """
     if courses_dir is None:
         from importlib.resources import files
 
-        courses_dir = Path(str(files("qed_tracker").joinpath("courses")))
+        courses_dir = Path(str(files("qed_tracker").joinpath("migrations", "data")))
     math_json = Path(courses_dir) / "math.json"
     if not math_json.is_file():
         return

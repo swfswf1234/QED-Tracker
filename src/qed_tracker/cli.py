@@ -8,6 +8,10 @@ import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from qed_tracker.db.knowledge_repository import KnowledgeRepository
 
 import uvicorn
 
@@ -159,6 +163,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _settings(args) -> Settings:
     return load_settings(data_root=args.data_root, proxy=args.proxy)
+
+
+def _curriculum_repository(settings: Settings) -> KnowledgeRepository | None:
+    if not settings.db_configured:
+        return None
+    from qed_tracker.database import create_engine_for, session_factory
+    from qed_tracker.db.knowledge_repository import KnowledgeRepository
+
+    engine = create_engine_for(settings)
+    return KnowledgeRepository(session_factory(engine))
 
 
 def _print(value, json_output: bool = False) -> None:
@@ -495,7 +509,15 @@ def _config(args, settings: Settings) -> int:
 
 
 def _courses(args, settings: Settings) -> int:
-    from qed_tracker.courses import list_courses
+    from qed_tracker.courses import list_courses, set_repository
+
+    repo = _curriculum_repository(settings)
+    if repo is None:
+        _print({"error": "数据库未配置：课程体系读取需 qed_course 表"}, True) if args.json else print(
+            "ERROR: 数据库未配置：课程体系读取需 qed_course 表", file=sys.stderr
+        )
+        return 2
+    set_repository(repo)
 
     if args.courses_command == "list":
         subjects = list_courses()
@@ -571,9 +593,12 @@ def _entry_slug(title: str, course_id: str) -> str:
 
 
 def _mainline(args, settings: Settings) -> int:
-    from qed_tracker.courses import load_course
+    from qed_tracker.courses import load_course, set_repository
     from qed_tracker.main_line.store import EntryStore, MainLineStatus
 
+    repo = _curriculum_repository(settings)
+    if repo is not None:
+        set_repository(repo)
     store = EntryStore(settings.data_root)
 
     if args.mainline_command == "list":
@@ -808,7 +833,7 @@ def _mainline(args, settings: Settings) -> int:
             )
             return 2
         _print({"final_path": str(target)}, True) if args.json else print(f"验收通过，已移交根仓库：{target}")
-        print("提示：课程 related_targets 回填待二次确认评估后人工执行（courses/math.json）", file=sys.stderr)
+        print("提示：课程 related_targets 回填待二次确认评估后人工执行（qed_course 表）", file=sys.stderr)
         return 0
 
     print(f"ERROR: 未实现的 mainline 命令：{args.mainline_command}", file=sys.stderr)
