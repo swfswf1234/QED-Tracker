@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from qed_tracker.application.migrate_knowledge import migrate_curriculum, migrate_legacy_data
@@ -40,6 +40,14 @@ def db(tmp_path):
             " note VARCHAR(1000), attempted_at DATETIME)"
         ))
     Base.metadata.create_all(engine)
+    yield engine, factory
+    engine.dispose()
+
+
+@pytest.fixture
+def empty_db(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'empty.db'}")
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
     yield engine, factory
     engine.dispose()
 
@@ -133,3 +141,59 @@ def test_migrate_legacy_drops_old_tables_only_when_marker(db, tmp_path):
     # 默认不 drop：旧表仍可读（备份快照语义）
     with engine.connect() as conn:
         assert conn.execute(text("SELECT COUNT(*) FROM qt_selections")).fetchone()[0] == 1
+
+
+def test_migrate_legacy_preserves_sources_legacy_without_drop_flag(db, tmp_path):
+    engine, factory = db
+    _seed_legacy(engine)
+    migrate_curriculum(factory, tmp_path / "courses")  # 无 math.json 目录时跳过
+    migrate_legacy_data(factory)
+    # Fix 1：默认不 drop qt_sources_legacy —— 备份快照语义，与 qt_selections/qt_downloads 一致
+    with factory() as session:
+        legacy = session.execute(
+            text("SELECT source_id, download_id FROM qt_sources_legacy")
+        ).fetchall()
+        assert len(legacy) == 1
+        assert legacy[0][0] == "src_1"
+        assert legacy[0][1] == "dl_1"
+        new = session.execute(text("SELECT source_id, book_id FROM qt_sources")).fetchall()
+        assert len(new) == 1
+        assert new[0][0].startswith("src_")
+
+
+def test_migrate_legacy_drop_legacy_drops_all_old_tables(db, tmp_path):
+    engine, factory = db
+    _seed_legacy(engine)
+    migrate_legacy_data(factory, drop_legacy=True)
+    for old in ("qt_selections", "qt_downloads", "qt_sources_legacy"):
+        assert not inspect(engine).has_table(old)
+    for new in ("qt_sources", "qt_knowledge", "qt_books"):
+        assert inspect(engine).has_table(new)
+
+
+def test_migrate_legacy_fresh_db_creates_qt_sources(empty_db):
+    engine, factory = empty_db
+    stats = migrate_legacy_data(factory)
+    # Fix 3：全新库无旧表也要补建新结构 qt_sources（0006 未建），供 add_source 使用
+    assert stats == {"knowledge": 0, "books": 0, "sources": 0}
+    assert inspect(engine).has_table("qt_sources")
+    with factory() as session:
+        cols = session.execute(text("PRAGMA table_info(qt_sources)")).fetchall()
+        assert any(row[1] == "book_id" for row in cols)
+
+
+def test_migrate_legacy_resumes_from_qt_sources_legacy(db, tmp_path):
+    engine, factory = db
+    _seed_legacy(engine)
+    migrate_curriculum(factory, tmp_path / "courses")
+    migrate_legacy_data(factory)
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM qt_sources"))  # 模拟改名后写入中途失败：新表清空
+    # Fix 2：续跑从 qt_sources_legacy 读旧行重放，knowledge/books 走已有幂等门跳过
+    migrate_legacy_data(factory)
+    with factory() as session:
+        sources = session.execute(text("SELECT source_id, book_id FROM qt_sources")).fetchall()
+        assert len(sources) == 1
+        assert sources[0][0].startswith("src_")
+        assert session.execute(text("SELECT COUNT(*) FROM qt_knowledge")).fetchone()[0] == 1
+        assert session.execute(text("SELECT COUNT(*) FROM qt_books")).fetchone()[0] == 2

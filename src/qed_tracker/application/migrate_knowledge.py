@@ -1,10 +1,12 @@
 """五层模型一次性存量迁移（QED-031）：math.json → qed_domain/qed_course；三表 → 新表族。
 
 流程（docs/design/database-schema.md §一次性存量迁移）：
-1. migrate_curriculum：courses/math.json → qed_domain + qed_course（sort_order=数组序，幂等 upsert）；
+1. migrate_curriculum：courses/math.json → qed_domain + qed_course（sort_order=数组序，幂等 upsert；
+   重跑会用 math.json 覆盖 name/aliases/stage/note —— 该数据由 math.json 拥有）；
 2. migrate_legacy_data：qt_selections → qt_knowledge + 拆书行；qt_downloads → qt_books
-   （vol → part，旧 approved → verified，sha256 幂等）；qt_sources 改名重建挂 book_id；
-3. 确认无误后（用户显式 drop_legacy=True）drop qt_selections / qt_downloads / qt_sources_legacy。
+   （vol → part，旧 approved → verified，sha256 幂等）；qt_sources 改名 qt_sources_legacy 重建挂 book_id；
+3. 旧表（qt_selections / qt_downloads / qt_sources_legacy）默认保留为备份快照，
+   确认无误后用户显式 drop_legacy=True 才 drop。
 
 幂等键：knowledge_id = kn_<md5(domain, course, kind, set_no, name)>；book_id = bk_<md5(knowledge_id, title, part)>。
 迁移前全量备份快照（服务端脚本执行时由 CLI 提示用户自行 mysqldump，本模块只保证幂等重放）。
@@ -146,24 +148,45 @@ def _split_title(title: str) -> tuple[str, str]:
     return title.strip(), ""
 
 
+def _ensure_qt_sources(session_factory: Callable[[], Session]) -> None:
+    """确保新结构 qt_sources 表存在：0006 迁移故意不建（改挂 book_id 由本脚本重建），
+    全新库也要补建，否则后续 repo.add_source 会因表缺失失败。"""
+    with session_factory() as session:
+        if not sa.inspect(session.bind).has_table("qt_sources"):
+            QtSource.__table__.create(session.bind)
+
+
 def migrate_legacy_data(session_factory: Callable[[], Session], *, drop_legacy: bool = False) -> dict[str, int]:
     """三表存量 → 五表（幂等重放）；drop_legacy=True 时确认后 drop 旧表。返回统计。"""
     repo = KnowledgeRepository(session_factory)
     stats = {"knowledge": 0, "books": 0, "sources": 0}
     with session_factory() as session:
-        if not _table_has_column(session, "qt_selections", "selection_id"):
-            return stats  # 全新库（无旧表）跳过
+        has_legacy = _table_has_column(session, "qt_selections", "selection_id")
+    if not has_legacy:
+        # 全新库（无旧表）：无数据可迁，仍要补建新结构 qt_sources（0006 未建）供 add_source 使用。
+        _ensure_qt_sources(session_factory)
+        return stats
+    with session_factory() as session:
+        dialect = session.bind.dialect.name
         selections = session.execute(
             text("SELECT * FROM qt_selections ORDER BY created_at")
         ).mappings().all()
         downloads = session.execute(
             text("SELECT * FROM qt_downloads ORDER BY created_at")
         ).mappings().all()
-        # sources 阶段：仅当 qt_sources 还是旧结构（download_id 列）时执行；重跑时整阶段跳过
-        sources_rows: list[dict[str, Any]] = []
-        if _table_has_column(session, "qt_sources", "download_id"):
+        # sources 阶段选源：改名后中断时旧行留在 qt_sources_legacy，续跑直接读它（改名步骤为 no-op）；
+        # 否则旧结构 qt_sources 仍可读 → 读后改名；两者都没有 → 已迁移/无源可迁。
+        if _table_has_column(session, "qt_sources_legacy", "download_id"):
+            sources_rows: list[dict[str, Any]] = [dict(row) for row in session.execute(
+                text("SELECT * FROM qt_sources_legacy")).mappings().all()]
+            rename_needed = False
+        elif _table_has_column(session, "qt_sources", "download_id"):
             sources_rows = [dict(row) for row in session.execute(
                 text("SELECT * FROM qt_sources")).mappings().all()]
+            rename_needed = True
+        else:
+            sources_rows = []
+            rename_needed = False
 
     book_rows: dict[str, dict[str, Any]] = {dl["download_id"]: dict(dl) for dl in downloads}
 
@@ -211,38 +234,32 @@ def migrate_legacy_data(session_factory: Callable[[], Session], *, drop_legacy: 
             book_rows[dl["download_id"]]["new_book_id"] = book.book_id
 
     # qt_sources：旧表改名留档 → 建新结构表（0006 未建，MySQL/SQLite 统一处理）→ 按
-    # download_id → new_book_id 映射重挂 → drop 旧表。幂等：重跑时已无 download_id 列，整阶段跳过。
-    if sources_rows:
-        dialect = session_factory().bind.dialect.name
+    # download_id → new_book_id 映射重挂。qt_sources_legacy 默认保留为备份快照，只有
+    # drop_legacy=True 才 drop。幂等：续跑从 qt_sources_legacy 读旧行重放，改名步骤 no-op。
+    if rename_needed:
         with session_factory() as session:
             if dialect == "mysql":
                 session.execute(text("RENAME TABLE qt_sources TO qt_sources_legacy"))
             else:
                 session.execute(text("ALTER TABLE qt_sources RENAME TO qt_sources_legacy"))
             session.commit()
-        with session_factory() as session:
-            if not sa.inspect(session.bind).has_table("qt_sources"):
-                QtSource.__table__.create(session.bind)
-        with session_factory() as session:
-            for src in sources_rows:
-                new_book_id = book_rows.get(src["download_id"], {}).get("new_book_id")
-                if not new_book_id:
-                    continue
-                repo.add_source(
-                    new_book_id,
-                    channel=src["channel"],
-                    provider_id=src.get("provider_id", ""),
-                    page_url=src.get("page_url", ""),
-                    download_url=src.get("download_url", ""),
-                    file_keywords=src.get("file_keywords", ""),
-                    ok=bool(src.get("ok")),
-                    note=src.get("note", ""),
-                    attempted_at=_dt_or(src.get("attempted_at")),
-                )
-                stats["sources"] += 1
-        with session_factory() as session:
-            session.execute(text("DROP TABLE IF EXISTS qt_sources_legacy"))
-            session.commit()
+    _ensure_qt_sources(session_factory)
+    for src in sources_rows:
+        new_book_id = book_rows.get(src["download_id"], {}).get("new_book_id")
+        if not new_book_id:
+            continue
+        repo.add_source(
+            new_book_id,
+            channel=src["channel"],
+            provider_id=src.get("provider_id", ""),
+            page_url=src.get("page_url", ""),
+            download_url=src.get("download_url", ""),
+            file_keywords=src.get("file_keywords", ""),
+            ok=bool(src.get("ok")),
+            note=src.get("note", ""),
+            attempted_at=_dt_or(src.get("attempted_at")),
+        )
+        stats["sources"] += 1
     if drop_legacy:
         with session_factory() as session:
             session.execute(text("DROP TABLE IF EXISTS qt_sources_legacy"))
