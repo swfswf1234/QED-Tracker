@@ -23,6 +23,10 @@ qed-tracker --help
 # 启动 8901 API 服务（后台任务 + MySQL 登记索引；写操作经任务轮询）
 qed-tracker serve
 
+# 或使用仓库生命周期脚本（start/stop/restart/status，8900 控制中心黑盒调用）
+python scripts/qed_tracker_service.py start --wait
+python scripts/qed_tracker_service.py status
+python scripts/qed_tracker_service.py stop
 # 预览并显式选择教材或习题集
 qed-tracker books get "Munkres Topology"
 qed-tracker books get "Munkres Topology" --pick 1

@@ -1,7 +1,7 @@
 # 开发指南
 
 状态：Current
-最后更新：2026-08-12
+最后更新：2026-08-17
 
 ## 当前事实来源
 
@@ -52,7 +52,7 @@ python -m pip install -e ".[dev]"
 
 ```powershell
 python -m pytest tests -q
-python -m ruff check src tests
+python -m ruff check src tests scripts
 qed-tracker --version
 qed-tracker --json catalog list
 git diff --check

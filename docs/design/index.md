@@ -1,7 +1,7 @@
 # 设计索引
 
 状态：Current
-最后更新：2026-08-16
+最后更新：2026-08-17
 
 文档类别固定：设计文档按下列类别维护，不随意增加；新能力先入 [待办列表](../trackers/todo.md)
 为 Plan，方案确定后再进入设计文档（如套标记字段 set_no，见
@@ -13,6 +13,9 @@
   （端点/后台任务/轮询/状态机）、**外部接口：Axiom-Flow 消费面（8902 端点契约/错误语义/
   传输记录/失败语义）**、配置与数据布局、qed 库 MySQL 资源登记（qt_resources）、基础书单
   math-qe-v2 与批量下载。
+- [服务生命周期脚本](service-lifecycle.md)（Accepted，需求方 QED-Engine REQ-017①，QED-032
+  已实现）：`scripts/qed_tracker_service.py` 的 start/stop/restart/status 接口契约、PID/日志
+  运行事实、与 8900 控制中心的接入方式。
 
 ## 能力设计
 

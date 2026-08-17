@@ -1,7 +1,7 @@
 # 日常操作
 
 状态：Current
-最后更新：2026-08-12
+最后更新：2026-08-17
 
 ## 配置
 
@@ -33,6 +33,23 @@ MySQL 迁移失败只警告、服务照常启动（任务会明确报错）。�
 `logs/qed-tracker.log`（UTF-8，追加写；uvicorn 访问日志同通道），不再依赖外部重定向。
 代理访问由 `QED_PROXY=http://127.0.0.1:7890`
 提供，用于绕开对 archive.org、openlibrary.org 等来源的 DNS 污染与限流。
+
+### 生命周期脚本（8900 控制中心接入）
+
+仓库级启停入口统一为 `scripts/qed_tracker_service.py`（承接根仓库 REQ-017①，契约见
+[服务生命周期设计](../design/service-lifecycle.md)），QED-Engine 8900 控制中心黑盒调用：
+
+```powershell
+python scripts/qed_tracker_service.py start              # 默认立即返回；--wait 可选等待健康
+python scripts/qed_tracker_service.py start --wait 30    # 轮询 /api/v1/health 直到就绪
+python scripts/qed_tracker_service.py status             # running (pid N) / running (port probe) / stopped
+python scripts/qed_tracker_service.py stop               # CTRL_BREAK 优雅停止 + taskkill 强杀兜底
+python scripts/qed_tracker_service.py restart --wait
+```
+
+运行事实：PID 文件 `logs/qed-tracker.pid`，子进程 stdout/stderr 落 `logs/qed-tracker-serve.log`，
+应用级日志仍写 `logs/qed-tracker.log`。退出码 `0` 成功/幂等、`1` 运行失败、`2` 参数错误。
+健康探测端口取 `QED_TRACKER_PORT`，默认 8901；脚本不重复实现 8900 的过渡窗口/端口探测语义。
 
 ## 教材与习题集
 

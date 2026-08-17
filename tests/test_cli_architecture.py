@@ -176,4 +176,6 @@ def test_production_package_has_no_removed_runtime_dependencies():
     for forbidden in ("psycopg2", "from app", "import app"):
         assert forbidden not in source.lower()
     assert not list((root / "app").rglob("*.py"))
-    assert not list((root / "scripts").rglob("*.py"))
+    # scripts/ 自 QED-032（2026-08-17）起为正式生命周期脚本目录；
+    # 只允许本仓库声明的脚本，新增脚本需同步本守卫（防旧布局无声明残留）。
+    assert set((root / "scripts").rglob("*.py")) == {root / "scripts" / "qed_tracker_service.py"}
