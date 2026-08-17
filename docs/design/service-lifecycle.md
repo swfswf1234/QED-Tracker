@@ -78,13 +78,17 @@ QED-Tracker/
 - Windows 下 `os.kill(pid, 0)` 会直接 TerminateProcess（2026-08-17 实测），进程存在性检测
   一律用 `tasklist /FI "PID eq <pid>"`。
 - 优雅停止用 `signal.CTRL_BREAK_EVENT`（子进程以 `CREATE_NEW_PROCESS_GROUP` 拉起，uvicorn
-  捕获 KeyboardInterrupt 优雅收尾），5s 宽限后 `taskkill /PID /T /F` 强杀兜底。
+  捕获 KeyboardInterrupt 优雅收尾），5s 宽限后 `taskkill /PID /T /F` 强杀兜底。无交互控制台
+  环境（服务/管道调用）下 `os.kill(CTRL_BREAK)` 抛 SystemError（包裹 WinError 87，2026-08-17
+  实测）——脚本捕获 `(OSError, SystemError)` 直接走 taskkill 强杀兜底并标注 `(forced)`，
+  不崩溃；真实控制中心（8900 有控制台）场景下优雅路径可用。
 - 非 Windows 平台回退：`NEW_PROCESS_GROUP = 0`、`CTRL_BREAK_EVENT = SIGTERM`，强杀回退
   SIGKILL 语义由 `_kill_tree` 的 taskkill 调用在非 Windows 下直接失败吞掉（Windows 专属部署）。
 
 ## 验证
 
-- 定向测试 `tests/test_service_scripts.py`（18 用例）：tmp 目录 + monkeypatch 隔离 PID/日志路径
+- 定向测试 `tests/test_service_scripts.py`（19 用例）：tmp 目录 + monkeypatch 隔离 PID/日志路径
   与系统调用，覆盖 parser、start 幂等/spawn/PID 写入/`--wait` 健康与超时、stop 无 PID/stale
-  清理/优雅/强杀兜底、restart 顺序、status 双路径、退出码与 `QED_TRACKER_PORT` 默认端口。
+  清理/优雅/强杀兜底/SystemError 兜底、restart 顺序、status 双路径、退出码与
+  `QED_TRACKER_PORT` 默认端口。
 - 全量门禁：`pytest tests -q` + `ruff check src tests scripts` 全绿。

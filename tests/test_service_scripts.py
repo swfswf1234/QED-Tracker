@@ -182,6 +182,32 @@ def test_stop_force_kill_fallback(module, isolated, monkeypatch):
     assert not (isolated / "qed-tracker.pid").exists()
 
 
+def test_stop_systemerror_from_kill_falls_back_to_force(module, isolated, monkeypatch):
+    """无交互控制台环境下 os.kill(CTRL_BREAK) 抛 SystemError（包裹 WinError 87），
+    必须兜底强杀而不是崩溃。"""
+    (isolated / "qed-tracker.pid").write_text("4242", encoding="utf-8")
+    monkeypatch.setattr(module, "STOP_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr(module.time, "sleep", lambda s: None)
+
+    def broken_kill(pid, sig):
+        raise SystemError("<built-in function kill> returned a result with an exception set")
+
+    monkeypatch.setattr(module.os, "kill", broken_kill)
+    alive_state = {"n": 0}
+
+    def fake_alive(pid):
+        alive_state["n"] += 1
+        return alive_state["n"] == 1  # os.kill 前存活，之后视为已退出
+
+    monkeypatch.setattr(module, "_pid_is_alive", fake_alive)
+    tree_calls = []
+    monkeypatch.setattr(module, "_kill_tree", lambda pid: tree_calls.append(pid))
+    args = module.build_parser().parse_args(["stop"])
+    assert module.cmd_stop(args) == 0
+    assert tree_calls == [4242]
+    assert not (isolated / "qed-tracker.pid").exists()
+
+
 def test_restart_stops_then_starts(module, monkeypatch):
     calls = []
 

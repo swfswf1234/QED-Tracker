@@ -157,14 +157,17 @@ def cmd_stop(args: argparse.Namespace) -> int:
         PID_FILE.unlink(missing_ok=True)
         print("not running (stale pid file)")
         return 0
+    forced = False
     try:
         os.kill(pid, CTRL_BREAK_EVENT)
-    except OSError:
+    except (OSError, SystemError):
+        # 无交互控制台环境（服务/管道）下 GenerateConsoleCtrlEvent 抛 WinError 87，
+        # CPython 包装为 SystemError；一律走 taskkill 强杀兜底，不崩溃。
         _kill_tree(pid)
+        forced = True
     deadline = time.monotonic() + STOP_GRACE_SECONDS
     while time.monotonic() < deadline and _pid_is_alive(pid):
         time.sleep(STOP_POLL_INTERVAL)
-    forced = False
     if _pid_is_alive(pid):
         _kill_tree(pid)
         forced = True

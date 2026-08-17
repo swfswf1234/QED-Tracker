@@ -21,7 +21,7 @@
 - Create: `scripts/qed_tracker_service.py`
 - Create: `tests/test_service_scripts.py`
 
-- [x] **Step 1: 写失败测试** — `tests/test_service_scripts.py`（18 用例：parser/退出码/默认端口/start 幂等与 PID 写入/`--wait` 健康与超时/stop 无 PID、stale 清理、优雅、强杀兜底/restart 顺序/status 双路径/main 转发），`importlib.util` 加载模块，tmp 目录 + monkeypatch 隔离。
+- [x] **Step 1: 写失败测试** — `tests/test_service_scripts.py`（19 用例：parser/退出码/默认端口/start 幂等与 PID 写入/`--wait` 健康与超时/stop 无 PID、stale 清理、优雅、强杀兜底、SystemError 兜底/restart 顺序/status 双路径/main 转发），`importlib.util` 加载模块，tmp 目录 + monkeypatch 隔离。
 - [x] **Step 2: 运行确认失败** — `pytest tests/test_service_scripts.py -q` → FileNotFoundError（脚本不存在）。
 - [x] **Step 3: 实现** — `scripts/qed_tracker_service.py`：子命令 start/stop/restart/status；`--port`（默认 `QED_TRACKER_PORT`→8901）与 `--wait [N]`（默认 30s）；PID 文件 `logs/qed-tracker.pid`；子进程 stdout/stderr → `logs/qed-tracker-serve.log`；stop 用 `CTRL_BREAK_EVENT` + 5s 宽限 + `taskkill /PID /T /F` 兜底；进程存在性用 `tasklist`（Windows `os.kill(pid,0)` 会直接 TerminateProcess）。
 - [x] **Step 4: 验证通过** — `pytest tests/test_service_scripts.py -q` → 18 passed；`ruff check scripts tests/test_service_scripts.py` → All checks passed。
