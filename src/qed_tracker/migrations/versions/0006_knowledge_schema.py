@@ -85,6 +85,7 @@ def upgrade() -> None:
         mysql_charset="utf8mb4",
     )
     op.create_index("ix_qt_knowledge_course", "qt_knowledge", ["course_id"])
+    op.create_index("ix_qt_knowledge_domain", "qt_knowledge", ["domain_id"])
     op.create_index("ix_qt_knowledge_status", "qt_knowledge", ["status"])
 
     op.create_table(
@@ -134,6 +135,7 @@ def downgrade() -> None:
     op.drop_index("ix_qt_books_knowledge", table_name="qt_books")
     op.drop_table("qt_books")
     op.drop_index("ix_qt_knowledge_status", table_name="qt_knowledge")
+    op.drop_index("ix_qt_knowledge_domain", table_name="qt_knowledge")
     op.drop_index("ix_qt_knowledge_course", table_name="qt_knowledge")
     op.drop_table("qt_knowledge")
     op.drop_index("ix_qed_course_domain", table_name="qed_course")

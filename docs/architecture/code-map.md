@@ -15,7 +15,7 @@
 
 | 代码路径 | 层级/职责 | 状态 | 设计关联 | 关联测试 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| `src/qed_tracker/api/main.py` | FastAPI 服务入口（8901）：路由、后台任务注册、三表端点组（QED-028/029） | Current | `docs/design/tracker-service.md`、`docs/design/three-table-schema.md` | `tests/test_api.py`、`tests/test_selections_api.py` | `/api/v1/selections|downloads|resources/{id}/downloads`（QED-028/029，`three_table_repository` 注入，None 时 409 降级）。 |
+| `src/qed_tracker/api/main.py` | FastAPI 服务入口（8901）：路由、后台任务注册、五层端点组（QED-031） | Current | `docs/design/tracker-service.md`、`docs/design/database-schema.md` | `tests/test_api.py`、`tests/test_knowledge_api.py` | `/api/v1/domains|courses|knowledge|books|sources`（QED-031，`KnowledgeRepository` 注入，未配置 DB 时 409 降级）。 |
 | `src/qed_tracker/api/tasks.py` | 后台任务管理器与任务落盘（queued→running→succeeded/failed，并发上限 2） | Current | `docs/design/tracker-service.md` | `tests/test_api.py` | 任务记录落 `meta/tasks/`。 |
 | `src/qed_tracker/application/books.py` | 教材搜索编排、resolve 与目录运行（严格匹配 + 下载） | Current | `docs/design/acquisition-and-inventory.md` | `tests/test_services.py`、`tests/test_book_providers.py` | file_hint 选文件（QED-019/021）。 |
 | `src/qed_tracker/application/papers.py` | 论文搜索/推荐编排与选择报告下载 | Current | `docs/design/paper-discovery.md` | `tests/test_paper_application.py` | 报告快照显式下载。 |
@@ -38,16 +38,16 @@
 | `src/qed_tracker/cli.py` | 唯一用户入口：命令树、机器输出、稳定退出码、serve | Current | `docs/design/tracker-service.md`、`docs/design/main-line-curriculum.md`（courses/mainline 命令组） | `tests/test_cli_architecture.py`、`tests/test_main_line_cli.py` | 闭环命令属 QED-010 未实现（见 tracker-service.md）。 |
 | `src/qed_tracker/courses.py` | 学科课程体系加载（包内 JSON，数学范本 14 门，含先修关系 DAG） | Current | `docs/design/main-line-curriculum.md` | `tests/test_courses.py` | 主链路课程梳理；与 catalogs/ 同模式。 |
 | `src/qed_tracker/migrations/data/math.json` | 课程体系种子数据（14 门课程，三大无前置基础课；qed_domain/qed_course 迁移与测试种子） | Current | `docs/design/main-line-curriculum.md`、`docs/design/database-schema.md` | `tests/test_courses.py`、`tests/test_migrate_knowledge.py` | related_targets 只关联已二次确认评估目标（当前全空）。 |
-| `src/qed_tracker/main_line/store.py` | 主链路教材条目存储（meta/main-line/ 五要素 + 状态机 + 渠道记录） | Current | `docs/design/main-line-curriculum.md` | `tests/test_main_line_store.py`、`tests/test_main_line_cli.py` | 与 evaluate/资源体系解耦；reject_reason 留痕。 |
 | `src/qed_tracker/main_line/advisor.py` | 主链路 LLM 预填（参照顶尖大学 + 防总评高校准，可审阅） | Current | `docs/design/main-line-curriculum.md` | `tests/test_main_line_advisor.py` | 模型不写资源事实。 |
 | `src/qed_tracker/database.py` | SQLAlchemy 引擎与会话工厂（按 `QED_DB_*`） | Current | `docs/design/tracker-service.md` | `tests/test_db_models.py` | 服务启动与冒烟复用。 |
-| `src/qed_tracker/db/models.py` | 三表 ORM（QtSelection/QtDownload/QtSource）与状态枚举（SelectionStatus/DownloadStatus） | Current | `docs/design/three-table-schema.md` | `tests/test_db_models.py` | 三表 `_HIDDEN_*` 彻底隐藏语义（QED-028）；qt_resources 已退役（QED-030）。 |
-| `src/qed_tracker/db/knowledge_repository.py` | 五层仓库（QED-031）：qt_knowledge/qt_books 状态机 + 彻底隐藏过滤 + 确定性幂等 ID + 教材下载登记入口 | Current | `docs/design/database-schema.md` | `tests/test_knowledge_repository.py`、`tests/test_selections_api.py` | backup⇄confirmed 可逆、candidate→downloaded 仅 register 直转（需 sha256+path）；`record_book_download` 供 BookService 切登记。 |
+| `src/qed_tracker/db/models.py` | 五表 ORM（QedDomain/QedCourse/QtKnowledge/QtBook/QtSource）与状态枚举（KnowledgeStatus/BookStatus） | Current | `docs/design/database-schema.md` | `tests/test_db_models.py` | 五层 `_HIDDEN_*` 彻底隐藏语义（QED-031）；qt_resources 已退役（QED-030）。 |
+| `src/qed_tracker/db/knowledge_repository.py` | 五层仓库（QED-031）：qt_knowledge/qt_books 状态机 + 彻底隐藏过滤 + 确定性幂等 ID + 教材下载登记入口 | Current | `docs/design/database-schema.md` | `tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py` | backup⇄confirmed 可逆、candidate→downloaded 仅 register 直转（需 sha256+path）；`add_source` 记录渠道事实。 |
 | `src/qed_tracker/migrations/versions/0001_qt_resources.py` | Alembic 建表迁移（qt_resources，链上保留，0005 已 drop） | Historical | `docs/design/tracker-service.md` | — | 纯 ASCII。 |
 | `src/qed_tracker/migrations/versions/0002_review_note.py` | review_note 增列迁移（QED-020，链上保留，0005 已 drop） | Historical | `docs/design/review-round-dedup.md` | — | 纯 ASCII。 |
 | `src/qed_tracker/migrations/versions/0003_three_table.py` | 三表建表迁移（QED-028） | Current | `docs/design/three-table-schema.md` | `tests/test_db_three_table_smoke.py` | 真实 MySQL 已 upgrade（alembic_version 将推进至 0005_drop_resources）。 |
 | `src/qed_tracker/migrations/versions/0004_download_intro.py` | qt_downloads.intro 增列迁移 | Current | `docs/design/three-table-schema.md` | — | 12 条简介已落库。 |
 | `src/qed_tracker/migrations/versions/0005_drop_resources.py` | qt_resources 退役 drop 迁移（QED-030，真实 MySQL 待执行） | Current | `docs/design/three-table-schema.md`、`docs/history/qed-030-retire-qt_resources/index.md` | — | 证据已归档；downgrade 不支持。 |
+| `src/qed_tracker/migrations/versions/0006_knowledge_schema.py` | 五层建表迁移（QED-031：qed_domain/qed_course/qt_knowledge/qt_books；真实 MySQL 待执行） | Current | `docs/design/database-schema.md` | `tests/test_migrate_knowledge.py` | 纯 ASCII；qt_sources 由 migrate 命令按需创建。 |
 
 ## 测试映射
 
@@ -67,11 +67,11 @@
 | `tests/test_axiom.py` | Axiom 客户端 | `docs/design/tracker-service.md`（外部接口：Axiom-Flow 消费面） |
 | `tests/test_db_models.py` | ORM 模型与状态枚举 | `docs/design/tracker-service.md`、`docs/design/three-table-schema.md` |
 | `tests/test_knowledge_repository.py` | 五层仓库状态机/隐藏/幂等 | `docs/design/database-schema.md` |
-| `tests/test_selections_api.py` | 三表 API 契约与彻底隐藏 | `docs/design/three-table-schema.md`、`docs/design/tracker-service.md` |
+| `tests/test_knowledge_api.py` | 五层 API 契约与彻底隐藏 | `docs/design/database-schema.md`、`docs/design/tracker-service.md` |
+| `tests/test_migrate_knowledge.py` | 一次性存量迁移（种子/三表→五表/幂等/可恢复） | `docs/design/database-schema.md` |
 | `tests/test_db_three_table_smoke.py` | 真实 MySQL 三表契约冒烟（默认 skip） | `docs/design/three-table-schema.md` |
 | `tests/test_data_layout.py` | 数据布局与路径解析 | `docs/design/tracker-service.md` |
 | `tests/test_courses.py` | 课程体系加载（14 门/阶段/前置/别名） | `docs/design/main-line-curriculum.md` |
-| `tests/test_main_line_store.py` | 主链路条目存储/状态机/渠道记录 | `docs/design/main-line-curriculum.md` |
 | `tests/test_main_line_advisor.py` | 主链路 LLM 预填契约（MockTransport） | `docs/design/main-line-curriculum.md` |
 | `tests/test_main_line_cli.py` | courses/mainline CLI 命令与闭环 | `docs/design/main-line-curriculum.md` |
 | `tests/test_encoding_regression.py` | 来源响应强制 UTF-8 解码回归 | `docs/design/main-line-curriculum.md` |

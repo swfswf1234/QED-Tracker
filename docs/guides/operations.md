@@ -108,19 +108,19 @@ qed-tracker inventory verify
 ## 主链路：课程梳理与教材条目
 
 主链路（领域课程梳理 → 教材寻找 → 下载 → 人工验收）是与 evaluate 平行的独立体系，面向课程
-学习的主流程。课程体系为包内静态数据（数学范本 14 门课程），教材条目独立存储于
-`meta/main-line/`（五要素：课程/版本评价建议/渠道记录/状态）。
+学习的主流程。课程体系迁移自包内静态数据（数学范本 14 门课程），教材条目存
+`qt_knowledge`/`qt_books`（五要素：课程/版本评价建议/渠道记录/状态），需要 qed 库连接。
 
 ```powershell
 qed-tracker courses list
 qed-tracker courses show 01_math_analysis
 qed-tracker mainline list --course 01_math_analysis
 qed-tracker mainline new --course 01_math_analysis --title "数学分析原理" --author Rudin
-qed-tracker mainline review 01_math_analysis <entry_id>
-qed-tracker mainline download 01_math_analysis <entry_id>
-qed-tracker mainline verify 01_math_analysis <entry_id>
-qed-tracker mainline approve 01_math_analysis <entry_id>
-qed-tracker mainline reject 01_math_analysis <entry_id> --reason <原因>
+qed-tracker mainline review <knowledge_id> --version 第8版
+qed-tracker mainline download <knowledge_id>
+qed-tracker mainline verify <knowledge_id> --book <book_id>
+qed-tracker mainline approve <knowledge_id> --book <book_id>
+qed-tracker mainline reject <knowledge_id> --reason <原因>
 qed-tracker mainline channels
 ```
 
@@ -130,15 +130,20 @@ qed-tracker mainline channels
 - `mainline new` 先参照顶尖大学（MIT/清华等）该课程指定教材，再按此探索候选；LLM 预填
   版本/评价/建议（需 `QWEN_API_KEY`），输出 draft 条目供人工评审。评价权威性等级取
   高/中/低，仅供人工参考，不作为自动下载依据。
-- `mainline review` 人工定稿（状态迁移 draft → reviewed）。
+- `mainline review` 人工定稿（状态迁移 draft → confirmed，`--intro`/`--version` 补全版本要素）。
 - `mainline download` 触发渠道下载（archive 等自动源）；无自动候选时输出人工下载指引
   （libgen 等发现专用来源），返回 3。
 - `mainline verify` 校验已下载文件（PDF 结构/SHA-256/页数）。
 - `mainline approve` 人工验收：通过后**复制**文件与登记同步**移交根仓库
   `dataset/qed-tracker/`**（正式落地，临时区副本保留留痕）；`related_targets` 回填待二次
-  确认评估后人工执行（编辑 `courses/math.json`）。
+  确认评估后人工执行（编辑 `qed_course.related_targets`）。多册书用 `--book` 逐个验收。
 - `mainline reject` 验收不通过（`--reason` 必填，持久化留痕）。
 - `mainline channels` 汇总渠道有效性（各来源成功/失败次数），供剔除无效渠道决策。
+
+存量迁移（一次性，幂等可重放）：`qed-tracker migrate` 先执行课程种子
+（`migrations/data/math.json` → `qed_domain`/`qed_course`），再梳理旧三表
+（`qt_selections` → `qt_knowledge`、`qt_downloads` → `qt_books`）；旧表保留为
+`qt_sources_legacy` 备份，确认无误后才用 `--drop-legacy` 删除。
 
 已知限制（QED-027 待实现）：版本要素 CLI 闭环、人工下载 register 闭环、防总评高单本对比、
 rejected 重试出口——见[主链路设计](../design/main-line-curriculum.md)「已知限制」。

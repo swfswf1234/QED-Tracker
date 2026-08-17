@@ -1,10 +1,12 @@
-"""三表模型真实 MySQL 迁移冒烟（QED-028 迁移 0003，安全只读版）。
+"""五层模型真实 MySQL 迁移冒烟（QED-031：0006 + 存量迁移，安全可重放版）。
 
 默认跳过（CI 不依赖数据库）：设置环境变量 `QED_DB_SMOKE=1` 时于本机执行。
-与前身 test_db_mysql_smoke.py 不同，本测试**只读**：upgrade head 后断言三表
-结构与索引（qt_resources 数据、三表数据一律不修改、不删除、不 downgrade）。
-qed 库现含真实存量（qt_resources 已 38 行），破坏性清理（DELETE/downgrade）
-只应在用户显式隔离库或备份后执行。
+本测试执行**幂等**升级链：`upgrade_database`（推进 alembic 至 head 0006）→
+`migrate_curriculum` + `migrate_legacy_data`（存量梳理：qt_selections → qt_knowledge、
+qt_downloads → qt_books；qt_sources 重命名 qt_sources_legacy 备份后重建，均幂等可重放），
+随后断言五表结构与索引。真实数据只读/重命名备份，不删除（drop_legacy=False）。
+qed 库现含真实存量（qt_selections/qt_downloads/qt_sources），破坏性清理只应在
+用户显式隔离库或备份后执行。
 """
 
 from __future__ import annotations
@@ -84,11 +86,16 @@ def _connect():
     return settings, conn
 
 
-def test_upgrade_creates_five_tables_with_contract_columns():
+def test_upgrade_and_migrate_creates_five_tables_with_contract_columns():
+    from qed_tracker.application.migrate_knowledge import migrate_curriculum, migrate_legacy_data
     from qed_tracker.config import load_settings
-    from qed_tracker.database import upgrade_database
+    from qed_tracker.database import create_engine_for, session_factory, upgrade_database
 
-    upgrade_database(load_settings())  # 幂等：已到 head 则空操作
+    settings = load_settings()
+    upgrade_database(settings)  # 幂等：已到 head 则空操作
+    factory = session_factory(create_engine_for(settings))
+    migrate_curriculum(factory)  # 幂等：qed_domain/qed_course upsert
+    migrate_legacy_data(factory)  # 幂等：旧表重命名备份仅首次；续跑从 qt_sources_legacy 重放
     settings, conn = _connect()
     try:
         with conn.cursor() as cur:
@@ -118,14 +125,14 @@ def test_upgrade_creates_five_tables_with_contract_columns():
     assert columns["qt_books"] == BOOK_COLUMNS
     assert columns["qt_sources"] == SOURCE_COLUMNS
     assert {"ix_qed_course_domain"} <= indexes["qed_course"]
-    assert {"ix_qt_knowledge_course", "ix_qt_knowledge_status"} <= indexes["qt_knowledge"]
+    assert {"ix_qt_knowledge_course", "ix_qt_knowledge_domain", "ix_qt_knowledge_status"} <= indexes["qt_knowledge"]
     assert {"uq_qt_books_knowledge_title_part", "uq_qt_books_sha256",
             "ix_qt_books_knowledge", "ix_qt_books_status"} <= indexes["qt_books"]
     assert {"ix_qt_sources_book"} <= indexes["qt_sources"]
 
 
-def test_legacy_tables_untouched_after_upgrade():
-    """qt_resources 仍存在且行数未被迁移修改（退役只读语义）。"""
+def test_legacy_tables_retired_with_backup_snapshot():
+    """qt_resources 已随 0005 退役（QED-030）；旧三表迁移后保留 qt_sources_legacy 备份（drop_legacy=False）。"""
     settings, conn = _connect()
     try:
         with conn.cursor() as cur:
@@ -133,9 +140,19 @@ def test_legacy_tables_untouched_after_upgrade():
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=%s AND table_name='qt_resources'",
                 (settings.db_name,),
             )
-            assert cur.fetchone()[0] == 1
-            cur.execute("SELECT COUNT(*) FROM qt_resources")
-            count = cur.fetchone()[0]
+            assert cur.fetchone()[0] == 0  # 0005 已 drop
+            cur.execute(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=%s AND table_name='qt_sources_legacy'",
+                (settings.db_name,),
+            )
+            legacy_exists = cur.fetchone()[0] == 1
+            cur.execute(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=%s AND table_name='qt_sources'",
+                (settings.db_name,),
+            )
+            assert cur.fetchone()[0] == 1  # 新 qt_sources 已重建
+            if legacy_exists:
+                cur.execute("SELECT COUNT(*) FROM qt_sources_legacy")
+                assert cur.fetchone()[0] >= 1  # 真实存量备份保留（本机为旧 12 行）
     finally:
         conn.close()
-    assert count >= 1  # 真实存量存在（本机为 38 行），迁移不触碰

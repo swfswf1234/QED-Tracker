@@ -5,7 +5,7 @@
 （qed_domain/qed_course/qt_knowledge/qt_books/qt_sources）取代）
 最后更新：2026-08-16
 关联代码：`src/qed_tracker/db/`（models/knowledge_repository/migrations）、`src/qed_tracker/database.py`
-关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_selections_api.py`、`tests/test_db_three_table_smoke.py`
+关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、`tests/test_db_three_table_smoke.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)；承接根仓库 ADR 0003（共享 qed 库、表命名空间隔离）
 需求方：QED-Engine（根仓库 REQ-029/REQ-030，QED-028/029；2026-08-13 用户裁决三表模型）
 模型视图与 API 契约：根仓库 [downloads-three-table-model.md](../../../docs/design/downloads-three-table-model.md)

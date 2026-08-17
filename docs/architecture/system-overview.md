@@ -67,8 +67,8 @@ flowchart LR
 | `selection_store.py` | 原子保存与读取独立论文选择报告。 |
 | `axiom.py` | 执行健康检查、multipart 上传和可选解析请求。 |
 | `cli.py` | 提供唯一用户入口、机器输出、稳定退出码与服务启动命令（`serve`）。 |
-| `courses.py` | 学科课程体系加载（包内 JSON：先修关系/学习阶段/名称映射），数学范本 `courses/math.json`；主链路见 [main-line.md](main-line.md)。 |
-| `main_line/` | 主链路教材条目服务：五要素条目（课程/版本评价建议/渠道记录/验收状态）存储与 LLM 预填（`main_line/store.py`、`main_line/advisor.py`）。 |
+| `courses.py` | 学科课程体系加载（qed_course 共享表；迁移种子 `migrations/data/math.json`，14 门：先修关系/学习阶段/名称映射）；主链路见 [main-line.md](main-line.md)。 |
+| `main_line/` | 主链路教材条目服务：五要素条目（课程/版本评价建议/渠道记录/验收状态）与 LLM 预填（`main_line/advisor.py`；条目状态机在 `db/knowledge_repository.py`）。 |
 
 ## 数据布局
 
@@ -112,12 +112,12 @@ PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resourc
 | 3. 相同 SHA-256 只保留一条资源记录，重复文件由资源服务移除 | 符合 | `inventory.py` 幂等复用 + `db/models.py`（qt_sources.sha256 唯一）；`tests/test_db_models.py`（source 唯一约束） |
 | 4. `inventory scan` 只接受数据根内部路径，不移动或删除已有 PDF | 符合 | `inventory.py`（relative_to 校验 + scan 只登记）；`tests/test_download_inventory.py` |
 | 5. 包内目录是可选输入；`math-qe` 永久标记 `frozen` | 符合 | `catalog.py` + `catalogs/math-qe.json`（status=frozen）；`tests/test_config_catalog_matching.py` |
-| 6. 登记顺序落盘 → 资源 JSON → 三表登记，任一步失败可重放 | 符合 | `db/knowledge_repository.py`（record_book_download/register 幂等）；`tests/test_knowledge_repository.py`、`tests/test_selections_api.py` |
+| 6. 登记顺序落盘 → 资源 JSON → 五层登记，任一步失败可重放 | 符合 | `db/knowledge_repository.py`（add_source/complete_download 幂等）；`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py` |
 | 7. LLM 只生成检索计划与可审阅评分，不写资源事实、不自动下载 | 符合 | `providers/bailian.py`/`book_advisor.py` 只产出评估；`tests/test_bailian_advisor.py`、`tests/test_paper_application.py` |
-| 8. 长操作经后台任务（并发上限 2）轮询；轻量状态迁移同步；非法迁移 409 | 符合 | `api/main.py` + `api/tasks.py`；`tests/test_api.py`、`tests/test_selections_api.py` |
+| 8. 长操作经后台任务（并发上限 2）轮询；轻量状态迁移同步；非法迁移 409 | 符合 | `api/main.py` + `api/tasks.py`；`tests/test_api.py`、`tests/test_knowledge_api.py` |
 | 8901 服务端口与 `/api/v1` 前缀（根仓库 ADR 0002） | 符合 | `api/main.py`（FastAPI 8901）；`tests/test_api.py` |
 | 数据根默认 `dataset/qed-tracker/`（raw/meta/tmp 布局，根仓库 dataset-conventions） | 符合 | `config.py` 默认值与路径解析；`tests/test_data_layout.py` |
-| 共享 `qed` 库实例、`qt_*` 表命名空间隔离（根仓库 ADR 0003） | 符合 | `db/models.py`（qt_selections/qt_downloads/qt_sources）；`tests/test_db_models.py` |
+| 共享 `qed` 库实例、`qt_*` 表命名空间隔离（根仓库 ADR 0003） | 符合 | `db/models.py`（qt_knowledge/qt_books/qt_sources + qed_domain/qed_course）；`tests/test_db_models.py` |
 | Axiom-Flow 地址默认 `http://127.0.0.1:8902` | 符合 | `config.py`（axiom_url 默认）；`tests/test_axiom.py` |
 | 8903 工作台 CORS（仅 127.0.0.1/localhost:8903） | 符合 | `api/main.py`（FRONTEND_ORIGINS）；`tests/test_api.py` |
 | 8901 全链路联调与回执（评估→确认→下载→验收→登记→前端展示） | 偏差（QED-014 待开始） | `docs/trackers/todo.md` QED-014；QED-019 01 闭环进行中 |

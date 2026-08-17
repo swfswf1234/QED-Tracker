@@ -6,7 +6,7 @@
 需求方：QED-Engine（根仓库 REQ-026/REQ-029/REQ-030；2026-08-16 用户裁决知识层次重构）
 关联代码：`src/qed_tracker/db/`（models/knowledge_repository/migrations）、`src/qed_tracker/database.py`、
 `src/qed_tracker/courses.py`（migrations/data/math.json，规划退役）
-关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_selections_api.py`、
+关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、
 `tests/test_db_three_table_smoke.py`、`tests/test_courses.py`（实现轮同步更新）
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)；根仓库 [ADR 0003](../../../docs/adr/0003-shared-qed-database-independence.md)（命名空间隔离）与 [ADR 0009](../../../docs/adr/0009-shared-qed-tables.md)（2026-08-16：新增 qed_* 共享表族）
 
@@ -126,6 +126,7 @@ CREATE TABLE qt_knowledge (
   updated_at      DATETIME      NOT NULL,
   PRIMARY KEY (knowledge_id),
   KEY ix_qt_knowledge_course (course_id),
+  KEY ix_qt_knowledge_domain (domain_id),
   KEY ix_qt_knowledge_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='qt_knowledge';
 ```

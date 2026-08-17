@@ -2,9 +2,9 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-12
-关联代码：src/qed_tracker/courses.py、src/qed_tracker/main_line/（store.py/advisor.py）、src/qed_tracker/cli.py（courses/mainline 命令组）
-关联测试：tests/test_courses.py、tests/test_main_line_store.py、tests/test_main_line_advisor.py、tests/test_main_line_cli.py、tests/test_encoding_regression.py
+最后更新：2026-08-17
+关联代码：src/qed_tracker/courses.py、src/qed_tracker/main_line/（advisor.py）、src/qed_tracker/cli.py（courses/mainline 命令组）
+关联测试：tests/test_courses.py、tests/test_main_line_advisor.py、tests/test_main_line_cli.py、tests/test_encoding_regression.py
 关联 ADR：—
 需求方：QED-Engine（8903 前端知识链路消费；根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md) 五阶段流程对齐）
 执行方：QED-Tracker

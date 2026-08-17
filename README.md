@@ -39,14 +39,16 @@ qed-tracker papers selections download <selection-id> --pick 1
 qed-tracker inventory scan E:/qed/dataset
 qed-tracker inventory verify
 
-# 主链路：课程梳理与教材条目（课程学习主流程，与 evaluate 平行）
+# 主链路：课程梳理与教材条目（课程学习主流程，与 evaluate 平行；需要 qed 库连接）
 qed-tracker courses list
 qed-tracker courses show 01_math_analysis
 qed-tracker mainline new --course 01_math_analysis --title "数学分析原理" --author Rudin
-qed-tracker mainline review 01_math_analysis <entry_id>
-qed-tracker mainline download 01_math_analysis <entry_id>
+qed-tracker mainline review <knowledge_id>
+qed-tracker mainline download <knowledge_id>
 # 验收通过 → 复制移交根仓库 dataset/qed-tracker/
-qed-tracker mainline approve 01_math_analysis <entry_id>
+qed-tracker mainline approve <knowledge_id>
+# 一次性存量迁移（math.json + 旧三表 → 五表；幂等可重放，--drop-legacy 才删旧表）
+qed-tracker migrate
 
 # 默认只上传；显式 --parse 才创建 Axiom 解析任务
 qed-tracker axiom push sha256:<digest>

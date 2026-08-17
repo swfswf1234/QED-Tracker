@@ -2,9 +2,9 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-12
-关联代码：`src/qed_tracker/courses.py`、`src/qed_tracker/migrations/data/math.json`、`src/qed_tracker/main_line/`（store.py/advisor.py）、`src/qed_tracker/cli.py`（courses/mainline 命令组）、`src/qed_tracker/providers/books.py`（UTF-8 解码修复）
-关联测试：`tests/test_courses.py`、`tests/test_main_line_store.py`、`tests/test_main_line_advisor.py`、`tests/test_main_line_cli.py`、`tests/test_encoding_regression.py`
+最后更新：2026-08-17
+关联代码：`src/qed_tracker/courses.py`、`src/qed_tracker/migrations/data/math.json`、`src/qed_tracker/main_line/`（advisor.py）、`src/qed_tracker/cli.py`（courses/mainline 命令组）、`src/qed_tracker/providers/books.py`（UTF-8 解码修复）
+关联测试：`tests/test_courses.py`、`tests/test_main_line_advisor.py`、`tests/test_main_line_cli.py`、`tests/test_encoding_regression.py`
 关联 ADR：—
 需求方：QED-Engine（8903 前端知识链路；根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md) 五阶段对齐）
 执行方：QED-Tracker
@@ -190,22 +190,22 @@ draft（LLM 预填/人工新建）
 | `qed-tracker courses list` | 列出学科课程体系（当前 math） |
 | `qed-tracker courses show <course_id>` | 查看单门课（含前置/关联 target；也接受学科名） |
 | `qed-tracker mainline list --course <course_id>` | 列出课程教材条目（五要素视图） |
-| `qed-tracker mainline new --course <id> --title ...` | 新建条目：**先参照顶尖大学课程设置（MIT/清华等指定教材）→ 再按此探索**；LLM 预填评价，需 QWEN_API_KEY |
-| `qed-tracker mainline review <course_id> <entry_id>` | 人工评审定稿（状态迁移 draft→reviewed） |
-| `qed-tracker mainline download <course_id> <entry_id>` | 触发渠道下载（自动源或人工下载指引） |
-| `qed-tracker mainline verify <course_id> <entry_id>` | 校验已下载文件（PDF 结构/SHA-256/页数） |
-| `qed-tracker mainline approve <course_id> <entry_id>` | 验收通过 → 复制移交根仓库 dataset/qed-tracker/ |
-| `qed-tracker mainline reject <course_id> <entry_id> --reason <原因>` | 验收不通过（原因必填，持久化 reject_reason） |
+| `qed-tracker mainline new --course <id> --title ...` | 新建条目：**先参照顶尖大学课程设置（MIT/清华等指定教材）→ 再按此探索**；LLM 预填评价，需 QWEN_API_KEY；重复标题预检拦截，生成 draft 知识行 |
+| `qed-tracker mainline review <knowledge_id> --intro <简介> --version <版本>` | 人工评审定稿（状态迁移 draft→confirmed，`--version` 补全版本要素） |
+| `qed-tracker mainline download <knowledge_id>` | 触发渠道下载（自动源或人工下载指引；已下载书行短路提示 verify） |
+| `qed-tracker mainline verify <knowledge_id> --book <book_id>` | 校验已下载文件（PDF 结构/SHA-256/页数） |
+| `qed-tracker mainline approve <knowledge_id> --book <book_id>` | 验收通过 → 复制移交根仓库 dataset/qed-tracker/（多册书逐本移交，全册验证后知识行自动 completed） |
+| `qed-tracker mainline reject <knowledge_id> --reason <原因>` | 验收不通过（原因必填，持久化 reject_reason） |
 | `qed-tracker mainline channels` | 渠道有效性汇总表（成功率视图） |
 
-### 已知限制（2026-08-12 最终评审登记，后续任务）
+### 已知限制（2026-08-12 最终评审登记，后续任务；2026-08-17 QED-031 部分更新）
 
-1. **版本要素 CLI 闭环未实现**：`mainline new` 不落 `version`，`review` 仅状态迁移；
-   `version` 字段当前需手工编辑 JSON。后续：new/review 增加 `--edition/--language/--publisher`
-   参数写入 version。
-2. **人工下载 register 闭环未实现**：无自动候选时提示"register 登记"，但没有 CLI 命令把
-   `downloading → downloaded` 并写入人工登记的 `resource_id/final_path`（libgen 场景）。
-   后续：新增 `mainline register <course_id> <entry_id> --path <相对路径>` 复用登记端点。
+1. **版本要素 CLI 闭环部分实现**：`review --version` 已可写入版本（QED-031），但
+   `--edition/--language/--publisher` 细粒度参数仍未实现（QtBook 无单独版本列，存于
+   `textbook_ref` 序列化版本字段）。
+2. **人工下载 register 闭环未实现**：`download` 无自动候选时输出人工指引并落 `failed` 书行
+   （可重试），但没有 CLI 命令把人工下载的文件登记为 `downloaded`（libgen 场景需 API
+   `POST /books/{id}/register` 或后续 CLI register 命令）。
 3. **防总评高「对比评级」单本不可执行**：`prefill` 每次只呈现一本书，提示词要求的
    "同课程多本对比评级、至少一本非高"无法真正实现。后续：批量预填或注入同课程已在册条目
    供对比。
@@ -216,8 +216,8 @@ draft（LLM 预填/人工新建）
 1. `courses list` 确认课程体系加载（14 门，含新增 00）
 2. 每门课 `mainline new` 生成教材条目——**先参照顶尖大学（MIT/清华等）该课程指定教材设置，
    再按此探索候选**；LLM 预填评价/建议（防「总评高」校准）
-3. `mainline review` 人工定稿（版本/评价/建议）
-4. `mainline download` 下载（archive 自动或 libgen 人工指引 → register）
+3. `mainline review <knowledge_id> --version ...` 人工定稿（版本/评价/建议）
+4. `mainline download <knowledge_id>` 下载（archive 自动；libgen 人工指引）
 5. `mainline verify` 校验 → `mainline approve` 验收通过，**复制 + 登记同步**移交根仓库
 6. `mainline channels` 查看渠道有效性，剔除无效渠道
 
