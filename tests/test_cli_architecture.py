@@ -109,6 +109,16 @@ def test_serve_continues_when_database_migration_fails(monkeypatch, tmp_path, ca
     assert "MySQL" in capsys.readouterr().err
 
 
+def test_db_backed_commands_inject_root_env(monkeypatch, tmp_path):
+    """mainline/migrate 依赖 qed 库，与 serve 一样必须注入根 .env（QED-031 任务 7 疏漏）。"""
+    calls = []
+    monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: calls.append(start) or None)
+    assert main(["--data-root", str(tmp_path), "migrate"]) == 2  # 无凭据仍门禁，但已尝试注入
+    assert main(["--data-root", str(tmp_path), "mainline", "list", "--course", "01_math_analysis"]) == 2
+    assert main(["--data-root", str(tmp_path), "config", "show"]) == 0
+    assert len(calls) == 2  # migrate + mainline 注入；config 不注入
+
+
 def test_configure_serve_logging_writes_to_logs_dir(tmp_path):
     """serve 日志落盘传入 log_dir（生产为仓库根 logs/），root 挂 FileHandler 后幂等跳过。"""
     import logging

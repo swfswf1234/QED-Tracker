@@ -1044,7 +1044,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.command == "serve":
+        if args.command in ("serve", "mainline", "migrate"):
+            # DB 系命令与 serve 一样注入根 .env（QED-031：mainline/migrate 依赖 qed 库）
             _load_root_env(Path.cwd())
         settings = _settings(args)
         handlers = {

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +30,22 @@ from qed_tracker.db.knowledge_repository import KnowledgeRepository
 from qed_tracker.db.models import BookStatus, KnowledgeStatus, QtSource
 
 _VOL_MAP = {"v1": "第一册", "v2": "第二册", "v3": "第三册", "v4": "第四册"}
+_SEQUENCE_VOL_PART = ["第一册", "第二册", "第三册", "第四册", "第五册"]
+
+
+def _vol_to_part(vol: str) -> str:
+    """真实存量 vol 形如 '教材-v1'/'微积分-v3'/'教材-answers'/'习题-v2'：归一化到 第一册/答案册。
+
+    裸 'v1'（QED-028 测试种子）同样命中；空串/未知标记返回 ''。
+    """
+    if not vol:
+        return ""
+    match = re.search(r"v(\d)", vol)
+    if match:
+        return _VOL_MAP.get(f"v{match.group(1)}", "")
+    if "answers" in vol.lower():
+        return "答案册"
+    return ""
 
 
 def _json_or(value: Any, default: Any) -> Any:
@@ -206,8 +223,19 @@ def migrate_legacy_data(session_factory: Callable[[], Session], *, drop_legacy: 
         # 旧 confirmed → confirmed（简介留空待 LLM 预填）；已确认行跳过（幂等重放，不触发状态机异常）
         if selection["status"] == KnowledgeStatus.CONFIRMED.value and knowledge.status == KnowledgeStatus.DRAFT.value:
             repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={}, exercise_ref={})
-        for dl in [v for v in book_rows.values() if v["selection_id"] == selection["selection_id"]]:
-            vol_part = _VOL_MAP.get(dl["vol"] or "", "") or part
+        # 同套 vol 空的多册（如 Rudin 3 册未标卷）：按出现序编号 第一/二/三册，保留全部 sha256；
+        # 归一化前缀 vol（'教材-v1' → 第一册）。vol 空且同套仅一册 → part=''（单册套）。
+        dl_books = [v for v in book_rows.values() if v["selection_id"] == selection["selection_id"]]
+        dl_books.sort(key=lambda d: (str(d.get("created_at") or ""), d["download_id"]))
+        empty_vol_index = 0
+        for dl in dl_books:
+            vol_part = _vol_to_part(dl["vol"] or "")
+            if not vol_part and part:
+                vol_part = part  # selection 标题拆卷兜底（'XXX 第一册'）
+            if not vol_part:
+                if len([d for d in dl_books if not (d["vol"] or "")]) > 1:
+                    vol_part = _SEQUENCE_VOL_PART[empty_vol_index]
+                empty_vol_index += 1
             book = repo.create_book(
                 knowledge.knowledge_id,
                 kind="textbook",

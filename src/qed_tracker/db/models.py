@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -170,10 +170,14 @@ class QtSource(Base):
     """qt_sources 渠道尝试（私有）：一次渠道尝试一条记录；失败尝试留痕不展示。"""
 
     __tablename__ = "qt_sources"
-    __table_args__ = ({"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},)
+    __table_args__ = (
+        # 显式索引名与设计文档 DDL 一致（ORM create 默认名 ix_qt_sources_book_id 不同）
+        Index("ix_qt_sources_book", "book_id"),
+        {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
+    )
 
     source_id: Mapped[str] = mapped_column(String(100), primary_key=True)
-    book_id: Mapped[str] = mapped_column(String(100), ForeignKey("qt_books.book_id"), nullable=False, index=True)
+    book_id: Mapped[str] = mapped_column(String(100), ForeignKey("qt_books.book_id"), nullable=False)
     channel: Mapped[str] = mapped_column(String(24), nullable=False)
     provider_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     page_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")

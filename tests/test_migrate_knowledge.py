@@ -134,6 +134,72 @@ def test_migrate_legacy_maps_selection_to_knowledge_and_books(db, tmp_path):
         assert session.execute(text("SELECT COUNT(*) FROM qt_books")).fetchone()[0] == 2
 
 
+def test_migrate_legacy_prefixed_vol_maps_to_part(db, tmp_path):
+    """真实存量 vol 形如 '教材-v1'/'微积分-v3'/'教材-answers'：归一化到 第一册/第三册/答案册。"""
+    engine, factory = db
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO qt_selections VALUES"
+            " ('cand_9','01_math_analysis','数学分析（陈纪修）',"
+            " json_array('陈纪修'),json_array('textbook'),json_object('edition','第2版'),"
+            " json_array('教材-v2','教材-v1','教材-answers'),'3','', '', 'confirmed','','','',"
+            " '2026-08-01 10:00:00','2026-08-02 10:00:00',NULL,NULL)"
+        ))
+        conn.execute(text(
+            "INSERT INTO qt_downloads VALUES"
+            " ('dl_a','cand_9','教材-v1',json_array('textbook'),'',"
+            " 'aaaa','raw/books/math-qe/01_math_analysis/x_v1.pdf',100,'approved','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00','2026-08-04 10:00:00',NULL),"
+            " ('dl_b','cand_9','教材-v2',json_array('textbook'),'',"
+            " 'bbbb','raw/books/math-qe/01_math_analysis/x_v2.pdf',120,'approved','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00','2026-08-04 10:00:00',NULL),"
+            " ('dl_c','cand_9','教材-answers',json_array('textbook'),'',"
+            " 'cccc','raw/books/math-qe/01_math_analysis/x_answers.pdf',80,'approved','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00','2026-08-04 10:00:00',NULL)"
+        ))
+    migrate_curriculum(factory, tmp_path / "courses")
+    migrate_legacy_data(factory)
+    with factory() as session:
+        books = session.execute(text(
+            "SELECT part, sha256 FROM qt_books ORDER BY part"
+        )).fetchall()
+        assert [row[0] for row in books] == ["第一册", "第二册", "答案册"]
+        assert {row[1] for row in books} == {"aaaa", "bbbb", "cccc"}  # 三册 sha256 全保留
+
+
+def test_migrate_legacy_empty_vol_multivol_keeps_every_sha256(db, tmp_path):
+    """真实存量 Rudin 套 3 册 vol 全空：按出现序编号 第一/二/三册，不丢 sha256。"""
+    engine, factory = db
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO qt_selections VALUES"
+            " ('tut_7','01_math_analysis','数学分析原理（Rudin）',"
+            " json_array('Rudin'),json_array('textbook'),json_object(),"
+            " json_array(''),'1','', '', 'confirmed','','','',"
+            " '2026-08-01 10:00:00','2026-08-02 10:00:00',NULL,NULL)"
+        ))
+        conn.execute(text(
+            "INSERT INTO qt_downloads VALUES"
+            " ('dl_1','tut_7','',json_array('textbook'),'',"
+            " 's1','raw/books/math-qe/01_math_analysis/r1.pdf',100,'approved','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00','2026-08-04 10:00:00',NULL),"
+            " ('dl_2','tut_7','',json_array('textbook'),'',"
+            " 's2','raw/books/math-qe/01_math_analysis/r2.pdf',110,'approved','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00','2026-08-04 10:00:00',NULL),"
+            " ('dl_3','tut_7','',json_array('textbook'),'',"
+            " 's3','raw/books/math-qe/01_math_analysis/r3.pdf',120,'approved','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00','2026-08-04 10:00:00',NULL)"
+        ))
+    migrate_curriculum(factory, tmp_path / "courses")
+    migrate_legacy_data(factory)
+    with factory() as session:
+        books = session.execute(text(
+            "SELECT part, sha256 FROM qt_books ORDER BY part"
+        )).fetchall()
+        assert {row[0] for row in books} == {"第一册", "第二册", "第三册"}
+        assert {row[1] for row in books} == {"s1", "s2", "s3"}
+
+
 def test_migrate_legacy_drops_old_tables_only_when_marker(db, tmp_path):
     engine, factory = db
     _seed_legacy(engine)
