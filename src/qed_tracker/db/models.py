@@ -5,6 +5,7 @@
 → qt_sources（渠道尝试）。旧三表模型（qt_selections/qt_downloads）已随 QED-031 退役。
 
 DDL 事实源：docs/design/database-schema.md（唯一当前事实源）。
+表/列中文注释事实源：migrations/data/table_comments.json（0007 迁移应用）。
 """
 
 from __future__ import annotations
@@ -50,14 +51,14 @@ class QedDomain(Base):
     __tablename__ = "qed_domain"
     __table_args__ = ({"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},)
 
-    domain_id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[str] = mapped_column(Text(), nullable=False)
-    stages: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
+    domain_id: Mapped[str] = mapped_column(String(32), primary_key=True, comment="领域标识（主键）")
+    name: Mapped[str] = mapped_column(String(100), nullable=False, comment="领域名称")
+    description: Mapped[str] = mapped_column(Text(), nullable=False, comment="学科介绍")
+    stages: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="学习阶段顺序")
+    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="创建人")
+    updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="最后更新人")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
 
     def to_dict(self) -> dict[str, Any]:
         return {column.name: getattr(self, column.name) for column in self.__table__.columns}
@@ -69,19 +70,21 @@ class QedCourse(Base):
     __tablename__ = "qed_course"
     __table_args__ = ({"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},)
 
-    course_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    domain_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    sort_order: Mapped[int] = mapped_column(Integer(), nullable=False, default=0)
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    aliases: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    stage: Mapped[str] = mapped_column(String(32), nullable=False)
-    prerequisites: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    related_targets: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    note: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
+    course_id: Mapped[str] = mapped_column(String(64), primary_key=True, comment="课程标识（主键）")
+    domain_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="所属领域")
+    sort_order: Mapped[int] = mapped_column(Integer(), nullable=False, default=0, comment="学习顺序")
+    name: Mapped[str] = mapped_column(String(200), nullable=False, comment="课程名称")
+    aliases: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="别名列表")
+    stage: Mapped[str] = mapped_column(
+        String(32), nullable=False, comment="所属阶段（本科基础/本科进阶/研究生基础/QE冲刺）"
+    )
+    prerequisites: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="先修课程")
+    related_targets: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="已验收关联目标")
+    note: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="课程介绍")
+    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="创建人")
+    updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="最后更新人")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
 
     def to_dict(self) -> dict[str, Any]:
         return {column.name: getattr(self, column.name) for column in self.__table__.columns}
@@ -93,28 +96,38 @@ class QtKnowledge(Base):
     __tablename__ = "qt_knowledge"
     __table_args__ = ({"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},)
 
-    knowledge_id: Mapped[str] = mapped_column(String(100), primary_key=True)
-    domain_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    course_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    kind: Mapped[str] = mapped_column(String(24), nullable=False)
-    set_no: Mapped[str] = mapped_column(String(4), nullable=False, default="")
-    name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
-    textbook_ref: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    exercise_ref: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    textbook_intro: Mapped[str] = mapped_column(Text(), nullable=False)
-    exercise_intro: Mapped[str] = mapped_column(Text(), nullable=False)
-    materials_intro: Mapped[str] = mapped_column(Text(), nullable=False)
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default=KnowledgeStatus.DRAFT.value, index=True)
-    reject_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    supersede_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
-    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
-    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
-    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
+    knowledge_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="知识行标识（主键）")
+    domain_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="所属领域")
+    course_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="所属课程")
+    kind: Mapped[str] = mapped_column(
+        String(24), nullable=False, comment="类型（tutorial=教程套系；other_material=延展资料归类）"
+    )
+    set_no: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="", comment="套标记（1~4=中文套；en=英文套；空=无配套）"
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="", comment="名称")
+    textbook_ref: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="教材决定引用")
+    exercise_ref: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="习题集决定引用")
+    textbook_intro: Mapped[str] = mapped_column(Text(), nullable=False, comment="教材简介")
+    exercise_intro: Mapped[str] = mapped_column(Text(), nullable=False, comment="习题集简介")
+    materials_intro: Mapped[str] = mapped_column(Text(), nullable=False, comment="延展资料简介")
+    status: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default=KnowledgeStatus.DRAFT.value,
+        index=True,
+        comment="状态（draft=探索中；confirmed=已定稿；completed=已完成；rejected=已否决；superseded=已替代）",
+    )
+    reject_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="否决原因")
+    supersede_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="替代原因")
+    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="创建人")
+    updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="最后更新人")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="定稿时间")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="完成时间")
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="否决时间")
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="替代时间")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
 
     def to_dict(self) -> dict[str, Any]:
         return {column.name: getattr(self, column.name) for column in self.__table__.columns}
@@ -130,37 +143,54 @@ class QtBook(Base):
         {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
     )
 
-    book_id: Mapped[str] = mapped_column(String(100), primary_key=True)
-    knowledge_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    kind: Mapped[str] = mapped_column(String(16), nullable=False)
-    roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    part: Mapped[str] = mapped_column(String(32), nullable=False, default="")
-    display_title: Mapped[str] = mapped_column(String(500), nullable=False)
-    file_name: Mapped[str] = mapped_column(String(500), nullable=False, default="")
-    authors: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    language: Mapped[str] = mapped_column(String(8), nullable=False, default="")
-    version: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    source: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    original_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    relative_path: Mapped[str] = mapped_column(String(500), nullable=False, default="")
-    absolute_path: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    page_count: Mapped[int | None] = mapped_column(Integer(), nullable=True)
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default=BookStatus.CANDIDATE.value, index=True)
-    reject_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    rejected_by: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    supersede_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    review_note: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
-    decided_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
-    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
-    verified_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
-    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
-    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
+    book_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="书行标识（主键）")
+    knowledge_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment="所属知识行")
+    kind: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        comment="类型（textbook=教材；exercise=习题集；supplement=补充；paper=论文；blog=博客；other=其他）",
+    )
+    roles: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, comment="角色（textbook=教材；exercise=习题集；solutions=解答）"
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False, comment="书名（不含卷）")
+    part: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="", comment="卷标识（空=整本；第一册/上册/博文序号）"
+    )
+    display_title: Mapped[str] = mapped_column(String(500), nullable=False, comment="展示名")
+    file_name: Mapped[str] = mapped_column(String(500), nullable=False, default="", comment="落盘文件名")
+    authors: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="作者")
+    language: Mapped[str] = mapped_column(String(8), nullable=False, default="", comment="语言")
+    version: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, comment="版本信息")
+    source: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="候选来源方案")
+    original_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="原始来源链接")
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="文件哈希")
+    relative_path: Mapped[str] = mapped_column(String(500), nullable=False, default="", comment="相对数据根路径")
+    absolute_path: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="dataset 绝对路径")
+    page_count: Mapped[int | None] = mapped_column(Integer(), nullable=True, comment="页数")
+    status: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default=BookStatus.CANDIDATE.value,
+        index=True,
+        comment=(
+            "状态（candidate=候选；decided=已决定；downloading=下载中；downloaded=已下载；"
+            "verified=已验证；failed=失败；rejected=已否决；superseded=已替代）"
+        ),
+    )
+    reject_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="否决原因")
+    rejected_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="否决人")
+    supersede_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="替代原因")
+    review_note: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="审理备注")
+    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="创建人")
+    updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="最后更新人")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="决定下载时间")
+    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="下载完成时间")
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="验证通过时间")
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="否决时间")
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="替代时间")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
 
     def to_dict(self) -> dict[str, Any]:
         return {column.name: getattr(self, column.name) for column in self.__table__.columns}
@@ -176,16 +206,23 @@ class QtSource(Base):
         {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
     )
 
-    source_id: Mapped[str] = mapped_column(String(100), primary_key=True)
-    book_id: Mapped[str] = mapped_column(String(100), ForeignKey("qt_books.book_id"), nullable=False)
-    channel: Mapped[str] = mapped_column(String(24), nullable=False)
-    provider_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
-    page_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    download_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    file_keywords: Mapped[str] = mapped_column(String(500), nullable=False, default="")
-    ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    note: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    attempted_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="渠道标识（主键）")
+    book_id: Mapped[str] = mapped_column(String(100), ForeignKey("qt_books.book_id"), nullable=False, comment="所属书行")
+    channel: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        comment=(
+            "渠道（manual=人工；internet_archive=互联网档案馆；open_library=开放图书馆；"
+            "google_books=谷歌图书；libgen_li=图书馆链接）"
+        ),
+    )
+    provider_id: Mapped[str] = mapped_column(String(200), nullable=False, default="", comment="提供方标识")
+    page_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="页面地址")
+    download_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="下载地址")
+    file_keywords: Mapped[str] = mapped_column(String(500), nullable=False, default="", comment="检索关键词")
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, comment="是否成功（1=成功；0=失败）")
+    note: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="备注")
+    attempted_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="尝试时间")
 
     def to_dict(self) -> dict[str, Any]:
         return {column.name: getattr(self, column.name) for column in self.__table__.columns}

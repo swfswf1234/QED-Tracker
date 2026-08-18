@@ -200,6 +200,51 @@ def test_migrate_legacy_empty_vol_multivol_keeps_every_sha256(db, tmp_path):
         assert {row[1] for row in books} == {"s1", "s2", "s3"}
 
 
+def test_migrate_legacy_jiangyi_vol_does_not_collide(db, tmp_path):
+    """套内讲义-vN（谢惠民习题课讲义）与主教材 vN 分册：vol 前缀独立成书，不撞唯一约束不丢册。"""
+    engine, factory = db
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO qt_selections VALUES"
+            " ('tut_8','01_math_analysis','微积分学教程（菲赫金哥尔茨）',"
+            " json_array('菲赫金哥尔茨'),json_array('textbook'),json_object(),"
+            " json_array('微积分-v1','微积分-v2','讲义-v1','讲义-v2'),'2','', '', 'confirmed','','','',"
+            " '2026-08-01 10:00:00','2026-08-02 10:00:00',NULL,NULL)"
+        ))
+        conn.execute(text(
+            "INSERT INTO qt_downloads VALUES"
+            " ('dl_1','tut_8','微积分-v1',json_array('textbook'),'',"
+            " 'w1','raw/books/math-qe/01_math_analysis/w1.pdf',100,'approved','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00','2026-08-04 10:00:00',NULL),"
+            " ('dl_2','tut_8','微积分-v2',json_array('textbook'),'',"
+            " 'w2','raw/books/math-qe/01_math_analysis/w2.pdf',110,'approved','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00','2026-08-04 10:00:00',NULL),"
+            " ('dl_3','tut_8','讲义-v1',json_array('exercises'),'',"
+            " 'j1','raw/books/math-qe/01_math_analysis/j1.pdf',120,'approved','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00','2026-08-04 10:00:00',NULL),"
+            " ('dl_4','tut_8','讲义-v2',json_array('exercises'),'',"
+            " 'j2','raw/books/math-qe/01_math_analysis/j2.pdf',130,'approved','','','',"
+            " '2026-08-01 10:00:00','2026-08-03 10:00:00','2026-08-04 10:00:00',NULL)"
+        ))
+    migrate_curriculum(factory, tmp_path / "courses")
+    migrate_legacy_data(factory)
+    with factory() as session:
+        books = session.execute(text(
+            "SELECT title, part, roles, sha256, status FROM qt_books ORDER BY title, part"
+        )).fetchall()
+        assert len(books) == 4  # 不丢册
+        assert books[0][0] == "微积分学教程（菲赫金哥尔茨）" and books[0][1] == "第一册"
+        assert books[1][0] == "微积分学教程（菲赫金哥尔茨）" and books[1][1] == "第二册"
+        assert books[2][0] == "数学分析习题课讲义（谢惠民）" and books[2][1] == "上册"
+        assert books[3][0] == "数学分析习题课讲义（谢惠民）" and books[3][1] == "下册"
+        assert {row[3] for row in books} == {"w1", "w2", "j1", "j2"}  # sha256 全保留
+        assert {row[4] for row in books} == {BookStatus.VERIFIED.value}
+    # 幂等重跑：仍 4 本
+    migrate_legacy_data(factory)
+    with factory() as session:
+        assert session.execute(text("SELECT COUNT(*) FROM qt_books")).fetchone()[0] == 4
+
+
 def test_migrate_legacy_drops_old_tables_only_when_marker(db, tmp_path):
     engine, factory = db
     _seed_legacy(engine)

@@ -254,3 +254,26 @@ def test_status_stopped_and_stale_pid_cleaned(module, isolated, monkeypatch):
 def test_main_runs_subcommand(module, monkeypatch):
     monkeypatch.setattr(module, "cmd_status", lambda args: 7)
     assert module.main(["status"]) == 7
+
+
+def test_pid_is_alive_tolerates_non_utf8_stdout(module, monkeypatch):
+    """中文 Windows 下 tasklist 输出 GBK（Python utf-8 解码失败 → stdout=None）时，
+    _pid_is_alive 不得抛 TypeError，应返回 False（进程状态未知，走端口探测兜底）。"""
+    captured: dict = {}
+
+    def fake_run(*args, **kwargs):
+        captured.update(kwargs)
+        return type("R", (), {"returncode": 0, "stdout": None})()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    assert module._pid_is_alive(9999) is False, "stdout=None 时应返回 False 而非抛 TypeError"
+    assert captured.get("errors") == "replace", "subprocess.run 应带 errors='replace' 容忍 GBK 输出"
+
+    def fake_run_ok(*args, **kwargs):
+        return type("R", (), {
+            "returncode": 0,
+            "stdout": "\nImage Name                     PID Session Name\n... 9999 ...\n",
+        })()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run_ok)
+    assert module._pid_is_alive(9999) is True

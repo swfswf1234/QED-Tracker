@@ -31,6 +31,9 @@ from qed_tracker.db.models import BookStatus, KnowledgeStatus, QtSource
 
 _VOL_MAP = {"v1": "第一册", "v2": "第二册", "v3": "第三册", "v4": "第四册"}
 _SEQUENCE_VOL_PART = ["第一册", "第二册", "第三册", "第四册", "第五册"]
+# 同套内 vol 前缀独立成书（避免与主教材 vN 撞唯一约束 knowledge_id+title+part）：
+# 前缀 → (真实书名, vol→分册映射)。真实存量：讲义-v1/v2（谢惠民习题课讲义）挂微积分套。
+_VOL_SUPPLEMENT = {"讲义": ("数学分析习题课讲义（谢惠民）", {"v1": "上册", "v2": "下册", "v3": "中册"})}
 
 
 def _vol_to_part(vol: str) -> str:
@@ -229,18 +232,25 @@ def migrate_legacy_data(session_factory: Callable[[], Session], *, drop_legacy: 
         dl_books.sort(key=lambda d: (str(d.get("created_at") or ""), d["download_id"]))
         empty_vol_index = 0
         for dl in dl_books:
-            vol_part = _vol_to_part(dl["vol"] or "")
-            if not vol_part and part:
-                vol_part = part  # selection 标题拆卷兜底（'XXX 第一册'）
-            if not vol_part:
-                if len([d for d in dl_books if not (d["vol"] or "")]) > 1:
-                    vol_part = _SEQUENCE_VOL_PART[empty_vol_index]
-                empty_vol_index += 1
+            vol_key = str(dl.get("vol") or "")
+            book_title = title
+            prefix = vol_key.split("-", 1)[0] if "-" in vol_key else ""
+            if prefix in _VOL_SUPPLEMENT:
+                book_title, part_map = _VOL_SUPPLEMENT[prefix]
+                vol_part = part_map.get(vol_key.split("-", 1)[1], "")
+            else:
+                vol_part = _vol_to_part(vol_key)
+                if not vol_part and part:
+                    vol_part = part  # selection 标题拆卷兜底（'XXX 第一册'）
+                if not vol_part:
+                    if len([d for d in dl_books if not (d["vol"] or "")]) > 1:
+                        vol_part = _SEQUENCE_VOL_PART[empty_vol_index]
+                    empty_vol_index += 1
             book = repo.create_book(
                 knowledge.knowledge_id,
                 kind="textbook",
                 roles=_json_or(dl.get("roles"), None) or _json_or(selection.get("roles"), None) or ["textbook"],
-                title=title,
+                title=book_title,
                 part=vol_part,
                 authors=_json_or(selection.get("authors"), []),
                 version=_json_or(selection.get("version"), {}),

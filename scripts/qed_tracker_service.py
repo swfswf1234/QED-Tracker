@@ -46,18 +46,23 @@ def serve_command() -> list[str]:
 
 
 def _pid_is_alive(pid: int) -> bool:
-    """Windows 进程存在性检测：tasklist（os.kill(pid, 0) 会直接 TerminateProcess）。"""
+    """Windows 进程存在性检测：tasklist（os.kill(pid, 0) 会直接 TerminateProcess）。
+    注意（2026-08-18 修复）：中文 Windows tasklist 表头为 GBK（如「映像名称」），
+    Python 以 utf-8 解码会抛 UnicodeDecodeError → readerthread 中断 → stdout=None →
+    TypeError。修复：errors='replace' 容忍非 utf-8 输出 + stdout 空值兜底。
+    """
     try:
         result = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}"],
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=10,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return False
-    return str(pid) in result.stdout
+    return str(pid) in (result.stdout or "")
 
 
 def read_pid() -> int | None:

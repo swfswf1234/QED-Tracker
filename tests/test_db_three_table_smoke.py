@@ -1,10 +1,10 @@
 """五层模型真实 MySQL 迁移冒烟（QED-031：0006 + 存量迁移，安全可重放版）。
 
 默认跳过（CI 不依赖数据库）：设置环境变量 `QED_DB_SMOKE=1` 时于本机执行。
-本测试执行**幂等**升级链：`upgrade_database`（推进 alembic 至 head 0006）→
+本测试执行**幂等**升级链：`upgrade_database`（推进 alembic 至 head 0007，含表/列中文注释）→
 `migrate_curriculum` + `migrate_legacy_data`（存量梳理：qt_selections → qt_knowledge、
 qt_downloads → qt_books；qt_sources 重命名 qt_sources_legacy 备份后重建，均幂等可重放），
-随后断言五表结构与索引。真实数据只读/重命名备份，不删除（drop_legacy=False）。
+随后断言五表结构、索引与注释。真实数据只读/重命名备份，不删除（drop_legacy=False）。
 qed 库现含真实存量（qt_selections/qt_downloads/qt_sources），破坏性清理只应在
 用户显式隔离库或备份后执行。
 """
@@ -87,15 +87,13 @@ def _connect():
 
 
 def test_upgrade_and_migrate_creates_five_tables_with_contract_columns():
-    from qed_tracker.application.migrate_knowledge import migrate_curriculum, migrate_legacy_data
     from qed_tracker.config import load_settings
-    from qed_tracker.database import create_engine_for, session_factory, upgrade_database
+    from qed_tracker.database import upgrade_database
 
     settings = load_settings()
     upgrade_database(settings)  # 幂等：已到 head 则空操作
-    factory = session_factory(create_engine_for(settings))
-    migrate_curriculum(factory)  # 幂等：qed_domain/qed_course upsert
-    migrate_legacy_data(factory)  # 幂等：旧表重命名备份仅首次；续跑从 qt_sources_legacy 重放
+    # 注意：不重放 migrate_legacy_data —— 存量迁移为一次性动作，重放会按旧表重建已人工定稿的
+    # 知识行/来源（如 Principles 独立行、重复 source）；迁移逻辑幂等性由 test_migrate_knowledge.py 覆盖。
     settings, conn = _connect()
     try:
         with conn.cursor() as cur:
@@ -129,6 +127,36 @@ def test_upgrade_and_migrate_creates_five_tables_with_contract_columns():
     assert {"uq_qt_books_knowledge_title_part", "uq_qt_books_sha256",
             "ix_qt_books_knowledge", "ix_qt_books_status"} <= indexes["qt_books"]
     assert {"ix_qt_sources_book"} <= indexes["qt_sources"]
+
+
+def test_table_and_column_comments_applied():
+    """0007 表/列中文注释已应用：5 张新表 TABLE_COMMENT 非空、全部列均有 COLUMN_COMMENT。"""
+    settings, conn = _connect()
+    tables = ("qed_domain", "qed_course", "qt_knowledge", "qt_books", "qt_sources")
+    try:
+        with conn.cursor() as cur:
+            placeholders = ",".join(["%s"] * len(tables))
+            cur.execute(
+                f"SELECT TABLE_NAME, TABLE_COMMENT FROM information_schema.TABLES "
+                f"WHERE TABLE_SCHEMA=%s AND TABLE_NAME IN ({placeholders})",
+                (settings.db_name,) + tables,
+            )
+            table_comments = {row[0]: row[1] for row in cur.fetchall()}
+            assert set(table_comments) == set(tables)
+            assert all(comment for comment in table_comments.values()), table_comments
+            cur.execute(
+                f"SELECT TABLE_NAME, COUNT(*) AS total, "
+                f"SUM(CASE WHEN COLUMN_COMMENT <> '' THEN 1 ELSE 0 END) AS commented "
+                f"FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=%s AND TABLE_NAME IN ({placeholders}) "
+                f"GROUP BY TABLE_NAME",
+                (settings.db_name,) + tables,
+            )
+            by_table = {row[0]: (row[1], row[2]) for row in cur.fetchall()}
+            for table in tables:
+                total, commented = by_table[table]
+                assert total == commented, f"{table}: {commented}/{total} 列有注释"
+    finally:
+        conn.close()
 
 
 def test_legacy_tables_retired_with_backup_snapshot():
