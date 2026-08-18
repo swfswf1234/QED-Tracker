@@ -25,6 +25,7 @@ from qed_tracker.application.papers import PaperService
 from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key
 from qed_tracker.db.knowledge_repository import InvalidTransition, KnowledgeRepository
+from qed_tracker.db.models import QedDomain
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
 from qed_tracker.models import Candidate
@@ -197,6 +198,41 @@ def create_app(
         if row is None:
             raise HTTPException(status_code=404, detail=f"知识行不存在：{knowledge_id}")
         return row
+
+    def _domain_view(repo: KnowledgeRepository, domain: QedDomain) -> dict[str, Any]:
+        """课程体系只读透出（QED-033）：字段与 courses.py Curriculum/Course dataclass 一致，不透出审计列。"""
+        return {
+            "domain_id": domain.domain_id,
+            "name": domain.name,
+            "description": domain.description,
+            "stages": list(domain.stages),
+            "courses": [
+                {
+                    "course_id": row.course_id,
+                    "name": row.name,
+                    "aliases": list(row.aliases),
+                    "stage": row.stage,
+                    "prerequisites": list(row.prerequisites),
+                    "related_targets": list(row.related_targets),
+                    "note": row.note,
+                }
+                for row in repo.list_courses(domain.domain_id)
+            ],
+        }
+
+    @fastapi_app.get("/api/v1/courses")
+    def courses() -> list[dict[str, Any]]:
+        """课程体系列表（qed_domain/qed_course 共享表，按领域分组全量，sort_order 有序；无加工直接透出）。"""
+        repo = _kn(app)
+        return [_domain_view(repo, domain) for domain in repo.list_domains()]
+
+    @fastapi_app.get("/api/v1/courses/{domain_id}")
+    def course_detail(domain_id: str) -> dict[str, Any]:
+        repo = _kn(app)
+        domain = next((d for d in repo.list_domains() if d.domain_id == domain_id), None)
+        if domain is None:
+            raise HTTPException(status_code=404, detail=f"未知学科课程体系：{domain_id}")
+        return _domain_view(repo, domain)
 
     def _book_transition(book_id: str, op) -> dict[str, Any]:
         repo = _kn(app)

@@ -27,6 +27,9 @@ def repo(tmp_path):
     session.add(QedCourse(course_id="01_math_analysis", domain_id="math", sort_order=1, name="数学分析",
                           aliases=[], stage="本科基础", prerequisites=[], related_targets=[],
                           created_at=now, updated_at=now))
+    session.add(QedCourse(course_id="02_linear_algebra", domain_id="math", sort_order=2, name="高等代数",
+                          aliases=["线性代数"], stage="本科基础", prerequisites=["01_math_analysis"],
+                          related_targets=["LAG1"], created_at=now, updated_at=now))
     session.commit()
     repo = KnowledgeRepository(lambda: factory())
     yield repo
@@ -37,6 +40,17 @@ def repo(tmp_path):
 def client(tmp_path, repo):
     settings = load_settings(data_root=tmp_path)
     app = create_app(settings, knowledge_repository=repo)
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def client_no_db(tmp_path):
+    # 无 DB 凭据降级路径（同 test_api.make_client）：五层端点应 409，不尝试连接 MySQL。
+    from dataclasses import replace
+
+    settings = replace(load_settings(data_root=tmp_path), db_password="")
+    app = create_app(settings)
     with TestClient(app) as test_client:
         yield test_client
 
@@ -190,3 +204,46 @@ def test_knowledge_rejected_hidden_in_list(client, repo):
     response = client.get("/api/v1/knowledge?status=rejected")
     assert response.status_code == 200
     assert response.json() == []
+
+
+# ---------------- QED-033：课程体系只读端点（GET /courses，透出 qed_domain/qed_course） ----------------
+
+_COURSE_FIELDS = {"course_id", "name", "aliases", "stage", "prerequisites", "related_targets", "note"}
+
+
+def test_courses_list_returns_domain_grouped_curricula(client):
+    response = client.get("/api/v1/courses")
+    assert response.status_code == 200
+    domains = response.json()
+    assert len(domains) == 1
+    domain = domains[0]
+    assert domain["domain_id"] == "math"
+    assert domain["name"] == "数学"
+    assert domain["description"] == "d"
+    assert domain["stages"] == ["本科基础"]
+    courses = domain["courses"]
+    assert [c["course_id"] for c in courses] == ["01_math_analysis", "02_linear_algebra"]  # sort_order 有序
+    assert courses[0]["name"] == "数学分析"
+    assert courses[1]["stage"] == "本科基础"
+    assert courses[1]["aliases"] == ["线性代数"]
+    assert courses[1]["prerequisites"] == ["01_math_analysis"]
+    assert courses[1]["related_targets"] == ["LAG1"]
+    # 契约守卫：课程字段与 courses.py Course dataclass 一致，不透出 DB 审计列
+    assert set(courses[0]) == _COURSE_FIELDS
+
+
+def test_courses_detail_returns_single_domain(client):
+    response = client.get("/api/v1/courses/math")
+    assert response.status_code == 200
+    domain = response.json()
+    assert domain["domain_id"] == "math"
+    assert [c["course_id"] for c in domain["courses"]] == ["01_math_analysis", "02_linear_algebra"]
+
+
+def test_courses_detail_unknown_domain_404(client):
+    assert client.get("/api/v1/courses/phys").status_code == 404
+
+
+def test_courses_requires_db_config_409(client_no_db):
+    assert client_no_db.get("/api/v1/courses").status_code == 409
+    assert client_no_db.get("/api/v1/courses/math").status_code == 409
