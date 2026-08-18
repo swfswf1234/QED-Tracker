@@ -57,16 +57,16 @@
       "id": "01-feidinghui",
       "course_id": "01_math_analysis",
       "course_name": "数学分析",
-      "kind": "supplement",
+      "kind": "exercise",
       "title": "吉米多维奇数学分析习题集题解",
       "authors": [
         "费定晖"
       ],
       "language": "zh",
       "query": "费定晖 吉米多维奇 习题集题解",
-      "note": "2026-08-07 定稿：套一配套题解（supplement，与习题集配套不重复下载）",
+      "note": "2026-08-07 定稿 + 2026-08-18（QED-034）：套一配套题解（exercise，与习题集配套不重复下载）",
       "roles": [
-        "solutions"
+        "exercises"
       ]
     },
     {
@@ -128,9 +128,8 @@
       ],
       "language": "zh",
       "query": "数学分析习题课讲义 谢惠民 上册",
-      "note": "套二（libgen.li 发现专用 + 人工下载）",
+      "note": "套二（libgen.li 发现专用 + 人工下载；2026-08-18 QED-034 裁决仅 exercises）",
       "roles": [
-        "textbook",
         "exercises"
       ]
     },
@@ -145,9 +144,8 @@
       ],
       "language": "zh",
       "query": "数学分析习题课讲义 谢惠民 下册",
-      "note": "套二（libgen.li 发现专用 + 人工下载）",
+      "note": "套二（libgen.li 发现专用 + 人工下载；2026-08-18 QED-034 裁决仅 exercises）",
       "roles": [
-        "textbook",
         "exercises"
       ]
     },
@@ -189,7 +187,7 @@
       "id": "01-chenjixiu-answers",
       "course_id": "01_math_analysis",
       "course_name": "数学分析",
-      "kind": "supplement",
+      "kind": "exercise",
       "title": "数学分析",
       "authors": [
         "陈纪修"
@@ -197,9 +195,9 @@
       "language": "zh",
       "query": "数学分析 陈纪修",
       "file_hint": "习题答案",
-      "note": "套三：陈纪修《数学分析》习题答案（archive 条目 math_analysis_chenjixiu 配套习题答案，supplement，与教材同条目按 file_hint 分别收录；title 保持条目级不带卷号）",
+      "note": "套三：陈纪修《数学分析》习题答案（archive 条目 math_analysis_chenjixiu 配套习题答案，exercise，与教材同条目按 file_hint 分别收录；title 保持条目级不带卷号）",
       "roles": [
-        "solutions"
+        "exercises"
       ]
     },
     {

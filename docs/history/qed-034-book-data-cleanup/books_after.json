@@ -1,0 +1,134 @@
+[
+  {
+    "book_id": "bk_25e94d29348343348f4145617684452e",
+    "knowledge_id": "kn_23d99d87728255e2328547a468396b23",
+    "kind": "exercise",
+    "roles": "[\"exercises\"]",
+    "title": "吉米多维奇数学分析习题集题解",
+    "part": "",
+    "display_title": "吉米多维奇数学分析习题集题解（费定晖）",
+    "file_name": "01-feidinghui_费定晖吉米多维奇题解.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_2605230a0d589639f35d457e585d2010",
+    "knowledge_id": "kn_23d99d87728255e2328547a468396b23",
+    "kind": "textbook",
+    "roles": "[\"textbook\"]",
+    "title": "Principles of Mathematical Analysis",
+    "part": "",
+    "display_title": "Principles of Mathematical Analysis（英文原版）",
+    "file_name": "01-rudin-en_Principles_of_Mathematical_Analysis.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_8817a1299b463ff4bbd9705e259d374a",
+    "knowledge_id": "kn_23d99d87728255e2328547a468396b23",
+    "kind": "textbook",
+    "roles": "[\"textbook\"]",
+    "title": "数学分析原理",
+    "part": "",
+    "display_title": "数学分析原理（Rudin 中译·第3版）",
+    "file_name": "01-rudin-zh_数学分析原理第3版_鲁丁中译.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_dddfbdd38fa48c1cd124f6a4e8a7ec22",
+    "knowledge_id": "kn_23d99d87728255e2328547a468396b23",
+    "kind": "exercise",
+    "roles": "[\"exercises\"]",
+    "title": "吉米多维奇数学分析习题集",
+    "part": "",
+    "display_title": "吉米多维奇数学分析习题集（2010）",
+    "file_name": "01-demidovich_吉米多维奇数学分析习题集_2010.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_2bdca393f7ac4621b787f9cc14f0f752",
+    "knowledge_id": "kn_ad4d78ac7cd65bc0116fad84a5e5e77a",
+    "kind": "textbook",
+    "roles": "[\"textbook\", \"exercises\"]",
+    "title": "数学分析（陈纪修）",
+    "part": "第二册",
+    "display_title": "数学分析（陈纪修） 第二册",
+    "file_name": "01-chenjixiu-v2_数学分析陈纪修_第三版_课本及答案_e7a1f37b.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_373f286d2e1bb51c8b19ff30f4adbd77",
+    "knowledge_id": "kn_ad4d78ac7cd65bc0116fad84a5e5e77a",
+    "kind": "textbook",
+    "roles": "[\"textbook\", \"exercises\"]",
+    "title": "数学分析（陈纪修）",
+    "part": "第一册",
+    "display_title": "数学分析（陈纪修） 第一册",
+    "file_name": "01-chenjixiu-v1_数学分析陈纪修_第三版_课本及答案_730d8220.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_ed68f763320dd71dfeb516139653fb7d",
+    "knowledge_id": "kn_ad4d78ac7cd65bc0116fad84a5e5e77a",
+    "kind": "exercise",
+    "roles": "[\"exercises\"]",
+    "title": "数学分析（陈纪修）",
+    "part": "答案册",
+    "display_title": "数学分析（陈纪修） 答案册",
+    "file_name": "01-chenjixiu-answers_数学分析陈纪修_第三版_课本及答案_cd28f6f0.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_1bdd0c8ade8db6d44bc12dd8fd32ff41",
+    "knowledge_id": "kn_b8e1576c05b7ac14fc3638fa2d1693c5",
+    "kind": "textbook",
+    "roles": "[\"textbook\"]",
+    "title": "微积分学教程",
+    "part": "第三册",
+    "display_title": "微积分学教程（菲赫金哥尔茨）第三册",
+    "file_name": "微积分学教程（第3卷）.М.菲赫金哥尔茨.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_8060d0919c1b37632f43d1725f64231f",
+    "knowledge_id": "kn_b8e1576c05b7ac14fc3638fa2d1693c5",
+    "kind": "exercise",
+    "roles": "[\"exercises\"]",
+    "title": "数学分析习题课讲义",
+    "part": "上册",
+    "display_title": "数学分析习题课讲义（谢惠民）上册",
+    "file_name": "数学分析习题课讲义（第2版）上册.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_9d4175cf6edaaa2008b919daf34ffbaa",
+    "knowledge_id": "kn_b8e1576c05b7ac14fc3638fa2d1693c5",
+    "kind": "textbook",
+    "roles": "[\"textbook\"]",
+    "title": "微积分学教程",
+    "part": "第一册",
+    "display_title": "微积分学教程（菲赫金哥尔茨）第一册",
+    "file_name": "微积分学教程（第1卷）.М.菲赫金哥尔茨.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_9d565645de888fbd8f298ce9244dfb0a",
+    "knowledge_id": "kn_b8e1576c05b7ac14fc3638fa2d1693c5",
+    "kind": "textbook",
+    "roles": "[\"textbook\"]",
+    "title": "微积分学教程",
+    "part": "第二册",
+    "display_title": "微积分学教程（菲赫金哥尔茨）第二册",
+    "file_name": "微积分学教程（第2卷）.M.菲赫金哥尔茨.pdf",
+    "updated_by": "data_fix"
+  },
+  {
+    "book_id": "bk_d97b5ae7d83f81dd3b2406ce7111c673",
+    "knowledge_id": "kn_b8e1576c05b7ac14fc3638fa2d1693c5",
+    "kind": "exercise",
+    "roles": "[\"exercises\"]",
+    "title": "数学分析习题课讲义",
+    "part": "下册",
+    "display_title": "数学分析习题课讲义（谢惠民）下册",
+    "file_name": "数学分析习题课讲义（第二版）下册.pdf",
+    "updated_by": "data_fix"
+  }
+]

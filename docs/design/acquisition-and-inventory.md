@@ -33,8 +33,8 @@
 4. **项目优先自动拉取**：候选走自动链路（archive 等）能下载即下载；**自动链路拉取不到时，
    提示人工下载并给出下载方案**（来源链接、torrent / IPFS / ed2k 等，见 `Candidate.links`），
    人工下载后经登记端点入资源体系，不阻塞课程闭环。
-5. 分类口径：**教材（book）/ 习题集（exercise）/ 其他资料（supplement）**；配套习题答案等
-   与教材同源文件归入 supplement，不重复下载为独立习题集。
+5. 分类口径：**教材（book）/ 习题集（exercise）**（QED-034 退休 supplement：配套习题答案、
+   题解等与教材同源文件归入 exercise，不重复下载为独立习题集）。
 6. 每门课程的定稿书单与下载来源记录在目录 `catalogs/math-qe.json` 与课程评估报告（evaluate
    任务 result）中，人工评审以 8903 前端为准。
 
@@ -63,7 +63,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| `resource_id`、`schema_version`、`kind`、`created_at` | 稳定身份、schema 版本、资源类型和 UTC 创建时间。`kind` 取值 `book`（教材）/ `exercise`（习题集）/ `supplement`（其他资料，如配套习题答案）/ `paper`。 |
+| `resource_id`、`schema_version`、`kind`、`created_at` | 稳定身份、schema 版本、资源类型和 UTC 创建时间。`kind` 取值 `book`（教材）/ `exercise`（习题集，含题解与配套答案）/ `paper`。 |
 | `title`、`authors`、`language`、`year`、`identifiers` | 规范化书目信息和外部标识。 |
 | `source` | 来源名、来源 ID、页面地址、下载地址和获取时间；本地扫描记录为 `provider=local`；libgen 发现候选另含 `links`（下载方案：torrent / IPFS / ed2k）。 |
 | `file` | 数据根相对路径、SHA-256、字节数、`application/pdf` 和页数。 |

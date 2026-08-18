@@ -74,30 +74,39 @@ def test_math_catalog_includes_chenjixiu_volumes():
     answers = targets["01-chenjixiu-answers"]
     assert v1.course_id == "01_math_analysis" and v1.kind == "book" and v1.file_hint == "第三版 上"
     assert v2.course_id == "01_math_analysis" and v2.kind == "book" and v2.file_hint == "第三版 下"
-    assert answers.kind == ResourceKind.SUPPLEMENT and answers.file_hint == "习题答案"
+    assert answers.kind == ResourceKind.EXERCISE and answers.file_hint == "习题答案"
     assert all(target.title == "数学分析" and target.language == "zh" and "陈纪修" in target.authors for target in (v1, v2, answers))
 
 
-def test_supplement_kind_is_supported():
-    """QED-021：配套资料分类（如与教材同条的习题答案），catalog kind 解析与过滤可用。"""
-    assert ResourceKind.SUPPLEMENT.value == "supplement"
-    assert ResourceKind("supplement") is ResourceKind.SUPPLEMENT
+def test_supplement_and_solutions_roles_are_retired():
+    """QED-034：solutions 角色与 supplement kind 全量退休（solutions≈exercises 冗余）；
+    catalog 不再产生 supplement kind 或 solutions 角色。"""
+    from qed_tracker.models import BookRole, ResourceKind
+
+    assert not hasattr(ResourceKind, "SUPPLEMENT")
+    assert not hasattr(BookRole, "SOLUTIONS")
+    catalog = load_catalog("math-qe")
+    assert all(target.kind is not None for target in catalog.targets)
+    assert all("solutions" not in target.roles for target in catalog.targets)
+    assert all("supplement" not in target.roles for target in catalog.targets)
 
 
 def test_target_roles_follow_kind_and_allow_multi_role():
-    """方案 A（2026-08-12）：catalog target 增加 roles 多值字段——一套书可同时是教材与习题集。
-    未显式指定时按 kind 推导（book→[textbook]、exercise→[exercises]、supplement→[solutions]）。"""
+    """方案 A（2026-08-12）+ QED-034：catalog target roles 多值——一套书可同时是教材与习题集。
+    未显式指定时按 kind 推导（book→[textbook]、exercise→[exercises]）。"""
     from qed_tracker.models import BookRole
 
     catalog = load_catalog("math-qe")
     targets = {target.id: target for target in catalog.targets}
-    # 谢惠民《习题课讲义》明确双重角色（textbook + exercises）
-    assert targets["01-xiehuimin-v1"].roles == (BookRole.TEXTBOOK, BookRole.EXERCISES)
-    assert targets["01-xiehuimin-v2"].roles == (BookRole.TEXTBOOK, BookRole.EXERCISES)
+    # 谢惠民《习题课讲义》：QED-034 裁决仅 exercises（非 textbook+exercises）
+    assert targets["01-xiehuimin-v1"].roles == (BookRole.EXERCISES,)
+    assert targets["01-xiehuimin-v2"].roles == (BookRole.EXERCISES,)
     # 普通 book 按 kind 推导
     assert targets["01-rudin-zh"].roles == (BookRole.TEXTBOOK,)
     assert targets["01-demidovich"].roles == (BookRole.EXERCISES,)
-    assert targets["01-chenjixiu-answers"].roles == (BookRole.SOLUTIONS,)
+    # 费定晖题解与陈纪修答案册：kind=exercise、roles=[exercises]（QED-034）
+    assert targets["01-feidinghui"].roles == (BookRole.EXERCISES,)
+    assert targets["01-chenjixiu-answers"].roles == (BookRole.EXERCISES,)
     assert BookRole.TEXTBOOK.value == "textbook"
 
 

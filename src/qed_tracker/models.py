@@ -12,7 +12,6 @@ from typing import Any
 class ResourceKind(StrEnum):
     BOOK = "book"
     EXERCISE = "exercise"
-    SUPPLEMENT = "supplement"
     PAPER = "paper"
 
 
@@ -22,25 +21,22 @@ class Availability(StrEnum):
 
 
 class BookRole(StrEnum):
-    """书籍角色（多值，方案 A 2026-08-12）：一套书可同时是教材与习题集。
+    """书籍角色（多值，方案 A 2026-08-12；QED-034 退休 solutions≈exercises 冗余）。
 
-    取值：textbook（教材）/ exercises（习题集）/ solutions（题解/答案）/ reference（参考）。
+    取值：textbook（教材）/ exercises（习题集，含题解与答案册）/ reference（参考）。
     kind 保留单值主分类（存储/统计），roles 表达真实使用角色（评审/成套判定）。
     """
 
     TEXTBOOK = "textbook"
     EXERCISES = "exercises"
-    SOLUTIONS = "solutions"
     REFERENCE = "reference"
 
 
 def default_roles(kind: ResourceKind) -> tuple[BookRole, ...]:
-    """按 kind 推导默认角色（未显式指定时）：book→[textbook]、exercise→[exercises]、
-    supplement→[solutions]、paper→[]。"""
+    """按 kind 推导默认角色（未显式指定时）：book→[textbook]、exercise→[exercises]、paper→[]。"""
     mapping: dict[ResourceKind, tuple[BookRole, ...]] = {
         ResourceKind.BOOK: (BookRole.TEXTBOOK,),
         ResourceKind.EXERCISE: (BookRole.EXERCISES,),
-        ResourceKind.SUPPLEMENT: (BookRole.SOLUTIONS,),
         ResourceKind.PAPER: (),
     }
     return mapping.get(kind, ())

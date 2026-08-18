@@ -75,7 +75,7 @@
 SHA-256 去重）进入资源体系。01 数学分析闭环据此定稿：套一 Rudin 中译 + 吉米多维奇
 （本地已有）、套二 菲赫金哥尔茨《微积分学教程》3 卷 + 谢惠民《习题课讲义》上下
 （libgen 发现 → 人工下载）、套三 陈纪修《数学分析》上下（archive 自动下载）+ 习题
-答案（supplement）、英文对照 Rudin EN（已有）+ Pólya（archive 可选）。
+答案（题解归 exercise，QED-034）、英文对照 Rudin EN（已有）+ Pólya（archive 可选）。
 
 ## 待探索清单
 

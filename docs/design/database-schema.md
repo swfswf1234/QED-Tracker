@@ -42,14 +42,19 @@ qed_domain（领域，共享 qed_*）
                     └── qt_sources（渠道尝试，一次一条）
 ```
 
-| 表 | 前缀 | 所有权 | 一行= | 状态 |
-| --- | --- | --- | --- | --- |
-| `qed_domain` | 共享 | QED-Tracker 建表维护，其他项目只读 | 一个学科（math；预留扩展） | 本轮新增（规划迁移 0006） |
-| `qed_course` | 共享 | 同上 | 一门课程（含阶段/先修/别名/顺序） | 本轮新增 |
-| `qt_knowledge` | 私有 | QED-Tracker | kind=tutorial：一套教程；kind=other_material：课程延展资料归类 | 本轮新增 |
-| `qt_books` | 私有 | QED-Tracker | 一个文件单元（书的一册/一篇论文/一个博客快照） | 本轮新增 |
-| `qt_sources` | 私有 | QED-Tracker | 一次渠道尝试 | 迁移重建（外键改挂 book_id） |
-| `qt_selections` / `qt_downloads` | 私有 | — | — | 存量迁移后退役（drop） |
+| 表 | 中文表名 | 前缀 | 所有权 | 一行= | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| `qed_domain` | 领域表 | 共享 | QED-Tracker 建表维护，其他项目只读 | 一个学科（math；预留扩展） | 本轮新增（规划迁移 0006） |
+| `qed_course` | 课程表 | 共享 | 同上 | 一门课程（含阶段/先修/别名/顺序） | 本轮新增 |
+| `qt_knowledge` | 知识行表 | 私有 | QED-Tracker | kind=tutorial：一套教程；kind=other_material：课程延展资料归类 | 本轮新增 |
+| `qt_books` | 书行表 | 私有 | QED-Tracker | 一个文件单元（书的一册/一篇论文/一个博客快照） | 本轮新增 |
+| `qt_sources` | 渠道表 | 私有 | QED-Tracker | 一次渠道尝试 | 迁移重建（外键改挂 book_id） |
+| `qt_sources_legacy` | 渠道备份表 | 私有 | — | 0006 迁移改名保留的旧版渠道表快照 | 确认后由 `migrate --drop-legacy` 删除 |
+| `qt_selections` / `qt_downloads` | 旧选择/下载表 | 私有 | — | — | 存量迁移后退役（drop） |
+
+> 表/列中文注释：0007 迁移（`0007_table_comments`）从 `migrations/data/table_comments.json`
+> （UTF-8，唯一事实源）应用到真实库；ORM 模型 `comment=` 与新建库 `create_all` 保持一致。
+> 各表 SQL 中的 `COMMENT='...'` 即该表的中文表介绍（下表结构体已同步）。
 
 ## qed_domain 表结构（表1，共享）
 
@@ -64,7 +69,7 @@ CREATE TABLE qed_domain (
   created_at    DATETIME      NOT NULL,
   updated_at    DATETIME      NOT NULL,
   PRIMARY KEY (domain_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='qed_domain';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='领域表：按学科组织课程体系，一行一个学科，记录学科介绍与学习阶段划分';
 ```
 
 - 共享表：三项目可读；QED-Tracker 唯一写权限（Alembic 建表维护）。
@@ -89,7 +94,7 @@ CREATE TABLE qed_course (
   updated_at      DATETIME      NOT NULL,
   PRIMARY KEY (course_id),
   KEY ix_qed_course_domain (domain_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='qed_course';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='课程表：登记一门课程，记录课程名称、所属阶段、先修关系与学习顺序';
 ```
 
 - **`courses/math.json` 退役**（2026-08-16 用户裁决）：表为课程体系唯一事实源；CLI/8903 改读表；
@@ -128,7 +133,7 @@ CREATE TABLE qt_knowledge (
   KEY ix_qt_knowledge_course (course_id),
   KEY ix_qt_knowledge_domain (domain_id),
   KEY ix_qt_knowledge_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='qt_knowledge';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识行表：登记一套教程或一组课程延展资料，承载教材/习题集简介与决定引用，指引资源检索';
 ```
 
 - **状态机**：`draft`（探索中）→ `confirmed`（定稿，简介/决定引用确认）→ `completed`
@@ -148,8 +153,8 @@ CREATE TABLE qt_knowledge (
 CREATE TABLE qt_books (
   book_id         VARCHAR(100)  NOT NULL,         -- PK：bk_<md5>（稳定）
   knowledge_id    VARCHAR(100)  NOT NULL,         -- FK → qt_knowledge.knowledge_id；索引
-  kind            VARCHAR(16)   NOT NULL,         -- textbook / exercise / supplement / paper / blog / other
-  roles           JSON          NOT NULL,         -- list[str]：textbook/exercise/solutions…（教材含习题 → ["textbook","exercise"]）
+  kind            VARCHAR(16)   NOT NULL,         -- textbook / exercise / paper / blog / other（QED-034 退休 supplement）
+  roles           JSON          NOT NULL,         -- list[str]：textbook/exercises/reference（QED-034 退休 solutions≈exercises；教材含习题 → ["textbook","exercises"]）
   title           VARCHAR(500)  NOT NULL,         -- 书名（不含卷，如 微积分学教程）
   part            VARCHAR(32)   NOT NULL DEFAULT '', -- 卷标识：'' / 第一册 / 上册 / 博文一、二、三…
   display_title   VARCHAR(500)  NOT NULL,         -- 展示名 = title+part，可人工覆盖，不含 hash
@@ -182,7 +187,7 @@ CREATE TABLE qt_books (
   UNIQUE KEY uq_qt_books_sha256 (sha256),
   KEY ix_qt_books_knowledge (knowledge_id),
   KEY ix_qt_books_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='qt_books';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='书行表：登记一册/一卷/一个快照，跟踪候选→决定→下载→验证的完整生命周期';
 ```
 
 - **唯一性**：`uq_qt_books_knowledge_title_part`（同套同书同卷不重复建行）；
@@ -229,14 +234,16 @@ CREATE TABLE qt_sources (
   attempted_at    DATETIME      NOT NULL,
   PRIMARY KEY (source_id),
   KEY ix_qt_sources_book (book_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='qt_sources';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='渠道表：记录为某本书尝试的下载渠道及成败，用于归因成功来源与评估渠道有效性';
 ```
 
 - 无状态机：一次渠道尝试一条记录；`ok` 表达成败。失败尝试留痕不展示（详情只展示 ok=1 来源）。
 - **定位（2026-08-16 用户确认）**：目的是了解**最终某本书是从哪个渠道获取成功的**（成功渠道
-  归因），支撑渠道有效性评估与后续课程下载流程优化。历史参考意义有限——数学分析 12 册中约
-  10 册由人工（manual）获取：**当前阶段以固定当前课程（定稿固化）为主，渠道优化流程从下一门
-  课程开始**；表结构不变，记录即优化依据。
+  归因），支撑渠道有效性评估与后续课程下载流程优化。历史参考意义有限——数学分析 12 册中
+  9 册由人工（manual）获取（微积分学教程×3、数学分析习题课讲义×2、吉米多维奇×2、
+  数学分析原理（鲁丁）×2），另 3 册经 archive.org 自动获取；**当前阶段以固定当前课程（定稿
+  固化）为主，渠道优化流程从下一门课程开始**；表结构不变，记录即优化依据。人工获取书的
+  自动渠道保留 ok=0 失败留痕（note 标注"自动下载失败，转人工"），成功渠道归因以 manual 为准。
 
 ## 状态机汇总与迁移合法性
 
@@ -278,6 +285,34 @@ CREATE TABLE qt_sources (
   到新状态机）；channels 汇总仍读 qt_sources。
 - 书行 `candidate → decided` 对应旧表1 `candidate → confirmed`；`verified` 对应旧表2 `approved`。
 - 论文/博客：进入 qt_books（kind=paper/blog），快照落盘统一链路（HTML→PDF 或归档，实现计划明确）。
+
+### 课程体系只读端点（QED-033，8901 透出）
+
+新增 `GET /api/v1/courses`（按领域分组全量）与 `GET /api/v1/courses/{domain_id}`（单领域详情），
+直接透出 qed_domain/qed_course 共享表数据，**纯只读、无任何加工**（QED-Engine 后端仅转发，
+数据加工对 QED-Engine 透明）：
+
+| 方法/路径 | 响应 | 错误语义 |
+| --- | --- | --- |
+| `GET /api/v1/courses` | `[{domain_id, name, description, stages, courses:[{course_id, name, aliases, stage, prerequisites, related_targets, note}]}]`；domains 按 domain_id 有序，courses 按 sort_order 有序 | DB 未配置 → 409「数据库未配置」 |
+| `GET /api/v1/courses/{domain_id}` | 单领域 curriculum（同上单元素） | 未知 domain → 404；DB 未配置 → 409 |
+
+- 字段与 `src/qed_tracker/courses.py` 的 `Curriculum`/`Course` dataclass 一致（课程不透出
+  created_at 等审计列），CLI（`courses list/show`）与 API 单一事实源。
+- 支撑根仓库 REQ-035「课程体系数据源切换」（8900 `tracker_client.list_courses` 透传本端点，
+  前端学习中心 courseMeta 改读本端点）。
+
+### 书行响应契约（QED-034，8901 透出）
+
+`GET /api/v1/knowledge/{knowledge_id}` 的书行数组（`books[]`）与书行相关响应，每行**必含**
+`title` 与 `display_title`（源自 `QtBook.to_dict()`，全列透出）：
+
+- `title`：规范化书名（不含卷号，如 微积分学教程）。
+- `display_title`：展示名 = title + part（可人工覆盖，不含 hash），**前端一律消费
+  display_title**；`file_name` 为物理落盘名（可含 sha256 短 hash），只在文件操作场景使用。
+- `kind`/`roles`：QED-034 退休 supplement/solutions 后取值 `textbook`/`exercise`/`paper`/
+  `blog`/`other` 与 `textbook`/`exercises`/`reference`；题解、答案册与习题集统一
+  `kind=exercise`、`roles=["exercises"]`，教材含习题 → `roles=["textbook","exercises"]`。
 
 ## 验证方式
 

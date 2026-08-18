@@ -1,7 +1,7 @@
 # 完成台账
 
 状态：Current
-最后更新：2026-08-12
+最后更新：2026-08-18
 
 本文件只追加已关闭任务的简短结果、提交或本地验证证据。
 
@@ -26,3 +26,5 @@
 | QED-023 | 2026-08-12 | 数据库设计确认完成：qt_* 表结构事实源文档升级（表清单/表结构/迁移），根仓库只做指引与规划（2026-08-09 用户裁决）。 | database-schema-ownership.md 转 Accepted/Implemented（含 qt_resources DDL/状态机/迁移管理）；根仓库 REQ-026 回执并入 QED-014 联调。 |
 | QED-025 | 2026-08-12 | 提示文案修复：books.py 退役来源报错改为指向根 .env 的 QED_SOURCES。 | 提交（本轮）；定向测试断言新文案（`退役.*QED_SOURCES`）；全量门禁全绿。 |
 | QED-019 | 2026-08-13 | 01 数学分析闭环完成：套一 Rudin 中/英 + 吉米多维奇 + 费定晖、套二 菲赫金哥尔茨 3 卷 + 谢惠民 上下、套三 陈纪修 上/下/答案 共 **12 条 approved**（≥2 套达标）；register 人工下载登记端点实测（套一本地 4 文件 + 套二 Downloads 5 文件登记通过）；陈纪修 v1/v2=textbook（上下册）、answers=solutions 类别区分并双写修正；全部 12 PDF + 12 meta JSON 经 sha256 校验移交根仓库 `dataset/qed-tracker/`（2026-08-13 用户审阅 01_math_analysis 目录无问题后放行）。 | 8901 API 实测：4+5 register → downloaded → 9 approve 全绿；API roles 核验（v1/v2=[textbook]、answers=[solutions]）；移交脚本 sha256 逐一校验通过（24 文件）；`224 passed + 3 skipped` 基线。 |
+| QED-033 | 2026-08-18 | 8901 课程体系只读端点完成：`GET /api/v1/courses`（按领域分组全量，sort_order 有序）与 `GET /api/v1/courses/{domain_id}`（未知 404）；无 DB 409；**纯只读透出、数据加工对 QED-Engine 透明**（支撑根仓库 REQ-035 课程体系数据源切换）。 | 提交（QED-033）；`/courses` 4 用例 + 全量 **213 passed + 3 skipped + ruff clean**；8901 真实冒烟（math 1 领域/4 阶段/14 门课、课程字段恰 7 契约字段、/courses/math 200、/courses/phys 404）；契约节写入 database-schema.md「课程体系只读端点」。 |
+| QED-034 | 2026-08-18 | 01 套 qt_books 数据纠偏 + solutions/supplement 词汇全量退休：吉米多维奇/费定晖 title 还原真实书名（原误写「数学分析原理（Rudin）」、part 误作第N册）、Rudin 两版 part 清空（版本归 display_title）、微积分学教程/习题课讲义 title 去作者、陈纪修上/下册 roles=[textbook,exercises]、答案册→exercise/[exercises]、习题课讲义 roles 收敛 [exercises]；models.py 退休 SUPPLEMENT/SOLUTIONS + catalog 54 目标 book×37+exercise×17；database-schema.md 书行响应契约（title/display_title 必含，前端消费 display_title）。 | 提交（QED-034）；事务 UPDATE 12 行（updated_by=data_fix，仅元数据列，磁盘零触碰）；全量 **213 passed + 3 skipped + ruff + git diff --check**；8901 冒烟 3 套全 200（kind/roles/title/part/display_title 全部符合）；证据归档 docs/history/qed-034-book-data-cleanup/（before/after 全行 dump + API 冒烟）。 |
