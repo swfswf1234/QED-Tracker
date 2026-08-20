@@ -229,6 +229,9 @@ def _paper_service(settings: Settings, *, with_advisor: bool = False) -> PaperSe
             timeout=settings.llm_timeout_seconds,
             call_budget=settings.llm_call_budget,
             max_tokens=settings.llm_max_tokens,
+            api_select=settings.api_select,
+            gateway_url=settings.llm_gateway_url,
+            engine=_llm_call_engine(settings),
         )
     return PaperService(provider, resources, advisor=advisor)
 
@@ -563,7 +566,17 @@ def _load_curriculum(subject_or_course_id: str) -> Curriculum:
         raise ValueError(f"未知学科课程体系：{subject_or_course_id}") from None
 
 
-def _mainline_advisor(*, api_key: str, model: str, base_url: str, timeout: float, call_budget: int, max_tokens: int):
+def _llm_call_engine(settings: Settings):
+    """local 模式调用记录写 qed_llm_calls 用（QED-037）：DB 未配置时返回 None 不落库。"""
+    if not settings.db_configured:
+        return None
+    from qed_tracker.database import create_engine_for
+
+    return create_engine_for(settings)
+
+
+def _mainline_advisor(*, api_key: str, model: str, base_url: str, timeout: float, call_budget: int, max_tokens: int,
+                      api_select: str = "local", gateway_url: str = "", engine=None):
     from qed_tracker.main_line.advisor import MainLineAdvisor
 
     return MainLineAdvisor(
@@ -573,6 +586,9 @@ def _mainline_advisor(*, api_key: str, model: str, base_url: str, timeout: float
         timeout=timeout,
         call_budget=call_budget,
         max_tokens=max_tokens,
+        api_select=api_select,
+        gateway_url=gateway_url,
+        engine=engine,
     )
 
 
@@ -703,6 +719,9 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
             timeout=settings.llm_timeout_seconds,
             call_budget=settings.llm_call_budget,
             max_tokens=settings.llm_max_tokens,
+            api_select=settings.api_select,
+            gateway_url=settings.llm_gateway_url,
+            engine=_llm_call_engine(settings),
         )
         try:
             prefilled = advisor.prefill(

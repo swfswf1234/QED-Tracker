@@ -28,6 +28,8 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/design/three-table-schema.md"),
     Path("docs/design/service-lifecycle.md"),
     Path("docs/design/service-lifecycle-encoding-fix.md"),
+    Path("docs/design/tutorial-naming.md"),
+    Path("docs/design/model-mode-config.md"),
     Path("docs/standards/index.md"),
     Path("docs/standards/documentation.md"),
     Path("docs/standards/adr-governance.md"),
@@ -38,9 +40,8 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/guides/development.md"),
     Path("docs/plans/index.md"),
     Path("docs/plans/2026-08-main-line-curriculum.md"),
-    Path("docs/plans/2026-08-three-table-refactor.md"),
-    Path("docs/plans/2026-08-knowledge-schema-refactor.md"),
-    Path("docs/plans/2026-08-service-lifecycle-scripts.md"),
+    Path("docs/plans/2026-08-tutorial-naming.md"),
+    Path("docs/plans/2026-08-model-mode-config.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
     Path("docs/trackers/completed.md"),
@@ -78,6 +79,8 @@ DESIGN_DOCS = {
     Path("docs/design/main-line-curriculum.md"),
     Path("docs/design/service-lifecycle.md"),
     Path("docs/design/service-lifecycle-encoding-fix.md"),
+    Path("docs/design/tutorial-naming.md"),
+    Path("docs/design/model-mode-config.md"),
 }
 LINK_PATTERN = re.compile(r"\[[^]]+\]\(([^)]+)\)")
 COMMAND_PATTERN = re.compile(r"^\s*(qed-tracker(?:\s+.+)?)\s*$", re.MULTILINE)

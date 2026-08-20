@@ -57,3 +57,32 @@ def test_bailian_rejects_missing_key_and_budget_exhaustion():
         advisor.plan(_profile(), "", ("cs.CL",))
     with pytest.raises(BailianError, match="调用预算"):
         advisor.plan(_profile(), "", ("cs.CL",))
+
+
+def test_bailian_gateway_mode_routes_via_8900_without_key():
+    """qed-engine 模式：_complete 经 llm_client 调 8900 /api/v1/llm/text，不接触密钥。"""
+    captured: dict = {}
+
+    def handler(request):
+        captured["auth"] = request.headers.get("Authorization")
+        captured["path"] = str(request.url)
+        body = json.loads(request.content)
+        captured["prompt"] = body["prompt"]
+        reply = json.dumps(
+            {"searches": [{"terms": ["RAG"], "category": "cs.CL", "reason": "网关模式"}]},
+            ensure_ascii=False,
+        )
+        return httpx.Response(200, json={"reply": reply, "call_id": "call-1"})
+
+    advisor = BailianPaperAdvisor(
+        api_select="qed-engine",
+        api_key="",
+        gateway_url="http://127.0.0.1:8900",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    searches = advisor.plan(_profile(), "RAG", ("cs.CL",))
+    assert searches[0].terms == ("RAG",)
+    assert captured["auth"] is None
+    assert captured["path"] == "http://127.0.0.1:8900/api/v1/llm/text"
+    assert "RAG" in captured["prompt"]
+    assert advisor.metadata()["calls"] == 1

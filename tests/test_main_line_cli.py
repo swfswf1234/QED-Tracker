@@ -205,19 +205,22 @@ def test_migrate_subcommand_parses_drop_legacy() -> None:
 
 # ---------------- DB 门禁 ----------------
 
-def test_courses_show_requires_db(tmp_path, capsys) -> None:
+def test_courses_show_requires_db(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)  # 隔离真实 .env：模拟无凭据环境
     assert main(["--data-root", str(tmp_path), "courses", "show", "01_math_analysis"]) == 2
     assert "数据库未配置" in capsys.readouterr().err
 
 
 def test_mainline_list_requires_db(tmp_path, monkeypatch, capsys) -> None:
     # 隔离本机根 .env（注入后 db_configured 为真，会连真实库）：模拟无凭据环境
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: None)
     assert main(["--data-root", str(tmp_path), "mainline", "list", "--course", "01_math_analysis"]) == 2
     assert "数据库未配置" in capsys.readouterr().err
 
 
 def test_migrate_requires_db(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: None)
     assert main(["--data-root", str(tmp_path), "migrate"]) == 2
     assert "数据库未配置" in capsys.readouterr().err

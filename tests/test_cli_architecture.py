@@ -110,7 +110,12 @@ def test_serve_continues_when_database_migration_fails(monkeypatch, tmp_path, ca
 
 
 def test_db_backed_commands_inject_root_env(monkeypatch, tmp_path):
-    """mainline/migrate 依赖 qed 库，与 serve 一样必须注入根 .env（QED-031 任务 7 疏漏）。"""
+    """mainline/migrate 依赖 qed 库，与 serve 一样必须注入根 .env（QED-031 任务 7 疏漏）。
+
+    QED-037 后 config.py 也自动读 .env，故 chdir 到 tmp 隔离本机真实 .env，
+    断言聚焦 cli._load_root_env 的调用点（migrate + mainline 注入；config 不注入）。
+    """
+    monkeypatch.chdir(tmp_path)
     calls = []
     monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: calls.append(start) or None)
     assert main(["--data-root", str(tmp_path), "migrate"]) == 2  # 无凭据仍门禁，但已尝试注入

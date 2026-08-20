@@ -3,6 +3,8 @@
 参照顶尖大学（MIT/清华等）课程设置作为提示词锚点；防「总评高」校准：
 权威性等级只能取 高/中/低，必须给出区分度依据（名校指定/社区公认/小众），
 且同课程多本候选对比评级（不能全部评高）。人工评审可覆盖（source=manual）。
+模型调用经 llm_client.py 兼容层（QED-037）：local 直连 dashscope qwen / qed-engine 经
+8900 网关 /llm/text；本类对外 API 不变。
 """
 
 from __future__ import annotations
@@ -12,6 +14,8 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 import httpx
+
+from qed_tracker.llm_client import LlmClient, LlmClientError
 
 T = TypeVar("T")
 
@@ -29,19 +33,28 @@ class MainLineAdvisor:
         call_budget: int = 6,
         max_tokens: int = 4096,
         client: httpx.Client | None = None,
+        api_select: str = "local",
+        gateway_url: str = "http://127.0.0.1:8900",
+        engine=None,
     ):
-        self.api_key = api_key
+        self.llm_client = LlmClient(
+            api_select=api_select,
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            gateway_url=gateway_url,
+            timeout=timeout,
+            call_budget=call_budget,
+            max_tokens=max_tokens,
+            client=client,
+            engine=engine,
+        )
         self.model_name = model
-        self.base_url = base_url.rstrip("/")
         self.call_budget = max(1, call_budget)
-        self.max_tokens = max_tokens
         self.calls = 0
-        self._owns_client = client is None
-        self.client = client or httpx.Client(timeout=timeout)
 
     def close(self) -> None:
-        if self._owns_client:
-            self.client.close()
+        self.llm_client.close()
 
     def metadata(self) -> dict[str, Any]:
         return {"model": self.model_name, "contract_version": self.contract_version, "calls": self.calls}
@@ -133,34 +146,12 @@ class MainLineAdvisor:
                 raise ValueError(f"百炼结构化响应无效：{exc}") from first_error
 
     def _complete(self, messages: list[dict[str, str]]) -> str:
-        if not self.api_key:
-            raise ValueError("未配置 QWEN_API_KEY")
+        if not self.llm_client.is_gateway and not self.llm_client.configured:
+            raise ValueError("未配置 API_KEY（可在自身 .env 或根 .env 提供）")
         if self.calls >= self.call_budget:
             raise ValueError("已达到教材预填模型调用预算")
         self.calls += 1
         try:
-            response = self.client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json={
-                    "model": self.model_name,
-                    "messages": messages,
-                    "temperature": 0,
-                    "max_tokens": self.max_tokens,
-                },
-            )
-            response.raise_for_status()
-            body = response.json()
-            choice = body["choices"][0]
-            content = choice["message"]["content"]
-            if choice.get("finish_reason") != "stop" or not isinstance(content, str):
-                raise ValueError("百炼响应未完整结束")
-        except ValueError:
-            raise
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            raise ValueError("百炼网络请求失败") from exc
-        except httpx.HTTPStatusError as exc:
-            raise ValueError(f"百炼返回 HTTP {exc.response.status_code}") from exc
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            raise ValueError("百炼响应格式无效") from exc
-        return content
+            return self.llm_client.complete(messages)
+        except LlmClientError as exc:
+            raise ValueError(str(exc)) from exc

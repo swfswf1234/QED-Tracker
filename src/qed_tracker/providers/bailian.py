@@ -1,4 +1,8 @@
-"""通过百炼文本模型生成论文检索计划并评估 arXiv 候选。"""
+"""通过百炼文本模型生成论文检索计划并评估 arXiv 候选。
+
+模型调用经 llm_client.py 兼容层（QED-037）：local 直连 dashscope qwen / qed-engine 经
+8900 网关 /llm/text；本类对外 API 不变。
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from typing import Any, TypeVar
 
 import httpx
 
+from qed_tracker.llm_client import LlmClient, LlmClientError
 from qed_tracker.models import Candidate, PaperAssessment, PaperProfile, PaperSearch
 
 T = TypeVar("T")
@@ -32,21 +37,30 @@ class BailianPaperAdvisor:
         call_budget: int = 6,
         max_tokens: int = 4096,
         client: httpx.Client | None = None,
+        api_select: str = "local",
+        gateway_url: str = "http://127.0.0.1:8900",
+        engine=None,
     ):
-        self.api_key = api_key
+        self.llm_client = LlmClient(
+            api_select=api_select,
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            gateway_url=gateway_url,
+            timeout=timeout,
+            call_budget=call_budget,
+            max_tokens=max_tokens,
+            client=client,
+            engine=engine,
+        )
         self.model_name = model
-        self.base_url = base_url.rstrip("/")
         self.call_budget = max(1, call_budget)
-        self.max_tokens = max_tokens
         self.calls = 0
         self.usages: list[dict[str, Any]] = []
         self.response_hashes: list[str] = []
-        self._owns_client = client is None
-        self.client = client or httpx.Client(timeout=timeout)
 
     def close(self) -> None:
-        if self._owns_client:
-            self.client.close()
+        self.llm_client.close()
 
     def metadata(self) -> dict[str, Any]:
         return {
@@ -174,36 +188,15 @@ class BailianPaperAdvisor:
                 raise BailianError(f"百炼结构化响应无效：{exc}") from first_error
 
     def _complete(self, messages: list[dict[str, str]]) -> str:
-        if not self.api_key:
-            raise BailianError("未配置 QED_TRACKER_LLM_API_KEY 或 DASHSCOPE_API_KEY")
+        if not self.llm_client.is_gateway and not self.llm_client.configured:
+            raise BailianError("未配置 API_KEY（可在自身 .env 或根 .env 提供）")
         if self.calls >= self.call_budget:
             raise BailianError("已达到论文推荐模型调用预算")
         self.calls += 1
         try:
-            response = self.client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json={
-                    "model": self.model_name,
-                    "messages": messages,
-                    "temperature": 0,
-                    "max_tokens": self.max_tokens,
-                },
-            )
-            response.raise_for_status()
-            body = response.json()
-            choice = body["choices"][0]
-            content = choice["message"]["content"]
-            if choice.get("finish_reason") != "stop" or not isinstance(content, str):
-                raise BailianError("百炼响应未完整结束")
-        except BailianError:
-            raise
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            raise BailianError("百炼网络请求失败") from exc
-        except httpx.HTTPStatusError as exc:
-            raise BailianError(f"百炼返回 HTTP {exc.response.status_code}") from exc
-        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise BailianError("百炼响应格式无效") from exc
-        self.usages.append(body.get("usage") if isinstance(body.get("usage"), dict) else {})
+            content = self.llm_client.complete(messages)
+        except LlmClientError as exc:
+            raise BailianError(str(exc)) from exc
+        self.usages.append(self.llm_client.last_usage)
         self.response_hashes.append(hashlib.sha256(content.encode("utf-8")).hexdigest())
         return content

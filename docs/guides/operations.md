@@ -1,7 +1,7 @@
 # 日常操作
 
 状态：Current
-最后更新：2026-08-17
+最后更新：2026-08-20
 
 ## 配置
 
@@ -12,14 +12,31 @@ python -m pip install -e ".[dev]"
 qed-tracker config show
 ```
 
-配置直读根仓库 `.env` 的 `QED_*` 变量（`QWEN_API_KEY`、`QED_MODEL`、`QED_AXIOM_URL`、
-`QED_TRACKER_PORT`、`QED_TRACKER_URL`、`QED_DB_*`、`QED_PROXY` 等），本地 TOML 与旧
-`QED_TRACKER_*` 变量（`QED_TRACKER_LLM_API_KEY`、`QED_TRACKER_SOURCES` 等）已退役；无根
-`.env` 时使用内置最小默认值，启动时输出尾注提醒。数据根默认 `dataset/qed-tracker/`，可用
-全局 `--data-root` 覆盖。
+配置读取优先级：真实环境变量 → 本仓库 `.env`（自身配置）→ 根仓库 `.env`（兜底）→ 内置最小
+默认值。本仓库 `.env` 模板（密钥可留空，由根仓库 `.env` 兜底；`API_KEY` 为**唯一密钥变量**
+（逐厂商 key 已取消），`DASHSCOPE_API_KEY` 为兼容别名）：
 
-TLS 校验默认开启。代理、超时、重试和 Axiom URL 由 `QED_*` 变量或内置默认值提供；密钥只
-经根 `.env` 提供，不得写入任何本地文件。
+```dotenv
+# 模型模式：local=直连 dashscope qwen（默认）；qed-engine=经 8900 网关 /llm/text（不接触密钥）
+QED_API_SELECT=local
+API_KEY=
+QED_LLM_GATEWAY_URL=http://127.0.0.1:8900
+QED_MODEL=qwen-plus
+QED_DB_HOST=127.0.0.1
+QED_DB_PORT=3306
+QED_DB_NAME=qed
+QED_DB_USER=root
+QED_DB_PASSWORD=
+QED_TRACKER_PORT=8901
+```
+
+既有非密钥私有配置（`QED_AXIOM_URL`、`QED_TRACKER_URL`、`QED_PROXY`、`QED_TIMEOUT_SECONDS`、
+`QED_RETRIES`、`QED_TLS_VERIFY`、`QED_SOURCES` 等）继续由自身 `.env` 承载。无任何 `.env` 时使用
+内置最小默认值，启动时输出尾注提醒。数据根默认 `dataset/qed-tracker/`，可用全局 `--data-root`
+覆盖。
+
+TLS 校验默认开启。代理、超时、重试和 Axiom URL 由 `QED_*` 变量或内置默认值提供；密钥只经
+`.env` 提供，不得写入任何本地文件。
 
 ## 工作台服务
 
@@ -42,14 +59,17 @@ MySQL 迁移失败只警告、服务照常启动（任务会明确报错）。�
 ```powershell
 python scripts/qed_tracker_service.py start              # 默认立即返回；--wait 可选等待健康
 python scripts/qed_tracker_service.py start --wait 30    # 轮询 /api/v1/health 直到就绪
-python scripts/qed_tracker_service.py status             # running (pid N) / running (port probe) / stopped
+python scripts/qed_tracker_service.py start --mode qed-engine   # 指定模型模式（local=直连 / qed-engine=8900 网关）
+python scripts/qed_tracker_service.py status             # running (pid N, mode X) / running (port probe) / stopped
 python scripts/qed_tracker_service.py stop               # CTRL_BREAK 优雅停止 + taskkill 强杀兜底
-python scripts/qed_tracker_service.py restart --wait
+python scripts/qed_tracker_service.py restart --wait --mode local   # 重启可换模式（重启后生效）
 ```
 
-运行事实：PID 文件 `logs/qed-tracker.pid`，子进程 stdout/stderr 落 `logs/qed-tracker-serve.log`，
-应用级日志仍写 `logs/qed-tracker.log`。退出码 `0` 成功/幂等、`1` 运行失败、`2` 参数错误。
-健康探测端口取 `QED_TRACKER_PORT`，默认 8901；脚本不重复实现 8900 的过渡窗口/端口探测语义。
+运行事实：PID 文件 `logs/qed-tracker.pid`，模式状态文件 `logs/qed-tracker-mode`，子进程
+stdout/stderr 落 `logs/qed-tracker-serve.log`，应用级日志仍写 `logs/qed-tracker.log`。
+`--mode` 不传时默认读自身 `.env` 的 `QED_API_SELECT`；模式持久化，重启可更改。退出码 `0`
+成功/幂等、`1` 运行失败、`2` 参数错误。健康探测端口取 `QED_TRACKER_PORT`，默认 8901；
+脚本不重复实现 8900 的过渡窗口/端口探测语义。
 
 ## 教材与习题集
 
@@ -145,7 +165,7 @@ qed-tracker mainline channels
 
 - `courses list/show` 查看课程体系（先修关系、阶段、关联目标）。
 - `mainline new` 先参照顶尖大学（MIT/清华等）该课程指定教材，再按此探索候选；LLM 预填
-  版本/评价/建议（需 `QWEN_API_KEY`），输出 draft 条目供人工评审。评价权威性等级取
+  版本/评价/建议（需 `API_KEY`），输出 draft 条目供人工评审。评价权威性等级取
   高/中/低，仅供人工参考，不作为自动下载依据。
 - `mainline review` 人工定稿（状态迁移 draft → confirmed，`--intro`/`--version` 补全版本要素）。
 - `mainline download` 触发渠道下载（archive 等自动源）；无自动候选时输出人工下载指引

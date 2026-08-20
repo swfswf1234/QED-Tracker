@@ -37,9 +37,10 @@ def module():
 
 @pytest.fixture
 def isolated(module, monkeypatch, tmp_path):
-    """把 PID/日志路径全部隔离到 tmp 目录。"""
+    """把 PID/日志/模式状态路径全部隔离到 tmp 目录。"""
     monkeypatch.setattr(module, "LOG_DIR", tmp_path)
     monkeypatch.setattr(module, "PID_FILE", tmp_path / "qed-tracker.pid")
+    monkeypatch.setattr(module, "MODE_FILE", tmp_path / "qed-tracker-mode")
     monkeypatch.setattr(module, "SERVE_LOG", tmp_path / "serve.log")
     return tmp_path
 
@@ -48,6 +49,26 @@ def test_parser_has_subcommands(module):
     parser = module.build_parser()
     for name in ("start", "stop", "restart", "status"):
         assert parser.parse_args([name]).command == name
+
+
+def test_parser_mode_option(module):
+    """QED-037：start/restart 支持 --mode local|qed-engine。"""
+    for sub in ("start", "restart"):
+        args = module.build_parser().parse_args([sub, "--mode", "qed-engine"])
+        assert args.mode == "qed-engine"
+        assert module.build_parser().parse_args([sub, "--mode", "local"]).mode == "local"
+    assert module.build_parser().parse_args(["start"]).mode is None
+
+
+def test_default_mode_from_own_env_or_local(module, monkeypatch, tmp_path):
+    """不传 --mode 时默认读自身 .env 的 QED_API_SELECT，缺省 local。"""
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text("QED_API_SELECT=qed-engine\n", encoding="utf-8")
+    assert module.default_mode() == "qed-engine"
+    (tmp_path / ".env").write_text("QED_MODEL=qwen-plus\n", encoding="utf-8")
+    assert module.default_mode() == "local"
+    (tmp_path / ".env").unlink()
+    assert module.default_mode() == "local"
 
 
 def test_parser_port_and_wait_options(module):
@@ -69,6 +90,7 @@ def test_start_writes_pid_and_spawns_serve(module, isolated, monkeypatch):
 
     def fake_popen(cmd, **kwargs):
         calls["cmd"] = cmd
+        calls["kwargs"] = kwargs
         return FakeProc(pid=4242)
 
     monkeypatch.setattr(module.subprocess, "Popen", fake_popen)
@@ -79,6 +101,65 @@ def test_start_writes_pid_and_spawns_serve(module, isolated, monkeypatch):
     assert calls["cmd"][0] == sys.executable
     assert calls["cmd"][1:] == ["-m", "qed_tracker.cli", "serve"]
     assert (isolated / "qed-tracker.pid").read_text(encoding="utf-8") == "4242"
+
+
+def test_start_with_mode_persists_and_injects_env(module, isolated, monkeypatch):
+    """QED-037：--mode 持久化到 logs/ 状态文件，且子进程 env 注入 QED_API_SELECT。"""
+    captured: dict = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["env"] = dict(kwargs.get("env") or {})
+        return FakeProc(pid=4242)
+
+    monkeypatch.setattr(module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(module, "_port_open", lambda port: False)
+    monkeypatch.setattr(module, "_pid_is_alive", lambda pid: False)
+    args = module.build_parser().parse_args(["start", "--mode", "qed-engine"])
+    assert module.cmd_start(args) == 0
+    assert (isolated / "qed-tracker-mode").read_text(encoding="utf-8") == "qed-engine"
+    assert captured["env"].get("QED_API_SELECT") == "qed-engine"
+
+
+def test_start_without_mode_uses_default(module, isolated, monkeypatch):
+    """不传 --mode 时按默认模式启动并持久化。"""
+    captured: dict = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["env"] = dict(kwargs.get("env") or {})
+        return FakeProc(pid=4242)
+
+    monkeypatch.setattr(module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(module, "_port_open", lambda port: False)
+    monkeypatch.setattr(module, "_pid_is_alive", lambda pid: False)
+    monkeypatch.setattr(module, "default_mode", lambda: "local")
+    args = module.build_parser().parse_args(["start"])
+    assert module.cmd_start(args) == 0
+    assert captured["env"].get("QED_API_SELECT") == "local"
+    assert (isolated / "qed-tracker-mode").read_text(encoding="utf-8") == "local"
+
+
+def test_restart_can_switch_mode(module, monkeypatch):
+    """QED-037：restart 可换模式（重启后生效）。"""
+    started = []
+
+    def record_start(args):
+        started.append(args.mode)
+        return 0
+
+    monkeypatch.setattr(module, "cmd_stop", lambda args: 0)
+    monkeypatch.setattr(module, "cmd_start", record_start)
+    args = module.build_parser().parse_args(["restart", "--mode", "qed-engine"])
+    assert module.cmd_restart(args) == 0
+    assert started == ["qed-engine"]
+
+
+def test_status_reports_running_mode(module, isolated, monkeypatch, capsys):
+    """QED-037：status 输出当前运行模式。"""
+    (isolated / "qed-tracker.pid").write_text("4242", encoding="utf-8")
+    (isolated / "qed-tracker-mode").write_text("qed-engine", encoding="utf-8")
+    monkeypatch.setattr(module, "_pid_is_alive", lambda pid: True)
+    assert module.cmd_status(module.build_parser().parse_args(["status"])) == 0
+    assert "mode qed-engine" in capsys.readouterr().out
 
 
 def test_start_already_running_by_pid(module, isolated, monkeypatch):

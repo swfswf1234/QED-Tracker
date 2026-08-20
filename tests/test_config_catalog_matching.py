@@ -43,10 +43,83 @@ def test_load_settings_defaults_without_environment(monkeypatch, tmp_path):
     assert settings.state_dir == (tmp_path / "dataset" / "qed-tracker" / "meta").resolve()
 
 
-def test_llm_key_reads_qwen_api_key_without_entering_settings(monkeypatch):
-    monkeypatch.setenv("QWEN_API_KEY", "qwen-secret")
-    assert llm_api_key() == "qwen-secret"
-    assert "qwen-secret" not in repr(load_settings())
+def test_llm_key_reads_api_key_without_entering_settings(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)  # 隔离真实 .env：密钥只经环境读取
+    monkeypatch.setenv("API_KEY", "api-secret")
+    assert llm_api_key() == "api-secret"
+    assert "api-secret" not in repr(load_settings())
+
+
+def test_llm_api_key_prefers_api_key_and_legacy_alias(monkeypatch, tmp_path):
+    """API_KEY 为唯一密钥变量（逐厂商 key 已取消，根仓库 2026-08-20 收敛）；
+    DASHSCOPE_API_KEY 为 QED-Tracker 兼容别名；QWEN_API_KEY 不再回退。"""
+    monkeypatch.chdir(tmp_path)  # 隔离真实 .env，纯环境变量行为
+    monkeypatch.setenv("API_KEY", "primary")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "legacy")
+    monkeypatch.setenv("QWEN_API_KEY", "retired")
+    assert llm_api_key() == "primary"
+    monkeypatch.delenv("API_KEY")
+    assert llm_api_key() == "legacy"
+    monkeypatch.delenv("DASHSCOPE_API_KEY")
+    assert llm_api_key() == ""  # QWEN_API_KEY 不再作为别名回退
+    monkeypatch.delenv("QWEN_API_KEY")
+    assert llm_api_key() == ""
+
+
+def test_load_settings_reads_own_env_file_first(monkeypatch, tmp_path):
+    """自身 .env 生效：QED_* 与 API_KEY 从仓库根 .env 读取（QED-037 ①）。"""
+    for name in ("QED_MODEL", "QED_DB_PASSWORD", "QED_API_SELECT", "QED_LLM_GATEWAY_URL"):
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / ".env").write_text(
+        "QED_MODEL=qwen-own\nQED_DB_PASSWORD=own-secret\nQED_API_SELECT=local\n"
+        "QED_LLM_GATEWAY_URL=http://127.0.0.1:8900\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    settings = load_settings()
+    assert settings.llm_model == "qwen-own"
+    assert settings.db_password == "own-secret"
+    assert settings.db_configured
+    assert settings.api_select == "local"
+    assert settings.llm_gateway_url == "http://127.0.0.1:8900"
+
+
+def test_root_env_fallback_when_own_env_missing(monkeypatch, tmp_path):
+    """自身 .env 缺失时向上走查根 .env 兜底。"""
+    monkeypatch.delenv("QED_MODEL", raising=False)
+    (tmp_path / ".env").write_text("QED_MODEL=root-model\n", encoding="utf-8")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    monkeypatch.chdir(sub)
+    settings = load_settings()
+    assert settings.llm_model == "root-model"
+
+
+def test_real_environment_overrides_env_file(monkeypatch, tmp_path):
+    """真实环境变量优先级高于 .env 文件。"""
+    (tmp_path / ".env").write_text("QED_MODEL=file-model\n", encoding="utf-8")
+    monkeypatch.setenv("QED_MODEL", "env-model")
+    monkeypatch.chdir(tmp_path)
+    assert load_settings().llm_model == "env-model"
+
+
+def test_empty_env_value_lets_fallback_apply(monkeypatch, tmp_path):
+    """自身 .env 空值（如 QED_DB_PASSWORD=）不覆盖，兜底来源（根 .env）仍可生效。"""
+    monkeypatch.delenv("QED_DB_PASSWORD", raising=False)
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / ".env").write_text("QED_DB_PASSWORD=\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("QED_DB_PASSWORD=root-secret\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path / "sub")
+    assert load_settings().db_password == "root-secret"
+
+
+def test_api_select_and_gateway_url_from_environment(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("QED_API_SELECT", "qed-engine")
+    monkeypatch.setenv("QED_LLM_GATEWAY_URL", "http://gw.example:8900")
+    settings = load_settings()
+    assert settings.api_select == "qed-engine"
+    assert settings.llm_gateway_url == "http://gw.example:8900"
 
 
 def test_math_catalog_is_frozen_and_has_unique_targets():

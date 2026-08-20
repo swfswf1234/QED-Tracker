@@ -2,10 +2,11 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-17
-需求方：QED-Engine（根仓库 REQ-017①「仓库内提供正式启动入口」）
-关联代码：`scripts/qed_tracker_service.py`、`src/qed_tracker/cli.py`（serve 命令）、`src/qed_tracker/config.py`
-关联测试：`tests/test_service_scripts.py`
+最后更新：2026-08-20
+需求方：QED-Engine（根仓库 REQ-017①「仓库内提供正式启动入口」；QED-037/REQ-043 扩展 `--mode`）
+关联代码：`scripts/qed_tracker_service.py`、`src/qed_tracker/cli.py`（serve 命令）、`src/qed_tracker/config.py`、
+`src/qed_tracker/llm_client.py`
+关联测试：`tests/test_service_scripts.py`、`tests/test_llm_client.py`
 
 ## 背景与目的
 
@@ -24,7 +25,7 @@ serve`）。根仓库 8900 控制中心此前直接 `Popen(["python", "-m", "qed
 单文件纯标准库（无第三方依赖），子命令：
 
 ```text
-python scripts/qed_tracker_service.py {start|stop|restart|status} [--port PORT]
+python scripts/qed_tracker_service.py {start|stop|restart|status} [--port PORT] [--mode local|qed-engine]
 ```
 
 - `start`：默认拉起进程后立即返回；`--wait [SECONDS]` 时轮询 `/api/v1/health` 直到就绪
@@ -32,11 +33,15 @@ python scripts/qed_tracker_service.py {start|stop|restart|status} [--port PORT]
   成功输出 `pid: <n>` 与 `log: <path>`。
 - `stop`：读取 PID 文件 → `CTRL_BREAK_EVENT` 优雅停止 → 5s 宽限 → `taskkill /PID /T /F` 强杀
   兜底 → 删除 PID 文件。无 PID 或进程已死时清理残留并幂等退出 0。
-- `restart`：先 stop 后 start，透传 `--wait`。
+- `restart`：先 stop 后 start，透传 `--wait` 与 `--mode`。
 - `status`：PID 存活 / 端口探测（socket 预检 + HTTP 健康确认）双路径，输出
-  `running (pid <n>)` / `running (port probe <port>)` / `stopped`，信息型恒退出 0。
+  `running (pid <n>, mode <mode>)` / `running (port probe <port>)` / `stopped`，信息型恒退出 0。
 - `--port`：health 探测端口，默认取 `QED_TRACKER_PORT` 环境变量，无则 8901；`serve` 本身
-  仍按配置（根 `.env` 的 `QED_TRACKER_PORT`）监听。
+  仍按配置（自身 `.env` 的 `QED_TRACKER_PORT`）监听。
+- `--mode local|qed-engine`（QED-037）：模型模式——`local`=直连 dashscope qwen /
+  `qed-engine`=经 8900 网关 `/llm/text`。不传时默认读自身 `.env` 的 `QED_API_SELECT`
+  （缺省 `local`）；模式持久化到 `logs/qed-tracker-mode`（重启可换模式，重启后生效）；
+  子进程 env 注入 `QED_API_SELECT`（env 优先于 `.env`，config.py 读取生效）。
 
 退出码：`0` 成功或幂等；`1` 运行失败（spawn 失败、`--wait` 健康超时）；`2` 参数错误（argparse）。
 
@@ -47,13 +52,14 @@ QED-Tracker/
 ├── scripts/qed_tracker_service.py   # 生命周期脚本
 └── logs/                            # 已 gitignore，运行产物
     ├── qed-tracker.pid              # PID 文件（纯 PID 文本）
+    ├── qed-tracker-mode             # 模型模式状态文件（QED-037，local / qed-engine）
     ├── qed-tracker-serve.log        # 子进程 stdout/stderr（uvicorn 访问与未捕获异常）
     └── qed-tracker.log              # 应用级日志（serve 双通道 FileHandler，不受脚本影响）
 ```
 
-子进程命令 = `sys.executable -m qed_tracker.cli serve`，工作目录为仓库根；`serve` 自身完成根
+子进程命令 = `sys.executable -m qed_tracker.cli serve`，工作目录为仓库根；`serve` 自身完成
 `.env` 查找、MySQL 迁移与双通道日志（stderr + `logs/qed-tracker.log`），脚本不再重定向应用日志，
-两文件互不重复。
+两文件互不重复。模型模式经子进程 env 注入（见上 `--mode` 契约）。
 
 ## 与 8900 控制中心接入契约
 
@@ -70,8 +76,9 @@ QED-Tracker/
   `_MANAGED` 的 PID 记录可改为启动后读脚本输出/PID 文件，仅用于前端展示。
 - 8900 的启动/停止过渡窗口（15s）、端口探测、并发 409 语义均不变；停止未运行服务的幂等
   由 8900 现有探测先行判断（脚本侧 stop 对未运行也幂等退出 0）。
-- 环境继承：8900 以自身进程环境调用脚本（根 `.env` 已注入），`serve` 的 `_load_root_env`
-  兜底独立启动场景。
+- 环境继承：8900 以自身进程环境调用脚本（根 `.env` 已注入），`serve` 的 `.env` 查找
+  （config.py 自身 `.env` → 根 `.env` 兜底）覆盖独立启动场景；`--mode` 经子进程 env
+  注入 `QED_API_SELECT`。
 
 ## 平台约束
 
@@ -87,8 +94,9 @@ QED-Tracker/
 
 ## 验证
 
-- 定向测试 `tests/test_service_scripts.py`（19 用例）：tmp 目录 + monkeypatch 隔离 PID/日志路径
-  与系统调用，覆盖 parser、start 幂等/spawn/PID 写入/`--wait` 健康与超时、stop 无 PID/stale
-  清理/优雅/强杀兜底/SystemError 兜底、restart 顺序、status 双路径、退出码与
+- 定向测试 `tests/test_service_scripts.py`（26 用例）：tmp 目录 + monkeypatch 隔离 PID/日志/
+  模式状态路径与系统调用，覆盖 parser（含 `--mode`）、start 幂等/spawn/PID 写入/`--mode`
+  持久化与子进程 env 注入/默认模式/`--wait` 健康与超时、stop 无 PID/stale 清理/优雅/强杀兜底/
+  SystemError 兜底、restart 顺序与换模式、status 双路径与模式输出、退出码与
   `QED_TRACKER_PORT` 默认端口。
 - 全量门禁：`pytest tests -q` + `ruff check src tests scripts` 全绿。

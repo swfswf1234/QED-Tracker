@@ -64,3 +64,36 @@ def test_invalid_llm_output_raises() -> None:
     advisor = MainLineAdvisor(api_key="test-key", client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"choices": [{"message": {"content": "not json"}, "finish_reason": "stop"}]}))))
     with pytest.raises(ValueError):
         advisor.prefill(course={"course_id": "01", "name": "x"}, title="y", authors=[])
+
+
+def test_gateway_mode_routes_via_8900_without_key() -> None:
+    """qed-engine 模式：prefill 经 llm_client 调 8900 /api/v1/llm/text，不接触密钥。"""
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["auth"] = request.headers.get("Authorization")
+        captured["path"] = str(request.url)
+        body = json.loads(request.content)
+        captured["prompt"] = body["prompt"]
+        reply = json.dumps(
+            {"evaluation": {"text": "网关预填", "authority": "中", "set_candidate": ""},
+             "advice": {"download": "optional", "reason": "网关模式"}},
+            ensure_ascii=False,
+        )
+        return httpx.Response(200, json={"reply": reply, "call_id": "call-1"})
+
+    advisor = MainLineAdvisor(
+        api_select="qed-engine",
+        api_key="",
+        gateway_url="http://127.0.0.1:8900",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    result = advisor.prefill(
+        course={"course_id": "01_math_analysis", "name": "数学分析", "stage": "本科基础"},
+        title="数学分析原理",
+        authors=["Rudin"],
+    )
+    assert result["evaluation"]["source"] == "llm"
+    assert captured["auth"] is None
+    assert captured["path"] == "http://127.0.0.1:8900/api/v1/llm/text"
+    assert "数学分析原理" in captured["prompt"]

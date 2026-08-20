@@ -84,6 +84,9 @@ class Application:
                 timeout=settings.llm_timeout_seconds,
                 call_budget=settings.llm_call_budget,
                 max_tokens=settings.llm_max_tokens,
+                api_select=settings.api_select,
+                gateway_url=settings.llm_gateway_url,
+                engine=self._db_engine,
             )
         self.advisor = advisor
 
