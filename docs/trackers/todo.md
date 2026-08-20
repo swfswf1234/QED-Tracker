@@ -5,8 +5,7 @@
 
 | ID | 类型 | 状态 | 事项 | 成功标准 |
 | --- | --- | --- | --- | --- |
-| QED-005 | Validation | 待开始 | 真实百炼与 arXiv 冒烟 | 配置模型密钥并获准联网后，预览推荐并从同一报告下载一篇临时 PDF。**2026-08-12 状态更新**：阻塞已解除——根 `.env` 已配置 `API_KEY`/`QED_MODEL`，恢复条件满足；待人工联网执行冒烟。 |
-| QED-010 | Plan | 待开始 | [跨项目] CLI 转 HTTP 客户端 + 基于真实 8901 服务的冒烟测试（需求方：QED-Engine，设计：docs/design/tracker-service.md） | `qed-tracker` 命令经 8901 完成任务；启动 → 建任务 → 轮询 → 校验文件落位全链路冒烟通过；`--no-wait` 输出 task_id。 |
+| QED-010 | Plan | 待开始 | [跨项目] CLI 转 HTTP 客户端 + 基于真实 8901 服务的冒烟测试（需求方：QED-Engine，设计：docs/design/tracker-service.md；**承接 QED-005**（真实百炼与 arXiv 论文链路冒烟：papers recommend → selections download 下载临时 PDF，2026-08-20 用户裁决并入）） | `qed-tracker` 命令经 8901 完成任务；启动 → 建任务 → 轮询 → 校验文件落位全链路冒烟通过；`--no-wait` 输出 task_id；论文链路真实冒烟（推荐 → 同一报告下载临时 PDF）。 |
 | QED-011 | Validation | 待开始 | 重复下载链路验证（用户约定在 QED-008~010 冒烟后执行） | 同一资源二次下载返回既有资源记录，不产生重复文件，任务幂等。 |
 | QED-014 | Validation | 待开始 | [跨项目] 联调冒烟与回执：真实 8901 全链路（评估→确认→下载→验收/删除→登记→qed CLI/8903 前端展示）（设计：docs/design/tracker-service.md；承接 QED-017 全链路覆盖、QED-020 存量清理 8901 重启实测、QED-021 真实 evaluate 01 冒烟、**QED-023 回执根仓库 REQ-026**；原计划 2026-08-service-and-book-download 已归档至 docs/history/baselines/） | 8901 服务 + qed CLI + QED-Engine 下载工作台数据贯通；根仓库 todo REQ-004/REQ-011/REQ-013/REQ-014/**REQ-026** 收到回执。 |
 | QED-022 | Plan | 待开始 | [跨项目] 治理契约范本对齐：按根仓库 governance-contract.md 范本对齐守护契约测试（契约头六字段/守护面清单/编写约定）（需求方：QED-Engine REQ-023，设计：docs/design/governance-contract-alignment.md） | 守护类测试契约头六字段齐全（DesignRef 指向本仓库标准）；pytest 全绿 + ruff 全过；回执根仓库 REQ-023（提交号 + 测试输出）。 |
