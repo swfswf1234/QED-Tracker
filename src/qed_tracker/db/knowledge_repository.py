@@ -63,6 +63,24 @@ def _id(prefix: str, *parts: Any) -> str:
     return f"{prefix}_{hashlib.md5(key.encode('utf-8')).hexdigest()}"
 
 
+def tutorial_name(set_no: str, title: str, authors: Iterable[str] = ()) -> str:
+    """教程行规范命名（QED-036/REQ-041）：「教程{set_no}：书名（作者）」。
+
+    - `set_no` "1"~"4" 中文套 → `教程{set_no}：…`；`en` 英文对照套 → `教程en：…`；
+      '' 空（资料/异常行兜底）→ `教程：…`；
+    - 作者取决定引用 `textbook_ref.authors`，无作者时省略（`教程{set_no}：书名`）；
+    - 书名已含同名「（作者）」后缀（如存量 `数学分析（陈纪修）`）时不重复拼接；
+    - `other_material` 归类名不加前缀，不适用本函数。
+    """
+    joined = "、".join(author for author in authors if author)
+    prefix = f"教程{set_no}" if set_no else "教程"
+    if joined:
+        if title.endswith(f"（{joined}）"):
+            return f"{prefix}：{title}"
+        return f"{prefix}：{title}（{joined}）"
+    return f"{prefix}：{title}"
+
+
 def _touch(row, *, created: bool = False) -> None:
     now = utc_now()
     if created:

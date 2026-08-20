@@ -137,10 +137,18 @@ def build_parser() -> argparse.ArgumentParser:
     mainline_new.add_argument("--course", required=True)
     mainline_new.add_argument("--title", required=True)
     mainline_new.add_argument("--author", action="append", default=[])
+    mainline_new.add_argument(
+        "--set-no", default="",
+        help="套标记（1~4 中文套 / en 英文对照套）：有值时 name 按「教程{set_no}：书名（作者）」规范生成",
+    )
     mainline_review = mainline_commands.add_parser("review", help="人工评审定稿（版本/简介）")
     mainline_review.add_argument("knowledge_id")
     mainline_review.add_argument("--intro", help="教材简介（缺省用模板占位，人工审定）")
     mainline_review.add_argument("--version", help="教材版本号（如 第8版）")
+    mainline_review.add_argument(
+        "--title", help="教材原始书名（缺省从 name 剥离「教程{set_no}：」前缀与（作者）后缀回退）"
+    )
+    mainline_review.add_argument("--author", action="append", default=[], help="教材作者（可重复）")
     mainline_download = mainline_commands.add_parser("download", help="触发渠道下载")
     mainline_download.add_argument("knowledge_id")
     mainline_verify = mainline_commands.add_parser("verify", help="校验已下载文件")
@@ -650,9 +658,20 @@ def _mainline(args, settings: Settings) -> int:
         engine.dispose()
 
 
+def _raw_title_from_name(name: str) -> str:
+    """从规范展示名回退原始书名（QED-036）：「教程1：数学分析（Rudin）」→「数学分析」。"""
+    rest = name
+    prefix = rest.split("：", 1)
+    if len(prefix) == 2 and prefix[0].startswith("教程"):
+        rest = prefix[1]
+    if rest.endswith("）") and "（" in rest:
+        rest = rest[: rest.rfind("（")]
+    return rest.strip()
+
+
 def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
     from qed_tracker.courses import load_course
-    from qed_tracker.db.knowledge_repository import InvalidTransition
+    from qed_tracker.db.knowledge_repository import InvalidTransition, tutorial_name
 
     if args.mainline_command == "list":
         items = repo.list_knowledge(course_id=args.course)
@@ -709,8 +728,11 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
                 f"ERROR: 教材条目已存在：{existing[0].knowledge_id}", file=sys.stderr
             )
             return 2
+        set_no = args.set_no or ""
+        # QED-036：有 set_no 时 name 按「教程{set_no}：书名（作者）」规范生成；否则保持原始 title
+        name = tutorial_name(set_no, args.title, args.author) if set_no else args.title
         knowledge = repo.create_knowledge(
-            domain_id=curriculum.subject, course_id=args.course, kind="tutorial", set_no="", name=args.title
+            domain_id=curriculum.subject, course_id=args.course, kind="tutorial", set_no=set_no, name=name
         )
         advisor = _mainline_advisor(
             api_key=llm_api_key(),
@@ -752,10 +774,16 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
             )
             return 2
         intro = args.intro or f"{knowledge.name}：教材与习题集配套资源（LLM 预填 + 人工审）。"
+        # QED-036：决定引用 {title, version, authors}；title 优先取 --title，缺省从规范名回退
+        title = (args.title or "").strip() or _raw_title_from_name(knowledge.name)
         try:
             updated = repo.confirm_knowledge(
                 knowledge.knowledge_id,
-                textbook_ref={"title": knowledge.name, "version": args.version or ""},
+                textbook_ref={
+                    "title": title,
+                    "version": args.version or "",
+                    "authors": list(args.author),
+                },
                 textbook_intro=intro,
             )
         except InvalidTransition as exc:

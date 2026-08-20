@@ -105,6 +105,20 @@ def test_migrate_curriculum_seeds_domain_and_courses(db, tmp_path):
         assert session.execute(text("SELECT COUNT(*) FROM qed_course")).fetchone()[0] == 1
 
 
+def test_tutorial_name_rule():
+    """QED-036 命名规则纯函数：教程{set_no}：书名（作者）；en 套 / 兜底 / 无作者退化。"""
+    from qed_tracker.db.knowledge_repository import tutorial_name
+
+    assert tutorial_name("1", "数学分析", ["Rudin"]) == "教程1：数学分析（Rudin）"
+    assert tutorial_name("en", "Principles", ["Rudin"]) == "教程en：Principles（Rudin）"
+    assert tutorial_name("2", "微积分学教程", ["菲赫金哥尔茨"]) == "教程2：微积分学教程（菲赫金哥尔茨）"
+    assert tutorial_name("3", "数学分析", ["陈纪修", "於崇华", "金路"]) == "教程3：数学分析（陈纪修、於崇华、金路）"
+    assert tutorial_name("", "延展资料", ["X"]) == "教程：延展资料（X）"  # 空 set_no 兜底
+    assert tutorial_name("1", "数学分析", []) == "教程1：数学分析"  # 无作者省略
+    # 存量书行 title 已含「（作者）」后缀时不重复拼接（真实存量 套3 陈纪修）
+    assert tutorial_name("3", "数学分析（陈纪修）", ["陈纪修"]) == "教程3：数学分析（陈纪修）"
+
+
 def test_migrate_legacy_maps_selection_to_knowledge_and_books(db, tmp_path):
     engine, factory = db
     _seed_legacy(engine)
@@ -112,11 +126,15 @@ def test_migrate_legacy_maps_selection_to_knowledge_and_books(db, tmp_path):
     migrate_legacy_data(factory)
     with factory() as session:
         knowledge = session.execute(text(
-            "SELECT knowledge_id, course_id, kind, set_no, status FROM qt_knowledge"
+            "SELECT knowledge_id, course_id, kind, set_no, name, status, textbook_ref FROM qt_knowledge"
         )).fetchone()
         assert knowledge[0].startswith("kn_")
         assert knowledge[2] == "tutorial"
-        assert knowledge[4] == KnowledgeStatus.CONFIRMED.value  # 旧 confirmed → confirmed
+        assert knowledge[4] == "教程2：微积分学教程（菲赫金哥尔茨）"  # QED-036 规范命名
+        assert knowledge[5] == KnowledgeStatus.CONFIRMED.value  # 旧 confirmed → confirmed
+        assert json.loads(knowledge[6]) == {
+            "title": "微积分学教程", "version": {"edition": "第8版"}, "authors": ["菲赫金哥尔茨"],
+        }  # QED-036：textbook_ref 回填 authors
         books = session.execute(text(
             "SELECT book_id, title, part, status, sha256, relative_path FROM qt_books ORDER BY part"
         )).fetchall()
@@ -132,6 +150,47 @@ def test_migrate_legacy_maps_selection_to_knowledge_and_books(db, tmp_path):
     with factory() as session:
         assert session.execute(text("SELECT COUNT(*) FROM qt_knowledge")).fetchone()[0] == 1
         assert session.execute(text("SELECT COUNT(*) FROM qt_books")).fetchone()[0] == 2
+
+
+def test_migrate_reuses_old_format_row_after_rename(db, tmp_path):
+    """QED-036：存量行改名后重放不产生重复行——按 (course, kind, set_no) 先查后建。
+
+    knowledge_id 幂等键含 name；旧版迁移生成的行 id 由旧格式 name 计算。新版迁移
+    （新格式 name）重放时若按 id 直接 create 会生成新 id 产生重复行，必须先按
+    course+kind+set_no 查既有行复用（存量改名由一次性数据修正脚本负责）。
+    """
+    from qed_tracker.db.knowledge_repository import _id
+
+    engine, factory = db
+    old_id = _id("kn", "math", "01_math_analysis", "tutorial", "2", "微积分学教程 套2")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO qed_domain (domain_id, name, description, stages, created_by, updated_by,"
+            " created_at, updated_at) VALUES"
+            " ('math','数学','d',json_array('本科基础'),'','','2026-08-01 10:00:00','2026-08-01 10:00:00')"
+        ))
+        conn.execute(text(
+            "INSERT INTO qed_course (course_id, domain_id, sort_order, name, aliases, stage, prerequisites,"
+            " related_targets, note, created_by, updated_by, created_at, updated_at) VALUES"
+            " ('01_math_analysis','math',0,'数学分析',json_array(),'本科基础',json_array(),json_array(),'n',"
+            " '','','2026-08-01 10:00:00','2026-08-01 10:00:00')"
+        ))
+        conn.execute(text(
+            "INSERT INTO qt_knowledge (knowledge_id, domain_id, course_id, kind, set_no, name,"
+            " textbook_ref, exercise_ref, textbook_intro, exercise_intro, materials_intro, status,"
+            " reject_reason, supersede_reason, created_by, updated_by, created_at, updated_at) VALUES"
+            " (:id,'math','01_math_analysis','tutorial','2','微积分学教程 套2','{}','{}','','','',"
+            " 'draft','','','','','2026-08-01 10:00:00','2026-08-01 10:00:00')"
+        ), {"id": old_id})
+    _seed_legacy(engine)
+    migrate_legacy_data(factory)
+    with factory() as session:
+        rows = session.execute(text(
+            "SELECT knowledge_id, name FROM qt_knowledge WHERE course_id='01_math_analysis'"
+        )).fetchall()
+        assert len(rows) == 1  # 复用旧行，不新建
+        assert rows[0][0] == old_id
+        assert rows[0][1] == "微积分学教程 套2"  # 存量改名由一次性脚本负责，migrate 不覆盖
 
 
 def test_migrate_legacy_prefixed_vol_maps_to_part(db, tmp_path):

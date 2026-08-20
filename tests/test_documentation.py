@@ -55,6 +55,7 @@ REQUIRED_HISTORY_DOCS = {
     Path("docs/history/baselines/catalog-set-field.md"),
     Path("docs/history/baselines/2026-08-service-and-book-download.md"),
     Path("docs/history/qed-030-retire-qt_resources/index.md"),
+    Path("docs/history/qed-036-tutorial-naming/index.md"),
 }
 INDEX_DOCS = {
     Path("docs/index.md"),

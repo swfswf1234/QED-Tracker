@@ -87,6 +87,17 @@ def test_knowledge_detail_with_books(client, repo):
     assert body["books"][0]["book_id"] == book.book_id
 
 
+def test_knowledge_tutorial_standard_name_flows_through(client, repo):
+    """QED-036：教程行规范命名（教程{set_no}：书名（作者））经 API 原样透出。"""
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="1", name="教程1：数学分析（Rudin）")
+    response = client.get(f"/api/v1/knowledge/{knowledge.knowledge_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "教程1：数学分析（Rudin）"
+    assert body["set_no"] == "1"
+
+
 def test_knowledge_confirm(client, repo):
     knowledge = _seed_knowledge(repo)
     response = client.post(f"/api/v1/knowledge/{knowledge.knowledge_id}/confirm", json={

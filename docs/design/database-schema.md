@@ -113,7 +113,7 @@ CREATE TABLE qt_knowledge (
   kind            VARCHAR(24)   NOT NULL,         -- tutorial / other_material
   set_no          VARCHAR(4)    NOT NULL DEFAULT '', -- 套标记 "1"~"4" 中文 / "en" 英文对照 / ''（资料归类行）
   name            VARCHAR(200)  NOT NULL DEFAULT '', -- 教程名/归类名（数学分析 套一 / 01-数学分析-延展资料）
-  textbook_ref    JSON          NULL,             -- 教材决定 {title, version}；多卷同 title 自动归入；other_material=NULL
+  textbook_ref    JSON          NULL,             -- 教材决定 {title, version, authors}；多卷同 title 自动归入；other_material=NULL
   exercise_ref    JSON          NULL,             -- 习题集决定 {title, version}；教材含习题时可为 NULL
   textbook_intro  TEXT          NOT NULL,         -- 教材简介，指引检索（LLM 预填 + 人工审）
   exercise_intro  TEXT          NOT NULL,         -- 习题集简介，指引检索
@@ -141,8 +141,10 @@ CREATE TABLE qt_knowledge (
 - **创建时机**（2026-08-16 用户裁决）：探索开始时建 draft（mainline new 落库），定稿时
   （mainline review）LLM 预填两段简介 + 人工审，转 confirmed；下载进度不冗余在知识行
   （由书行聚合）。
-- **决定引用**：`textbook_ref` / `exercise_ref` 存 `{title, version}`（书名级引用，不含逐册）；
-  多卷书行同 `title`（part 不同）自动归入该引用。候选/决定/下载/验证状态仍在书行。
+- **决定引用**：`textbook_ref` / `exercise_ref` 存 `{title, version, authors}`（书名级引用，
+  不含逐册；authors 为 list[str]，QED-036 补——教程行规范命名「教程{set_no}：书名（作者）」
+  取此处 title + authors）；多卷书行同 `title`（part 不同）自动归入该引用。候选/决定/下载/
+  验证状态仍在书行。
 
 ## qt_books 表结构（表4，私有）
 

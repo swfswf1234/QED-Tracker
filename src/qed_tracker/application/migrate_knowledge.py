@@ -26,7 +26,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from qed_tracker.database import utc_now
-from qed_tracker.db.knowledge_repository import KnowledgeRepository
+from qed_tracker.db.knowledge_repository import KnowledgeRepository, tutorial_name
 from qed_tracker.db.models import BookStatus, KnowledgeStatus, QtSource
 
 _VOL_MAP = {"v1": "第一册", "v2": "第二册", "v3": "第三册", "v4": "第四册"}
@@ -215,17 +215,33 @@ def migrate_legacy_data(session_factory: Callable[[], Session], *, drop_legacy: 
         base_title, part = _split_title(title)
         if base_title != title:
             title = base_title
-        knowledge = repo.create_knowledge(
-            domain_id=_domain_for_course(session_factory, selection["course_id"]),
-            course_id=selection["course_id"],
-            kind="tutorial",
-            set_no=selection.get("set_no") or "",
-            name=f"{title} 套{selection.get('set_no', '')}" if selection.get("set_no") else title,
-        )
+        set_no = selection.get("set_no") or ""
+        authors = _json_or(selection.get("authors"), [])
+        # QED-036：先按 (course, kind, set_no) 查既有行——knowledge_id 幂等键含 name，
+        # 改名后旧库重放若按新 name 新建会生成新 id 产生重复行；存在则复用旧行
+        # （存量改名由一次性数据修正脚本负责，migrate 不覆盖 name）。
+        existing_id = session.execute(
+            text("SELECT knowledge_id FROM qt_knowledge WHERE course_id=:c AND kind='tutorial' AND set_no=:s"),
+            {"c": selection["course_id"], "s": set_no},
+        ).scalar()
+        if existing_id:
+            knowledge = repo.get_knowledge(existing_id)
+        else:
+            knowledge = repo.create_knowledge(
+                domain_id=_domain_for_course(session_factory, selection["course_id"]),
+                course_id=selection["course_id"],
+                kind="tutorial",
+                set_no=set_no,
+                name=tutorial_name(set_no, title, authors),
+            )
         stats["knowledge"] += 1
         # 旧 confirmed → confirmed（简介留空待 LLM 预填）；已确认行跳过（幂等重放，不触发状态机异常）
         if selection["status"] == KnowledgeStatus.CONFIRMED.value and knowledge.status == KnowledgeStatus.DRAFT.value:
-            repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={}, exercise_ref={})
+            repo.confirm_knowledge(
+                knowledge.knowledge_id,
+                textbook_ref={"title": title, "version": _json_or(selection.get("version"), {}), "authors": authors},
+                exercise_ref={},
+            )
         # 同套 vol 空的多册（如 Rudin 3 册未标卷）：按出现序编号 第一/二/三册，保留全部 sha256；
         # 归一化前缀 vol（'教材-v1' → 第一册）。vol 空且同套仅一册 → part=''（单册套）。
         dl_books = [v for v in book_rows.values() if v["selection_id"] == selection["selection_id"]]

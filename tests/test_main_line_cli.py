@@ -53,8 +53,9 @@ def _args(**kw) -> SimpleNamespace:
     defaults = {
         "mainline_command": None,
         "course": "",
-        "title": "",
+        "title": None,
         "author": [],
+        "set_no": "",
         "knowledge_id": "",
         "intro": None,
         "version": None,
@@ -166,6 +167,22 @@ def test_mainline_review_parses_with_intro_and_version() -> None:
     assert args.knowledge_id == "kn_1"
     assert args.intro == "经典教材。"
     assert args.version == "第8版"
+
+
+def test_mainline_new_parses_set_no() -> None:
+    """QED-036：mainline new --set-no 与 review --title/--author 解析。"""
+    parser = build_parser()
+    new_args = parser.parse_args(["mainline", "new", "--course", "01_math_analysis",
+                                  "--title", "数学分析原理", "--author", "Rudin", "--set-no", "1"])
+    assert new_args.set_no == "1"
+    assert new_args.author == ["Rudin"]
+    review = parser.parse_args(["mainline", "review", "kn_1",
+                                "--title", "数学分析原理", "--author", "Rudin"])
+    assert review.title == "数学分析原理"
+    assert review.author == ["Rudin"]
+    plain = parser.parse_args(["mainline", "review", "kn_1"])
+    assert plain.title is None
+    assert plain.author == []
 
 
 def test_mainline_download_uses_knowledge_id() -> None:
@@ -304,6 +321,33 @@ def test_mainline_new_unknown_course_returns_2(tmp_path, repo, monkeypatch) -> N
     assert len(calls) == 0
 
 
+def test_mainline_new_with_set_no_generates_standard_name(tmp_path, repo, monkeypatch) -> None:
+    """QED-036：mainline new 带 --set-no 时 name 按「教程{set_no}：书名（作者）」规范生成。"""
+    import qed_tracker.cli as cli_module
+
+    calls: list = []
+    monkeypatch.setattr(cli_module, "_mainline_advisor", lambda **kw: _FakeAdvisor(calls))
+    args = _args(mainline_command="new", course="01_math_analysis", title="数学分析原理",
+                 author=["Rudin"], set_no="1")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+
+    items = repo.list_knowledge(course_id="01_math_analysis")
+    assert len(items) == 1
+    assert items[0].set_no == "1"
+    assert items[0].name == "教程1：数学分析原理（Rudin）"
+
+
+def test_mainline_new_without_set_no_keeps_title(tmp_path, repo, monkeypatch) -> None:
+    """QED-036：不带 --set-no 时保持原始 title（draft 期命名）。"""
+    import qed_tracker.cli as cli_module
+
+    monkeypatch.setattr(cli_module, "_mainline_advisor", lambda **kw: _FakeAdvisor())
+    args = _args(mainline_command="new", course="01_math_analysis", title="数学分析原理")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+    items = repo.list_knowledge(course_id="01_math_analysis")
+    assert items[0].name == "数学分析原理"
+
+
 # ---------------- review / reject ----------------
 
 def test_mainline_review_confirms_knowledge(tmp_path, repo, capsys) -> None:
@@ -333,6 +377,34 @@ def test_mainline_review_custom_intro_and_version(tmp_path, repo) -> None:
     updated = repo.get_knowledge(knowledge.knowledge_id)
     assert updated.textbook_intro == "MIT 指定教材。"
     assert updated.textbook_ref["version"] == "第8版"
+
+
+def test_mainline_review_with_title_and_author_sets_textbook_ref(tmp_path, repo) -> None:
+    """QED-036：review 带 --title/--author 时 textbook_ref={title, version, authors}。"""
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="1", name="教程1：数学分析原理（Rudin）")
+    args = _args(mainline_command="review", knowledge_id=knowledge.knowledge_id,
+                 title="数学分析原理", author=["Rudin"], version="第8版")
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+
+    updated = repo.get_knowledge(knowledge.knowledge_id)
+    assert updated.textbook_ref == {"title": "数学分析原理", "version": "第8版", "authors": ["Rudin"]}
+
+
+def test_mainline_review_falls_back_raw_title_from_standard_name(tmp_path, repo) -> None:
+    """QED-036：review 不带 --title 时从规范名剥离「教程{set_no}：」前缀与（作者）后缀回退。"""
+    import qed_tracker.cli as cli_module
+
+    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
+                                      kind="tutorial", set_no="1", name="教程1：数学分析（Rudin）")
+    args = _args(mainline_command="review", knowledge_id=knowledge.knowledge_id)
+    assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
+
+    updated = repo.get_knowledge(knowledge.knowledge_id)
+    assert updated.textbook_ref["title"] == "数学分析"
+    assert updated.textbook_ref["authors"] == []
 
 
 def test_mainline_review_invalid_transition_returns_2(tmp_path, repo, capsys) -> None:
