@@ -23,7 +23,7 @@
 - Edit: `tests/test_config_catalog_matching.py`
 - Edit: `tests/test_cli_architecture.py`、`tests/test_main_line_cli.py`（DB 门禁测试 chdir 隔离真实 .env）
 
-- [x] **Step 1: 写失败测试** — `tests/test_config_catalog_matching.py`：自身 `.env` 生效（tmp 目录建 .env 后 load_settings 读到）；根 `.env` 兜底（自身 .env 缺失时向上走查）；真实环境变量优先；空值跳过留给兜底来源；`llm_api_key()` 唯一密钥变量 `API_KEY`（`DASHSCOPE_API_KEY` 兼容别名，`QWEN_API_KEY` 逐厂商 key 已取消不回退）。
+- [x] **Step 1: 写失败测试** — `tests/test_config_catalog_matching.py`：自身 `.env` 生效（tmp 目录建 .env 后 load_settings 读到）；根 `.env` 兜底（自身 .env 缺失时向上走查）；真实环境变量优先；空值跳过留给兜底来源；`llm_api_key()` 只读唯一密钥变量 `API_KEY`（QED-038/ARCH-017：`QWEN_API_KEY`/`DASHSCOPE_API_KEY` 等别名全部取消、无回退）。
 - [x] **Step 2: 运行确认失败**。
 - [x] **Step 3: 实现** — `config.py`：`.env` 解析为合并视图（不修改 os.environ；真实环境变量 > 自身 `.env` > 根 `.env` 兜底 > 内置默认）；`Settings`/`_ENV_MAP` 增 `QED_API_SELECT → api_select`、`QED_LLM_GATEWAY_URL → llm_gateway_url`；`llm_api_key()` 唯一密钥变量；`degradation_notice` 文案同步统一 `API_KEY`。仓库根新建 `.env` 模板（注释齐全；密钥留空由根 `.env` 兜底）。
 - [x] **Step 4: 验证通过** — `pytest tests/test_config_catalog_matching.py -q` 17 passed + DB 门禁测试适配后回归。

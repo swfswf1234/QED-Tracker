@@ -50,18 +50,16 @@ def test_llm_key_reads_api_key_without_entering_settings(monkeypatch, tmp_path):
     assert "api-secret" not in repr(load_settings())
 
 
-def test_llm_api_key_prefers_api_key_and_legacy_alias(monkeypatch, tmp_path):
-    """API_KEY 为唯一密钥变量（逐厂商 key 已取消，根仓库 2026-08-20 收敛）；
-    DASHSCOPE_API_KEY 为 QED-Tracker 兼容别名；QWEN_API_KEY 不再回退。"""
+def test_llm_api_key_reads_only_api_key(monkeypatch, tmp_path):
+    """QED-038（ARCH-017）：逐厂商 key 别名全部取消，llm_api_key 只读唯一密钥 API_KEY。"""
     monkeypatch.chdir(tmp_path)  # 隔离真实 .env，纯环境变量行为
     monkeypatch.setenv("API_KEY", "primary")
     monkeypatch.setenv("DASHSCOPE_API_KEY", "legacy")
     monkeypatch.setenv("QWEN_API_KEY", "retired")
     assert llm_api_key() == "primary"
     monkeypatch.delenv("API_KEY")
-    assert llm_api_key() == "legacy"
+    assert llm_api_key() == ""  # DASHSCOPE_API_KEY / QWEN_API_KEY 不再回退
     monkeypatch.delenv("DASHSCOPE_API_KEY")
-    assert llm_api_key() == ""  # QWEN_API_KEY 不再作为别名回退
     monkeypatch.delenv("QWEN_API_KEY")
     assert llm_api_key() == ""
 

@@ -16,9 +16,9 @@ qed-tracker --help
 
 配置读取优先级：真实环境变量 → 本仓库 `.env`（`QED_API_SELECT=local` 默认、`API_KEY`、
 `QED_LLM_GATEWAY_URL`、`QED_MODEL`、`QED_DB_*`、`QED_TRACKER_PORT`）→ 根仓库 `.env`（兜底）→
-内置最小默认值。密钥统一为 `API_KEY`（唯一密钥变量，`DASHSCOPE_API_KEY` 为兼容别名，
-逐厂商 key 已取消）；模型调用默认 `local` 模式直连 dashscope qwen，可切 `qed-engine` 经 8900
-网关 `/llm/text`。本地 TOML 与 `QED_TRACKER_*` 环境变量已退役。
+内置最小默认值。密钥为唯一变量 `API_KEY`（QED-038：逐厂商 key 别名已取消，无回退）；模型调用
+默认 `local` 模式直连 dashscope qwen，可切 `qed-engine` 经 8900 网关 `/llm/text`。本地 TOML 与
+`QED_TRACKER_*` 环境变量已退役。
 
 ## 快速使用
 

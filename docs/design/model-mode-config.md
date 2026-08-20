@@ -1,23 +1,29 @@
 # 模型模式与密钥分置设计（model-mode-config）
 
-设计状态：Proposed
-实现状态：Not Started
+设计状态：Accepted
+实现状态：Implemented
 最后更新：2026-08-20
 需求方：QED-Engine（根仓库 REQ-043「QED-Tracker 模型模式与密钥分置改造」，设计依据根仓库
 [llm-gateway-and-model-management.md](../../../docs/design/llm-gateway-and-model-management.md)
 「QED-Tracker（请求方：QED-Tracker 仓库，REQ-043）」一节）
-关联代码：`src/qed_tracker/config.py`（`.env` 读取与密钥别名）、
-`src/qed_tracker/llm_client.py`（新增，兼容层）、`scripts/qed_tracker_service.py`（`--mode`）、
-根 `.env` / 自身 `.env`（新建）
-关联测试：`tests/test_config_catalog_matching.py`（`.env`/密钥别名用例挂接位置）、
-`tests/test_service_scripts.py`（`--mode` 生命周期用例挂接位置）、
-`tests/test_llm_client.py`（新增，兼容层双模式用例）
+关联代码：`src/qed_tracker/config.py`（`.env` 读取与密钥）、`src/qed_tracker/llm_client.py`（兼容层）、
+`scripts/qed_tracker_service.py`（`--mode`）、`src/qed_tracker/providers/bailian.py`、
+`src/qed_tracker/providers/book_advisor.py`、`src/qed_tracker/main_line/advisor.py`（三处接入）、
+`src/qed_tracker/cli.py`、`src/qed_tracker/api/main.py`、自身 `.env`（新建）
+关联测试：`tests/test_config_catalog_matching.py`（`.env` 来源优先级与密钥唯一变量）、
+`tests/test_llm_client.py`（兼容层双模式与调用记录）、`tests/test_service_scripts.py`（`--mode`）、
+`tests/test_bailian_advisor.py`、`tests/test_main_line_advisor.py`（gateway 路由）
 关联 ADR：无新增（沿用 [ADR 0001](../adr/0001-tracker-service-architecture.md)）
 
-> **状态说明**：本设计为**未来实现方案**，尚未评审、未开工。跨项目契约（变量命名、网关端点、
-> `qed_llm_calls` 表结构、密钥约定）以根仓库
-> [llm-gateway-and-model-management.md](../../../docs/design/llm-gateway-and-model-management.md)
-> 为准，本仓库只链接不复制。
+> **决策登记（2026-08-20 评审定案，QED-037 实现完成、QED-038 密钥收敛）**：
+> 1. 本子项目只以 qwen 模型提供 API：`local` 模式 = 自身 `.env` 的 `API_KEY` 直连 dashscope；
+> 2. 三处 advisor（bailian / book_advisor / main_line）`_complete` 统一经 llm_client 兼容层，
+>    业务 API 不变；
+> 3. local 调用记录 `qed_llm_calls` 取值 `service=qed_tracker`、`mode=api`、`provider=qwen`、
+>    `endpoint=text`（direct 本质为云端 API key 调用，mode 记 api 与根仓库路由语义一致）；
+> 4. config.py 的 `.env` 解析**不修改 os.environ**（合并视图，真实环境变量优先），
+>    避免测试环境污染；service 脚本经子进程 env 注入 `QED_API_SELECT` 使模式生效；
+> 5. QED-038（ARCH-017）：`llm_api_key()` 只读唯一密钥 `API_KEY`，无任何别名回退。
 
 > **跨项目裁决同步（2026-08-20）**：根仓库裁决（ARCH-017）——逐厂商 key 别名**全部取消**
 > （含 `QWEN_API_KEY` / `DASHSCOPE_API_KEY` / `DEEPSEEK_API_KEY` / `GLM_API_KEY`），统一
@@ -101,11 +107,12 @@
 
 ## 验证与回执
 
-- 定向测试：`tests/test_config_catalog_matching.py` 覆盖 `.env` 来源优先级与密钥唯一变量/别名
-  回退；`tests/test_llm_client.py`（新增 10 用例）覆盖 `direct` / `gateway` 双模式与
-  `qed_llm_calls` 落库/降级（固定 fixture，不访问公网）；`tests/test_service_scripts.py`
-  （26 用例）覆盖 `--mode` 生命周期与状态持久化；`tests/test_bailian_advisor.py`、
-  `tests/test_main_line_advisor.py` 覆盖 gateway 路由（不接触密钥）。
+- 定向测试：`tests/test_config_catalog_matching.py` 覆盖 `.env` 来源优先级与密钥唯一变量
+  （QED-038：`llm_api_key` 只读 `API_KEY`，无别名回退）；`tests/test_llm_client.py`
+  （10 用例）覆盖 `direct` / `gateway` 双模式与 `qed_llm_calls` 落库/降级（固定 fixture，
+  不访问公网）；`tests/test_service_scripts.py`（26 用例）覆盖 `--mode` 生命周期与状态持久化；
+  `tests/test_bailian_advisor.py`、`tests/test_main_line_advisor.py` 覆盖 gateway 路由
+  （不接触密钥）。
 - 真实冒烟：自身 `.env` 生效（`local` 直连可用，无 8900 也能评估）；`--mode qed-engine` 重启后
   经 8900 `/llm/text` 调用成功且调用记录 `service=qed_tracker` 落库；`--mode local` 调用记录
   落库同表。

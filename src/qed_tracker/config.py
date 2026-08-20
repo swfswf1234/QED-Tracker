@@ -22,10 +22,9 @@ DEFAULT_SOURCES = (
 
 _DASH_SCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 _DEFAULT_GATEWAY_URL = "http://127.0.0.1:8900"
-# .env 文件允许注入的键：QED_* + 供应商密钥。API_KEY 为唯一密钥变量（逐厂商 key 已取消，
-# 根仓库 configuration-and-secrets.md 2026-08-20 收敛）；DASHSCOPE_API_KEY 为 QED-Tracker
-# 侧兼容别名（由本侧门禁决定退役）。
-_ENV_KEYS = frozenset(("API_KEY", "DASHSCOPE_API_KEY"))
+# .env 文件允许注入的键：QED_* + 唯一密钥变量 API_KEY（QED-038/ARCH-017：
+# 逐厂商 key 别名全部取消，无回退；厂商选择由根仓库 QED_API_PROVIDER 决定）。
+_ENV_KEYS = frozenset(("API_KEY",))
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,12 +151,8 @@ def load_settings(**overrides: Any) -> Settings:
 
 
 def llm_api_key() -> str:
-    """统一供应商密钥：API_KEY 唯一密钥变量，DASHSCOPE_API_KEY 为兼容别名（逐厂商 key 已取消）。"""
-    for name in ("API_KEY", "DASHSCOPE_API_KEY"):
-        value = _env_value(name)
-        if value:
-            return value
-    return ""
+    """唯一供应商密钥（QED-038/ARCH-017）：只读 `API_KEY`，逐厂商 key 别名无回退。"""
+    return _env_value("API_KEY")
 
 
 def degradation_notice(settings: Settings) -> str:

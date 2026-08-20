@@ -16,9 +16,10 @@
 - [服务生命周期脚本](service-lifecycle.md)（Accepted，需求方 QED-Engine REQ-017①，QED-032
   已实现）：`scripts/qed_tracker_service.py` 的 start/stop/restart/status 接口契约、PID/日志
   运行事实、与 8900 控制中心的接入方式。
-- [模型模式与密钥分置](model-mode-config.md)（Proposed，需求方 QED-Engine REQ-043）：自身
-  `.env` 变量表、`config.py` 改读自身 `.env`（根 `.env` 兜底）、`llm_client.py` 兼容层
-  （local direct / qed-engine gateway）、service 脚本 `--mode` 与 `qed_llm_calls` 调用记录。
+- [模型模式与密钥分置](model-mode-config.md)（Accepted/Implemented，需求方 QED-Engine REQ-043，
+  QED-037 实现完成 + QED-038 密钥收敛）：自身 `.env` 变量表、`config.py` 改读自身 `.env`
+  （根 `.env` 兜底）、`llm_client.py` 兼容层（local direct / qed-engine gateway）、service
+  脚本 `--mode` 与 `qed_llm_calls` 调用记录；密钥唯一变量 `API_KEY`（ARCH-017 无别名回退）。
 
 ## 能力设计
 

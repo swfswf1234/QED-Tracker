@@ -13,8 +13,8 @@ qed-tracker config show
 ```
 
 配置读取优先级：真实环境变量 → 本仓库 `.env`（自身配置）→ 根仓库 `.env`（兜底）→ 内置最小
-默认值。本仓库 `.env` 模板（密钥可留空，由根仓库 `.env` 兜底；`API_KEY` 为**唯一密钥变量**
-（逐厂商 key 已取消），`DASHSCOPE_API_KEY` 为兼容别名）：
+默认值。本仓库 `.env` 模板（密钥可留空，由根仓库 `.env` 兜底；`API_KEY` 为**唯一密钥变量**，
+QED-038/ARCH-017 起逐厂商 key 别名全部取消、无回退；厂商选择由根仓库 `QED_API_PROVIDER` 决定）：
 
 ```dotenv
 # 模型模式：local=直连 dashscope qwen（默认）；qed-engine=经 8900 网关 /llm/text（不接触密钥）
