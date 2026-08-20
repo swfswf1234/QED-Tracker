@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-12
+最后更新：2026-08-20
 关联代码：无（状态快照，不映射具体模块）
 关联测试：无
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -18,21 +18,29 @@
 | 能力 | 端口/形态 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 8901 HTTP 服务（`/api/v1`） | 8901 | 已服务化 | FastAPI + 后台任务轮询（并发上限 2）；只读查询同步、轻量状态迁移同步；长操作走任务。 |
-| MySQL 登记索引 | 共享 `qed` 库三表 `qt_selections`/`qt_downloads`/`qt_sources` | 已实现 | 教材册级明细登记（QED-028/029）；无 `QED_DB_PASSWORD` 降级运行；qt_resources 已退役（QED-030）。 |
-| CLI | `qed-tracker` | 已实现（未转客户端） | 命令树/退出码/机器输出；`serve` 入口；CLI 闭环命令（catalog evaluate / resources …）未实现，属 QED-010。 |
+| MySQL 登记索引 | 共享 `qed` 库五层模型 `qed_domain`/`qed_course`（共享）→ `qt_knowledge`/`qt_books`/`qt_sources`（私有） | 已实现 | 知识层次重构（QED-031，Alembic 0006）：知识行/书行/渠道五层模型，qt_resources 与三表均已退役；无 `QED_DB_PASSWORD` 降级运行。课程体系只读端点（QED-033 `/courses`）。 |
+| CLI | `qed-tracker` | 已实现（未转客户端） | 命令树/退出码/机器输出；`serve`/`courses`/`mainline`/`migrate` 入口；CLI 闭环命令（catalog evaluate / resources …）未实现，属 QED-010。 |
 | 教材来源 | IA / Open Library / Google Books / libgen_li | 已实现 | libgen_li 发现专用（恒 metadata_only，人工下载后登记）；annas_archive/zlib 退役。 |
 | arXiv 与论文发现 | arXiv + 百炼 | 已实现 | 检索计划 + 可审阅评分，不写资源事实、不自动下载。 |
 | Axiom-Flow 交接 | HTTP（默认 8902） | 已实现 | 默认只上传，显式 `--parse` 才创建解析任务。 |
+| 模型调用模式 | local（直连 dashscope qwen）/ qed-engine（8900 网关） | 改造中 | QED-037 执行中：自身 `.env` + `llm_client.py` 兼容层 + service `--mode` + qed_llm_calls 调用记录。 |
 
 ## 当前主线
 
-- **主链路（QED-026，实现完成待人工验证）**：领域课程梳理 → 教材寻找 → 下载 → 人工验收
+- **QED-036 教程命名规范（计划待人工审核）**：`qt_knowledge` 教程行 name 统一「教程{set_no}：
+  书名（作者）」，方案 A（textbook_ref 扩展 authors）已定案；计划已落
+  [2026-08-tutorial-naming.md](../plans/2026-08-tutorial-naming.md)，待审核后实现（回执根仓库
+  REQ-041）。
+- **QED-037 模型模式与密钥分置（执行中）**：自身 `.env` + `config.py` 改读 + `llm_client.py`
+  双模式兼容层 + service 脚本 `--mode` + qed_llm_calls 调用记录（设计 Proposed：
+  [model-mode-config.md](../design/model-mode-config.md)，计划：
+  [2026-08-model-mode-config.md](../plans/2026-08-model-mode-config.md)，回执根仓库 REQ-043）。
+- **主链路（QED-026，实现完成待人工闭环验证）**：领域课程梳理 → 教材寻找 → 下载 → 人工验收
   （设计 Accepted：[main-line-curriculum.md](../design/main-line-curriculum.md)；架构见
-  [main-line.md](main-line.md)）。courses/mainline 全命令已实现（提交链 948fa88~ea905b9，
-  全量 221 passed + 3 skipped）；待人工闭环验证（配置 QWEN_API_KEY → mainline new →
-  review → download → approve 移交根仓库，00/01/02 三门基础课）。
+  [main-line.md](main-line.md)）。courses/mainline 全命令已实现；待人工闭环验证
+   （配置 API_KEY → mainline new → review → download → approve 移交根仓库，00/01/02 三门基础课）。
 - **课程收集主线（QED-019）**：01 数学分析闭环——catalog 已定稿（01 共 14 目标，54 总），
-  测试全绿；三态评估 → 下载/登记（切三表，QED-030）→ 人工验收。
+  12 册 approved 已移交根仓库；三态评估 → 下载/登记 → 人工验收。
 - **QED-014 全链路联调**：真实 8901 全链路（评估→确认→下载→验收/删除→登记→qed CLI/8903
   前端展示）待开始；QED-010（CLI 转 HTTP 客户端）与 QED-011（重复下载验证）随其后。
 - **QED-024 套标记字段**：属 Plan 类别（方案确定后再进设计文档），既有 Draft 已归档至

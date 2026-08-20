@@ -1,12 +1,18 @@
 # 完成台账
 
 状态：Current
-最后更新：2026-08-18
+最后更新：2026-08-20
 
 本文件只追加已关闭任务的简短结果、提交或本地验证证据。
 
 | ID | 关闭日期 | 结果 | 验证证据 |
 | --- | --- | --- | --- |
+| QED-027 | 2026-08-13 | 主链路第二版限制被三表重构吸收后关闭：版本要素→表1 version JSON、人工下载→register 适配表2、防总评对比→evaluation/roles 聚合、rejected→backup⇄confirmed 可逆 + superseded。 | 2026-08-13 用户裁决；随 QED-028/029 一并关闭，无独立实现。 |
+| QED-028 | 2026-08-13 | [跨项目] 三表数据库重构（qt_selections/qt_downloads/qt_sources 三表 DDL + Alembic 0003 + 状态机 + 隐藏默认过滤 + 存量迁移合并），回执根仓库 REQ-029。**后被 QED-031 知识层次重构取代**（three-table-schema.md 不再作为当前实现依据）。 | 全量门禁 268 passed + 6 skipped + ruff；真实 MySQL 迁移执行（17 selections/12 downloads/12 sources，qt_resources 29 行未触碰）；重跑幂等 skipped=True。 |
+| QED-029 | 2026-08-13 | [跨项目] 三表 API 改造（/selections、/downloads/{id}/approve|reject|register、/sources 等新端点 + 默认过滤），回执根仓库 REQ-030。**后被 QED-031 取代**。 | 新端点契约测试 16 passed；8901 真实冒烟（列表 15 可见、终态 409、reject 缺 reason 422）。 |
+| QED-030 | 2026-08-13 | [跨项目] qt_resources 退役（Alembic 0005 drop + 旧代码/旧端点退役 + BookService 切三表登记），12 册明细清理与一次性脚本删除归档；根仓库 8900 同步退役。 | QED-Tracker 189 passed + 2 skipped + ruff；真实 MySQL 0005 执行（qt_resources 消失）；8901 重启冒烟（旧端点 404）；根仓库 196 passed + ruff。 |
+| QED-031 | 2026-08-17 | 知识层次数据库重构（五层模型 qed_domain→qed_course→qt_knowledge→qt_books→qt_sources，Alembic 0006 + 存量迁移 + courses/math.json 退役），database-schema.md 成为唯一数据库设计事实源；根仓库 ADR 0009 登记共享表所有权并回执 REQ-026/029/030。 | 0006 执行 + migrate（4 知识/12 书行/16 渠道 + qt_sources_legacy 备份 + 幂等重放）+ QED_DB_SMOKE 2 passed + 8901 冒烟通过 + 全量 189 passed/2 skipped/ruff clean；根仓库 6c10df3 回执（REQ-035 前置解除）。 |
+| QED-032 | 2026-08-17 | 服务生命周期脚本（start/stop/restart/status + PID/日志契约 + 8900 接入契约），承接根仓库 REQ-017①。 | tests/test_service_scripts.py 19 passed + ruff clean；全量门禁全绿；真实 8901 冒烟（start→healthy→stop exit 0）；提交 40a1248、f6f219e 与 SystemError 兜底修复；**REQ-017① 回执内容已整理，待用户写入根仓库 REQ-017 行**。 |
 | QED-001 | 2026-07-30 | 应用层拆分为 books、papers、resources，旧聚合服务退出运行时。 | 全量回归 `49 passed`；Ruff 通过。 |
 | QED-002 | 2026-07-30 | 百炼顾问、两套内置目标档案、评分契约与密钥隔离完成。 | 百炼 MockTransport、档案校验和失败报告测试通过。 |
 | QED-003 | 2026-07-30 | arXiv 检索规划、候选去重、Inventory 排除、稳定排序、选择报告及显式下载完成。 | 应用层与 CLI 离线端到端测试覆盖退出码 2、3、4、5，共 `49 passed`。 |

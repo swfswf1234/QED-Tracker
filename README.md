@@ -2,7 +2,7 @@
 
 QED-Tracker 是一个本地优先的 PDF 获取组件，聚焦教材、习题集和 arXiv 论文。它负责发现、下载、PDF 校验、SHA-256 去重和本地资源清单，也能通过百炼根据研究目标规划 arXiv 检索并生成可审阅的论文推荐；需要进一步处理时，再将 PDF 显式交付给相邻项目 Axiom-Flow。
 
-项目以 8901 HTTP 服务（`/api/v1`）运行，写操作（下载、评估、推荐）经后台任务执行并以任务状态轮询暴露；资源事实以单资源 JSON 存于数据根，MySQL `qt_resources` 为查询/展示索引（无密码时降级运行）。包内冻结的 `math-qe` 目录保存 13 门课程的教材与习题集目标，但下载能力不依赖该目录。
+项目以 8901 HTTP 服务（`/api/v1`）运行，写操作（下载、评估、推荐）经后台任务执行并以任务状态轮询暴露；资源事实以单资源 JSON 存于数据根，MySQL 五层登记索引（`qed_domain`/`qed_course` 共享 + `qt_knowledge`/`qt_books`/`qt_sources` 私有）为查询/展示索引（无密码时降级运行）。包内冻结的 `math-qe` 目录保存 13 门课程的教材与习题集目标，但下载能力不依赖该目录。
 
 ## 安装
 
@@ -14,8 +14,11 @@ qed-tracker config show
 qed-tracker --help
 ```
 
-配置直读根仓库 `.env` 的 `QED_*` 变量（`QWEN_API_KEY`、`QED_MODEL`、`QED_DB_*` 等），
-本地 TOML 与 `QED_TRACKER_*` 环境变量已退役；无根 `.env` 时使用内置最小默认值并输出尾注提醒。
+配置读取优先级：真实环境变量 → 本仓库 `.env`（`QED_API_SELECT=local` 默认、`API_KEY`、
+`QED_LLM_GATEWAY_URL`、`QED_MODEL`、`QED_DB_*`、`QED_TRACKER_PORT`）→ 根仓库 `.env`（兜底）→
+内置最小默认值。密钥统一为 `API_KEY`（唯一密钥变量，`DASHSCOPE_API_KEY` 为兼容别名，
+逐厂商 key 已取消）；模型调用默认 `local` 模式直连 dashscope qwen，可切 `qed-engine` 经 8900
+网关 `/llm/text`。本地 TOML 与 `QED_TRACKER_*` 环境变量已退役。
 
 ## 快速使用
 

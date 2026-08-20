@@ -1,7 +1,7 @@
 # 设计索引
 
 状态：Current
-最后更新：2026-08-17
+最后更新：2026-08-20
 
 文档类别固定：设计文档按下列类别维护，不随意增加；新能力先入 [待办列表](../trackers/todo.md)
 为 Plan，方案确定后再进入设计文档（如套标记字段 set_no，见
@@ -16,6 +16,9 @@
 - [服务生命周期脚本](service-lifecycle.md)（Accepted，需求方 QED-Engine REQ-017①，QED-032
   已实现）：`scripts/qed_tracker_service.py` 的 start/stop/restart/status 接口契约、PID/日志
   运行事实、与 8900 控制中心的接入方式。
+- [模型模式与密钥分置](model-mode-config.md)（Proposed，需求方 QED-Engine REQ-043）：自身
+  `.env` 变量表、`config.py` 改读自身 `.env`（根 `.env` 兜底）、`llm_client.py` 兼容层
+  （local direct / qed-engine gateway）、service 脚本 `--mode` 与 `qed_llm_calls` 调用记录。
 
 ## 能力设计
 
@@ -40,6 +43,10 @@
   状态机、文件命名（物理名/展示名）、存量迁移与共享表所有权。
   - 取代留档：`database-schema-ownership.md`（QED-023，Retired）与
     `three-table-schema.md`（QED-028，被取代）不再作为当前实现依据。
+- [教程命名规范](tutorial-naming.md)（Proposed，需求方 QED-Engine REQ-041）：`qt_knowledge`
+  教程行 `name` 统一为「教程{set_no}：书名（作者）」/「教程en：…」；书名/作者取自教材决定
+  引用（`textbook_ref` 拟补 `authors`，方案待评审）；other_material 归类名不加前缀；存量
+  01 数学分析 3 行改名与新建默认命名同步。
 
 ## 治理
 

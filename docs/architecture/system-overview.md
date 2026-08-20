@@ -52,7 +52,8 @@ flowchart LR
 | 模块 | 职责 |
 | --- | --- |
 | `api/` | FastAPI 服务（8901，前缀 `/api/v1`）：健康检查、搜索、资源闭环（confirm/backup/reject/approve/register）、PDF 预览、任务端点与后台任务执行器（并发上限 2）。 |
-| `config.py` | 直读根 `.env` 的 `QED_*` 变量（`QWEN_API_KEY`、`QED_MODEL`、`QED_AXIOM_URL`、`QED_TRACKER_PORT`、`QED_TRACKER_URL`、`QED_PROXY`、`QED_DB_*`、`QED_SOURCES`）；本地 TOML 与旧 `QED_TRACKER_*` 变量（LLM 密钥、来源列表等）已退役。 |
+| `config.py` | 读自身 `.env` → 根 `.env`（兜底）→ 内置默认的 `QED_*` 变量与密钥（`API_KEY` 唯一密钥变量、`QED_API_SELECT`、`QED_MODEL`、`QED_AXIOM_URL`、`QED_TRACKER_PORT`、`QED_TRACKER_URL`、`QED_PROXY`、`QED_DB_*`、`QED_SOURCES` 等）；本地 TOML 与旧 `QED_TRACKER_*` 变量（LLM 密钥、来源列表等）已退役。 |
+| `llm_client.py` | 模型调用兼容层（QED-037）：`local`（直连 dashscope qwen）/ `qed-engine`（经 8900 网关 `/llm/text`，不接触密钥）；local 调用记录写 `qed_llm_calls`。 |
 | `models.py` | 定义候选、目录目标、论文目标与评分、匹配结果、资源记录与下载方案链接（`Candidate.links`）。 |
 | `application/` | 分别编排 books、papers 和 resources 用例；不实现外部协议。 |
 | `providers/` | 搜索外部来源并解析候选或下载地址，不写正式文件；libgen_li 为发现专用来源（恒 `metadata_only`）。 |

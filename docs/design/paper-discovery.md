@@ -31,7 +31,7 @@ arXiv 提供标题、作者、分类、时间和摘要等候选事实。百炼�
 
 ## 百炼边界
 
-默认使用 DashScope OpenAI-compatible `chat/completions` 和 `qwen-plus`，`temperature=0`。任务最多调用 6 次，单次默认超时 60 秒；密钥直读根 `.env` 的 `QWEN_API_KEY`（`QED_TRACKER_LLM_API_KEY` 与 `DASHSCOPE_API_KEY` 读取路径已退役），不进入 Settings 表示、TOML、日志或报告。
+默认使用 DashScope OpenAI-compatible `chat/completions` 和 `qwen-plus`，`temperature=0`。任务最多调用 6 次，单次默认超时 60 秒；模型调用经 `llm_client.py` 兼容层（QED-037）：`local` 直连（密钥 `API_KEY`，自身 `.env` → 根 `.env` 兜底）或 `qed-engine` 经 8900 网关，密钥不进入 Settings 表示、TOML、日志或报告。
 
 自动测试只能使用假顾问或 `httpx.MockTransport`，不得访问真实模型或 arXiv。
 

@@ -22,7 +22,7 @@
 | `src/qed_tracker/application/resources.py` | 资源服务：候选下载与登记编排 | Current | `docs/design/acquisition-and-inventory.md` | `tests/test_download_inventory.py`、`tests/test_services.py` | 统一下载/校验/哈希入口。 |
 | `src/qed_tracker/providers/books.py` | 教材来源适配器（internet_archive/open_library/google_books/libgen_li）与 `RETIRED_PROVIDERS` | Current | `docs/design/acquisition-and-inventory.md`、`docs/design/source-discovery.md` | `tests/test_book_providers.py` | libgen_li 发现专用（QED-021），CJK 查询策略（QED-018）。 |
 | `src/qed_tracker/providers/arxiv.py` | arXiv 搜索适配器 | Current | `docs/design/acquisition-and-inventory.md` | `tests/test_arxiv_provider.py` | 关键词/分类/作者/ID 查询。 |
-| `src/qed_tracker/providers/bailian.py` | 百炼论文顾问：检索计划与评分（不写资源事实） | Current | `docs/design/paper-discovery.md` | `tests/test_bailian_advisor.py` | 密钥直读根 `.env` `QWEN_API_KEY`。 |
+| `src/qed_tracker/providers/bailian.py` | 百炼论文顾问：检索计划与评分（不写资源事实） | Current | `docs/design/paper-discovery.md` | `tests/test_bailian_advisor.py` | 模型调用经 `llm_client.py` 兼容层（`API_KEY`，自身 `.env` → 根 `.env` 兜底；local 直连 / qed-engine 网关）。 |
 | `src/qed_tracker/providers/book_advisor.py` | 百炼教材评估顾问：书目结构化补全与候选评分 | Current | `docs/design/tracker-service.md`（QED-013） | — | 输出可审阅评估，不写事实。 |
 | `src/qed_tracker/config.py` | 统一配置：直读根 `.env` `QED_*`，默认值 + 降级尾注 | Current | `docs/design/tracker-service.md` | `tests/test_config_catalog_matching.py` | TOML 与旧 `QED_TRACKER_*` 退役。 |
 | `src/qed_tracker/catalog.py` | 冻结目录读取（包内 JSON） | Current | `docs/design/acquisition-and-inventory.md` | `tests/test_config_catalog_matching.py` | `math-qe` 永久 frozen。 |
