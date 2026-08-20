@@ -27,18 +27,19 @@
 
 ## 当前主线
 
-- **QED-036 教程命名规范（计划待人工审核）**：`qt_knowledge` 教程行 name 统一「教程{set_no}：
-  书名（作者）」，方案 A（textbook_ref 扩展 authors）已定案；计划已落
-  [2026-08-tutorial-naming.md](../plans/2026-08-tutorial-naming.md)，待审核后实现（回执根仓库
-  REQ-041）。
-- **QED-037 模型模式与密钥分置（执行中）**：自身 `.env` + `config.py` 改读 + `llm_client.py`
-  双模式兼容层 + service 脚本 `--mode` + qed_llm_calls 调用记录（设计 Proposed：
-  [model-mode-config.md](../design/model-mode-config.md)，计划：
-  [2026-08-model-mode-config.md](../plans/2026-08-model-mode-config.md)，回执根仓库 REQ-043）。
 - **主链路（QED-026，实现完成待人工闭环验证）**：领域课程梳理 → 教材寻找 → 下载 → 人工验收
   （设计 Accepted：[main-line-curriculum.md](../design/main-line-curriculum.md)；架构见
   [main-line.md](main-line.md)）。courses/mainline 全命令已实现；待人工闭环验证
-   （配置 API_KEY → mainline new → review → download → approve 移交根仓库，00/01/02 三门基础课）。
+  （配置 API_KEY → mainline new → review → download → approve 移交根仓库，00/01/02 三门基础课）。
+- **QED-036 教程命名规范（已完成，回执待写根仓库 REQ-041）**：`tutorial_name` 命名函数 +
+  migrate 先查后建幂等 + mainline new `--set-no`/review `--title/--author` +
+  textbook_ref 补 authors；存量 3 行已改规范名（教程1：数学分析原理（Rudin）等，证据
+  docs/history/qed-036-tutorial-naming/）。
+- **QED-037 模型模式与密钥分置（已完成，回执待写根仓库 REQ-043）**：自身 `.env` + config
+  改读 + llm_client 双模式兼容层 + 三 advisor 接入 + service `--mode` + qed_llm_calls 调用
+  记录（设计 Accepted/Implemented：[model-mode-config.md](../design/model-mode-config.md)）。
+- **QED-038 密钥收敛（已完成，回执待写根仓库 ARCH-017）**：逐厂商 key 别名全部取消，
+  `llm_api_key` 只读唯一 `API_KEY`。
 - **课程收集主线（QED-019）**：01 数学分析闭环——catalog 已定稿（01 共 14 目标，54 总），
   12 册 approved 已移交根仓库；三态评估 → 下载/登记 → 人工验收。
 - **QED-014 全链路联调**：真实 8901 全链路（评估→确认→下载→验收/删除→登记→qed CLI/8903

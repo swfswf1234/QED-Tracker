@@ -40,8 +40,6 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/guides/development.md"),
     Path("docs/plans/index.md"),
     Path("docs/plans/2026-08-main-line-curriculum.md"),
-    Path("docs/plans/2026-08-tutorial-naming.md"),
-    Path("docs/plans/2026-08-model-mode-config.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
     Path("docs/trackers/completed.md"),

@@ -44,10 +44,11 @@
   状态机、文件命名（物理名/展示名）、存量迁移与共享表所有权。
   - 取代留档：`database-schema-ownership.md`（QED-023，Retired）与
     `three-table-schema.md`（QED-028，被取代）不再作为当前实现依据。
-- [教程命名规范](tutorial-naming.md)（Proposed，需求方 QED-Engine REQ-041）：`qt_knowledge`
-  教程行 `name` 统一为「教程{set_no}：书名（作者）」/「教程en：…」；书名/作者取自教材决定
-  引用（`textbook_ref` 拟补 `authors`，方案待评审）；other_material 归类名不加前缀；存量
-  01 数学分析 3 行改名与新建默认命名同步。
+- [教程命名规范](tutorial-naming.md)（Accepted/Implemented，需求方 QED-Engine REQ-041，
+  QED-036 已实现）：`qt_knowledge` 教程行 `name` 统一为「教程{set_no}：书名（作者）」/
+  「教程en：…」；`textbook_ref{title, version, authors}`（方案 A）；migrate 命名 + 先查后建
+  幂等 + mainline new `--set-no` / review `--title/--author`；other_material 归类名不加前缀；
+  存量 01 数学分析 3 行已改名（证据 docs/history/qed-036-tutorial-naming/）。
 
 ## 治理
 
