@@ -38,12 +38,12 @@
 
 ## 数据设计
 
-- [数据库设计](database-schema.md)（Accepted，2026-08-16 用户裁决知识层次重构）：qed 库
+- [数据库设计](../architecture/database-schema.md)（Accepted，2026-08-16 用户裁决知识层次重构）：qed 库
   `qed_*`（共享）与 `qt_*`（QED-Tracker 私有）表族**唯一事实源文档**——领域/课程/知识行/
   书行/渠道五层模型（qed_domain → qed_course → qt_knowledge → qt_books → qt_sources）、
   状态机、文件命名（物理名/展示名）、存量迁移与共享表所有权。
-  - 取代留档：`database-schema-ownership.md`（QED-023，Retired）与
-    `three-table-schema.md`（QED-028，被取代）不再作为当前实现依据。
+  - 被取代文档已移入 [历史留档](../history/)：`database-schema-ownership.md`（QED-023，Retired）
+    与 `three-table-schema.md`（QED-028，Superseded）。
 - [教程命名规范](tutorial-naming.md)（Accepted/Implemented，需求方 QED-Engine REQ-041，
   QED-036 已实现）：`qt_knowledge` 教程行 `name` 统一为「教程{set_no}：书名（作者）」/
   「教程en：…」；`textbook_ref{title, version, authors}`（方案 A）；migrate 命名 + 先查后建
@@ -52,7 +52,7 @@
 
 ## 治理
 
-- [治理契约范本对齐](governance-contract-alignment.md)（Accepted，QED-022）：守护契约测试的
+- [治理契约范本对齐](governance-contract-alignment.md)（Implemented，QED-022）：守护契约测试的
   契约头六字段、守护面清单与编写约定对齐根仓库范本。
 
 用户命令查[日常操作](../guides/operations.md)，系统级边界查[系统总览](../architecture/system-overview.md)。跨项目契约（端口、环境变量、dataset 布局）以 QED-Engine 根仓库 `docs/` 为准。

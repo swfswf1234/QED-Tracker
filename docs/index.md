@@ -13,7 +13,7 @@
 | `adr/` | 影响长期约束的架构决策登记 | [ADR 索引](adr/index.md) |
 | `guides/` | 可重复执行的用户操作和开发门禁 | [指南索引](guides/index.md) |
 | `plans/` | 尚未关闭的跨模块实施计划 | [计划索引](plans/index.md) |
-| `trackers/` | 有状态待办、完成台账与无状态路线图 | [Tracker 索引](trackers/index.md) |
+| `trackers/` | 有状态待办、完成台账、项目状态快照与无状态路线图 | [Tracker 索引](trackers/index.md) |
 | `history/` | 旧系统与 Math-QE 的选择性历史基线 | [历史索引](history/index.md) |
 
 跨项目契约（端口、环境变量、dataset 布局）以 QED-Engine 根仓库 `docs/` 为准。当前运行事实最终以代码和测试为准。历史文档只解释背景，不提供当前命令或实现依据。

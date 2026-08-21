@@ -134,6 +134,35 @@ def test_math_catalog_is_frozen_and_has_unique_targets():
     }
 
 
+def test_catalog_targets_have_set_no_field():
+    """QED-024：CatalogTarget 含 set_no 可选字段，取值受限（空/1~4/en）。"""
+    catalog = load_catalog("math-qe")
+    assert catalog.targets
+    for target in catalog.targets:
+        assert isinstance(target.set_no, str)
+        assert target.set_no in ("", "1", "2", "3", "4", "en")
+
+
+def test_math_analysis_set_no_matches_note():
+    """QED-024：01 数学分析套归属与既有 note 一致——套一 Rudin 中译/吉米多维奇/费定晖、
+    套二 菲赫金哥尔茨 3 卷 + 谢惠民 2 册、套三 陈纪修 上/下/答案、英文对照 Rudin 英文原版 + Pólya。"""
+    catalog = load_catalog("math-qe")
+    targets = {target.id: target for target in catalog.targets}
+    set1 = {"01-rudin-zh", "01-demidovich", "01-feidinghui"}
+    set2 = {"01-fikhtengolts-v1", "01-fikhtengolts-v2", "01-fikhtengolts-v3",
+            "01-xiehuimin-v1", "01-xiehuimin-v2"}
+    set3 = {"01-chenjixiu-v1", "01-chenjixiu-v2", "01-chenjixiu-answers"}
+    en = {"01-rudin-en", "01-polya"}
+    for target_id in set1:
+        assert targets[target_id].set_no == "1", target_id
+    for target_id in set2:
+        assert targets[target_id].set_no == "2", target_id
+    for target_id in set3:
+        assert targets[target_id].set_no == "3", target_id
+    for target_id in en:
+        assert targets[target_id].set_no == "en", target_id
+
+
 def test_math_catalog_includes_chenjixiu_volumes():
     """2026-08-07 定稿拆分：01 套三陈纪修《数学分析》按上/下册 + 习题答案三个目标，
     同一 archive 条目（math_analysis_chenjixiu）内以 file_hint 分别选文件（同源去重例外）。

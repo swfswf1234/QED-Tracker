@@ -65,6 +65,7 @@
 - `tests/test_documentation.py` 守护：文档入口集合、元数据、链接解析、代码/测试引用、
   Legacy 词禁令、CLI 命令与 parser 一致性、tracker ID 与活跃计划治理。
 - 文档变更在提交前运行该测试与全量门禁（见[开发指南](../guides/development.md)）。
+- 每次版本确认前按[版本末期文档整理规范](version-cleanup.md)执行文档整理轮。
 - 涉及根仓库边界的文档变更，先确认根仓库规范，不越权修改其内容。
 
 ## 变更与取代

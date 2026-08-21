@@ -12,7 +12,7 @@
 QED-Tracker 是本地优先的 PDF 获取组件：发现、下载、校验和登记原始 PDF，并通过 8901 HTTP 服务
 （`/api/v1`）向统一 CLI 与 8903 前端暴露能力。长操作（下载、评估、推荐）由后台任务执行并以
 任务状态轮询暴露，不阻塞请求。资源事实存放于 `meta/resources/` 单资源 JSON，MySQL `qed` 库
-三表（`qt_selections`/`qt_downloads`/`qt_sources`）作为册级明细登记索引（QED-028/029，无密码时降级）。
+五层模型（`qed_domain`/`qed_course`（共享）→ `qt_knowledge`/`qt_books`/`qt_sources`（私有））作为册级明细登记索引（无密码时降级）。
 
 Axiom-Flow 从 HTTP 导入边界之后负责不可变文档存储、OCR/解析、质量审阅和知识发布。两个项目
 不互相导入 Python 包，不共享数据库表或数据目录（共享 `qed` 库实例，`qt_*`/`af_*` 表命名空间
@@ -42,7 +42,7 @@ flowchart LR
     DOWNLOAD --> TASKS[后台任务层 meta/tasks]
     TASKS --> PDF[校验后的 PDF]
     PDF --> INVENTORY[SHA-256 资源清单]
-    INVENTORY --> DB[(MySQL 三表 qt_selections/qt_downloads/qt_sources)]
+    INVENTORY --> DB[(MySQL 五层模型 qt_knowledge/qt_books/qt_sources)]
     INVENTORY --> AXIOM[Axiom HTTP 客户端]
     AXIOM --> FLOW[Axiom-Flow]
 ```
@@ -87,7 +87,7 @@ dataset/qed-tracker/
 复制移交根仓库 `dataset/qed-tracker/`**（本仓库数据根为临时中转，可删可重建）。
 
 PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resources/` 中的单资源 JSON 是本地
-资源事实源；MySQL 三表是册级明细登记索引（教材下载经 `record_book_download` 登记，QED-030）；
+资源事实源；MySQL 五层模型是册级明细登记索引（教材下载经 `complete_download` 登记）；
 论文选择和 Axiom 状态分别保存，不能混入资源事实。任务记录落盘 `meta/tasks/<task-id>.json` 供轮询与「任务 → 文件」
 跳转。
 

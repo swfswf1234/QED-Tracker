@@ -34,5 +34,6 @@ def load_catalog(catalog_id: str) -> Catalog:
         required=item.get("required", True), file_hint=item.get("file_hint", ""),
         note=item.get("note", ""),
         roles=tuple(BookRole(role) for role in item.get("roles", [])) or default_roles(ResourceKind(item["kind"])),
+        set_no=item.get("set_no", ""),
     ) for item in value["targets"])
     return Catalog(value["id"], value["name"], value.get("description", ""), value["status"], targets)

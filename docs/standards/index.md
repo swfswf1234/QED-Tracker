@@ -1,7 +1,7 @@
 # 规范索引
 
 状态：Current
-最后更新：2026-08-04
+最后更新：2026-08-21
 
 本目录是 QED-Tracker 工程治理规则的唯一事实源。根 [AGENTS.md](../../AGENTS.md) 负责快速路由，
 [文档规范](documentation.md) 负责文档事实边界，[ADR 治理](adr-governance.md) 负责决策登记。
@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | [文档规范](documentation.md) | 文档分类、写作、元数据、索引、命名、归档与删除 | `tests/test_documentation.py` |
 | [ADR 治理规范](adr-governance.md) | ADR 准入、编号、元数据、状态、取代与归档路径 | `tests/test_documentation.py`（链接与元数据守护） |
+| [版本末期文档整理规范](version-cleanup.md) | 版本末期文档三态梳理、固定文档更新、tracker 一致性、回执 | `tests/test_documentation.py` |
 
 ## 规则
 

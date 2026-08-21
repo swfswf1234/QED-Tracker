@@ -125,6 +125,19 @@ def test_catalogs_endpoint_lists_builtin_catalogs(tmp_path):
         assert "math-qe" in ids
 
 
+def test_catalog_detail_exposes_set_no(tmp_path):
+    """QED-024：catalog target 透出 set_no 字段（前端两套判定消费）。"""
+    with make_client(tmp_path) as client:
+        response = client.get("/api/v1/catalogs/math-qe")
+        assert response.status_code == 200
+        targets = {t["id"]: t for t in response.json()["targets"]}
+        assert targets["01-rudin-zh"]["set_no"] == "1"
+        assert targets["01-fikhtengolts-v1"]["set_no"] == "2"
+        assert targets["01-chenjixiu-v1"]["set_no"] == "3"
+        assert targets["01-rudin-en"]["set_no"] == "en"
+        assert "set_no" in targets["01-polya"]
+
+
 def test_task_records_are_persisted_under_meta_tasks(tmp_path):
     def ok_handler(params, progress):
         progress(100, "done")

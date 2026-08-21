@@ -1,12 +1,13 @@
 # 完成台账
 
 状态：Current
-最后更新：2026-08-20
+最后更新：2026-08-21
 
 本文件只追加已关闭任务的简短结果、提交或本地验证证据。
 
 | ID | 关闭日期 | 结果 | 验证证据 |
 | --- | --- | --- | --- |
+| QED-022 | 2026-08-21 | [跨项目] 治理契约范本对齐（REQ-023）：`tests/test_documentation.py` 8 个守护测试全部声明契约头六字段（模块职责/设计关联/实现状态/被测代码/守护面/失效后果）；守护面清单裁剪为五类（architecture/design/standards/guides/trackers）；模块级 docstring 声明编写约定（纯标准库/自包含/零网络）。设计文档 governance-contract-alignment.md 标记 Implemented。 | 8 个测试函数六字段 docstring 齐全（AST 验证）；语法编译通过；**待 Python 3.12+ 环境运行 pytest + ruff 全量门禁**；回执根仓库 REQ-023（提交号 + 测试输出）。 |
 | QED-005 | 2026-08-20 | 真实百炼与 arXiv 论文链路冒烟被吸收关闭：论文链路（papers recommend → selections download 下载临时 PDF）与 QED-014（教材 8901 全链路）链路不同，不构成包含；2026-08-20 用户裁决**并入 QED-010**（CLI 转 HTTP 客户端 + 基于真实 8901 冒烟，论文 recommend/download 转 8901 后链路冒烟纳入其冒烟范围）。真实百炼调用前置已由 QED-037 冒烟证实（local 直连 + qed-engine 网关均成功落 qed_llm_calls）。 | 2026-08-20 用户裁决；QED-010 承接注记已更新；无独立实现。 |
 | QED-036 | 2026-08-20 | [跨项目] 教程命名规范（REQ-041）：`tutorial_name` 命名纯函数（教程{set_no}：书名（作者），en 套/空 set_no 兜底/无作者省略/同名作者后缀去重）+ migrate 默认命名改规范格式并回填 `textbook_ref{title, version, authors}` + **按 (course, kind, set_no) 先查后建保幂等**（knowledge_id 含 name，改名后旧库重放不产生重复行）+ `mainline new --set-no` 与 `review --title/--author`（缺省从规范名剥离前缀/后缀回退）；database-schema.md 决定引用补 authors；存量 01 数学分析 3 行修正（教程1：数学分析原理（Rudin）/ 教程2：微积分学教程（菲赫金哥尔茨）/ 教程3：数学分析（陈纪修），completed 保持，证据归档 docs/history/qed-036-tutorial-naming/）。 | 提交（QED-036）；migrate 12 + mainline CLI 45 + knowledge API 全绿；全量 **246 passed + 3 skipped + ruff clean + git diff --check**；8901 真实冒烟（GET /knowledge 返回 3 行规范名 + completed）；**REQ-041 回执内容已整理，待写入根仓库 REQ-041 行**。 |
 | QED-037 | 2026-08-20 | [跨项目] 模型模式与密钥分置（REQ-043）：自身 `.env`（QED_API_SELECT=local 默认、API_KEY、QED_LLM_GATEWAY_URL、QED_MODEL、QED_DB_*、QED_TRACKER_PORT）+ config 改读自身 `.env`（根 `.env` 兜底，**不污染 os.environ**）+ `llm_client.py` 双模式兼容层（local/api→direct 直连 dashscope qwen / qed-engine→8900 `/api/v1/llm/text` 网关不接触密钥）+ 三 advisor（bailian/book_advisor/main_line）统一接入 + service 脚本 `--mode`（logs/ 状态持久化 + status 输出模式）+ local 调用记录写 `qed_llm_calls`（service=qed_tracker、mode=api、provider=qwen、endpoint=text，DB 不可达降级）。 | 提交 `0a3cc38`；全量 **238 passed + 3 skipped + ruff clean**；doc 测试 8 passed；自身 `.env` 生效 + 根 `.env` 兜底实测；**真实冒烟全过**：8901 restart `--mode local`↔`qed-engine` 双向切换 + 状态持久化 + 健康 200；local 直连 dashscope 返回 `{"ok": true}` 且 id=7 落库；qed-engine 经 8900 网关成功（id=8 网关侧落库，不重复写）；**REQ-043 回执内容已整理，待写入根仓库 REQ-043 行**。 |

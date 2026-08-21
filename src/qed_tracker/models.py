@@ -137,6 +137,8 @@ class CatalogTarget:
     """人工备注（如「套1」归组线索），不影响匹配。"""
     roles: tuple[BookRole, ...] = ()
     """书籍角色（多值，方案 A）：空时按 kind 推导（default_roles）。一套书可同时是教材与习题集。"""
+    set_no: str = ""
+    """套标记（QED-024）：1~4=中文套 / en=英文对照套 / 空=无配套。同一课程内 set_no 相同属同一套。"""
 
 
 @dataclass(frozen=True, slots=True)

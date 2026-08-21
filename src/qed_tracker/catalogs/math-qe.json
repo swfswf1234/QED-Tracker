@@ -19,7 +19,8 @@
       "note": "套一：Rudin 中译",
       "roles": [
         "textbook"
-      ]
+      ],
+      "set_no": "1"
     },
     {
       "id": "01-rudin-en",
@@ -35,7 +36,8 @@
       "note": "英文对照",
       "roles": [
         "textbook"
-      ]
+      ],
+      "set_no": "en"
     },
     {
       "id": "01-demidovich",
@@ -51,7 +53,8 @@
       "note": "套一：吉米多维奇中译",
       "roles": [
         "exercises"
-      ]
+      ],
+      "set_no": "1"
     },
     {
       "id": "01-feidinghui",
@@ -67,7 +70,8 @@
       "note": "2026-08-07 定稿 + 2026-08-18（QED-034）：套一配套题解（exercise，与习题集配套不重复下载）",
       "roles": [
         "exercises"
-      ]
+      ],
+      "set_no": "1"
     },
     {
       "id": "01-fikhtengolts-v1",
@@ -83,7 +87,8 @@
       "note": "套二（libgen.li 发现专用 + 人工下载）",
       "roles": [
         "textbook"
-      ]
+      ],
+      "set_no": "2"
     },
     {
       "id": "01-fikhtengolts-v2",
@@ -99,7 +104,8 @@
       "note": "套二（libgen.li 发现专用 + 人工下载）",
       "roles": [
         "textbook"
-      ]
+      ],
+      "set_no": "2"
     },
     {
       "id": "01-fikhtengolts-v3",
@@ -115,7 +121,8 @@
       "note": "套二（libgen.li 发现专用 + 人工下载）",
       "roles": [
         "textbook"
-      ]
+      ],
+      "set_no": "2"
     },
     {
       "id": "01-xiehuimin-v1",
@@ -131,7 +138,8 @@
       "note": "套二（libgen.li 发现专用 + 人工下载；2026-08-18 QED-034 裁决仅 exercises）",
       "roles": [
         "exercises"
-      ]
+      ],
+      "set_no": "2"
     },
     {
       "id": "01-xiehuimin-v2",
@@ -147,7 +155,8 @@
       "note": "套二（libgen.li 发现专用 + 人工下载；2026-08-18 QED-034 裁决仅 exercises）",
       "roles": [
         "exercises"
-      ]
+      ],
+      "set_no": "2"
     },
     {
       "id": "01-chenjixiu-v1",
@@ -164,7 +173,8 @@
       "note": "套三：陈纪修《数学分析》上册（archive 条目 math_analysis_chenjixiu 多 PDF，file_hint 与条目真实文件名对齐选文件，2026-08-09 修订防「上下册」子串误命中；2026-08-07 定稿拆分）",
       "roles": [
         "textbook"
-      ]
+      ],
+      "set_no": "3"
     },
     {
       "id": "01-chenjixiu-v2",
@@ -181,7 +191,8 @@
       "note": "套三：陈纪修《数学分析》下册（archive 条目 math_analysis_chenjixiu 多 PDF，file_hint 与条目真实文件名对齐选文件，2026-08-09 修订防「上下册」子串误命中；2026-08-07 定稿拆分）",
       "roles": [
         "textbook"
-      ]
+      ],
+      "set_no": "3"
     },
     {
       "id": "01-chenjixiu-answers",
@@ -198,7 +209,8 @@
       "note": "套三：陈纪修《数学分析》习题答案（archive 条目 math_analysis_chenjixiu 配套习题答案，exercise，与教材同条目按 file_hint 分别收录；title 保持条目级不带卷号）",
       "roles": [
         "exercises"
-      ]
+      ],
+      "set_no": "3"
     },
     {
       "id": "01-polya",
@@ -215,7 +227,8 @@
       "note": "英文对照（archive 可选）",
       "roles": [
         "exercises"
-      ]
+      ],
+      "set_no": "en"
     },
     {
       "id": "02-axler-zh",

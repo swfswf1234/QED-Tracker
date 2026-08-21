@@ -1,0 +1,308 @@
+# 8901 API 接口文档
+
+设计状态：Accepted
+实现状态：Implemented
+最后更新：2026-08-21
+关联代码：`src/qed_tracker/api/main.py`、`src/qed_tracker/api/tasks.py`
+关联测试：`tests/test_api.py`、`tests/test_knowledge_api.py`
+关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
+
+## 概述
+
+QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/api/v1`。端点按业务语义分为四类：
+
+| 类别 | 说明 | 端点数 |
+| --- | --- | --- |
+| ① 服务生命周期与健康 | 服务启停检测 | 1 |
+| ② 数据查询 | 只读查询课程体系、知识行、书行、渠道、目录、资源 | 7 |
+| ③ 资源生命周期操作 | 状态迁移、创建、登记、任务提交 | 16 |
+| ④ LLM 检索课程教程·选书业务 | 教材/论文候选搜索 | 2 |
+
+只读查询同步返回；写操作提交后台任务（并发上限 2）或执行轻量状态迁移（同步）。
+
+## ① 服务生命周期与健康
+
+### `GET /api/v1/health`
+
+健康检查端点。
+
+**返回：**
+```json
+{"status": "ok"}
+```
+
+## ② 数据查询
+
+### `GET /api/v1/courses`
+
+课程体系列表（qed_domain/qed_course 共享表，按领域分组全量，sort_order 有序）。
+
+**返回：** `CourseDomain[]` — 每个领域含 domain_id/name/description/stages/courses 数组。
+
+### `GET /api/v1/courses/{domain_id}`
+
+单个学科课程体系详情。
+
+**路径参数：** `domain_id` — 学科标识（如 `math`）。
+
+**错误：** 404 未知学科课程体系。
+
+### `GET /api/v1/knowledge`
+
+知识行列表（默认过滤 rejected/superseded/failed）。
+
+**查询参数：**
+- `course_id`（可选）— 按课程筛选
+- `status`（可选）— 按状态筛选
+
+**返回：** `KnowledgeRow[]`。
+
+### `GET /api/v1/knowledge/{knowledge_id}`
+
+知识行详情（含关联书行列表）。
+
+**路径参数：** `knowledge_id` — 知识行 ID。
+
+**错误：** 404 知识行不存在。
+
+### `GET /api/v1/books/{book_id}/sources`
+
+书行的渠道列表。
+
+**路径参数：** `book_id` — 书行 ID。
+
+**错误：** 404 书行不存在。
+
+### `GET /api/v1/catalogs`
+
+已注册目录列表。
+
+**返回：** `[{"id": "math-qe"}]`。
+
+### `GET /api/v1/catalogs/{catalog_id}`
+
+目录详情（含全部目标）。
+
+**路径参数：** `catalog_id` — 目录标识。
+
+**错误：** 404 目录不存在。
+
+## ③ 资源生命周期操作
+
+### 知识行状态迁移
+
+#### `POST /api/v1/knowledge/{knowledge_id}/confirm`
+
+确认知识行（candidate → confirmed）。可附带 textbook_ref、exercise_ref、简介。
+
+**请求体（可选字段）：**
+```json
+{
+  "textbook_ref": {"title": "...", "version": "...", "authors": ["..."]},
+  "exercise_ref": {"title": "..."},
+  "textbook_intro": "...",
+  "exercise_intro": "..."
+}
+```
+
+**错误：** 404 不存在、409 非法状态迁移。
+
+#### `POST /api/v1/knowledge/{knowledge_id}/complete`
+
+完成知识行（confirmed → completed）。
+
+**错误：** 404 不存在、409 非法状态迁移。
+
+#### `POST /api/v1/knowledge/{knowledge_id}/reject`
+
+拒绝知识行（需提供原因）。
+
+**请求体：**
+```json
+{"reason": "不符合课程要求"}
+```
+
+**错误：** 404 不存在、409 非法状态迁移、422 缺少原因。
+
+#### `POST /api/v1/knowledge/{knowledge_id}/supersede`
+
+标记知识行过时（需提供原因）。
+
+**请求体：**
+```json
+{"reason": "已有更新版本"}
+```
+
+**错误：** 404 不存在、409 非法状态迁移、422 缺少原因。
+
+### 书行操作
+
+#### `POST /api/v1/books`
+
+新建书行候选（candidate 态）。
+
+**请求体（必填：knowledge_id + title）：**
+```json
+{
+  "knowledge_id": "math-01-knowledge-001",
+  "title": "数学分析原理",
+  "kind": "textbook",
+  "roles": ["main"],
+  "part": "",
+  "display_title": "教程1：数学分析原理（Rudin）",
+  "authors": ["Walter Rudin"],
+  "language": "en",
+  "version": "v3",
+  "source": "internet_archive",
+  "original_url": "https://..."
+}
+```
+
+**错误：** 422 缺少必填字段、404 knowledge_id 不存在。
+
+#### `POST /api/v1/books/{book_id}/sources`
+
+添加渠道记录。
+
+**请求体：**
+```json
+{
+  "channel": "internet_archive",
+  "provider_id": "ia-12345",
+  "page_url": "https://...",
+  "download_url": "https://...",
+  "file_keywords": "filename.pdf",
+  "ok": true,
+  "note": "可用"
+}
+```
+
+#### `POST /api/v1/books/{book_id}/register`
+
+人工下载登记（candidate → downloaded 直转）。relative_path 必须存在且为 PDF。
+
+**请求体：**
+```json
+{"relative_path": "raw/books/math-qe/01/textbook_rudin.pdf"}
+```
+
+**错误：** 400 路径不在数据根内、404 文件/书行不存在、422 缺少路径、409 非法状态迁移。
+
+#### `POST /api/v1/books/{book_id}/decide`
+
+决定下载（candidate → decided）。
+
+#### `POST /api/v1/books/{book_id}/start`
+
+开始下载（decided → downloading）。
+
+#### `POST /api/v1/books/{book_id}/fail`
+
+标记下载失败（downloading → failed）。
+
+#### `POST /api/v1/books/{book_id}/retry`
+
+重试下载（failed → downloading）。
+
+#### `POST /api/v1/books/{book_id}/complete`
+
+完成下载（downloading → downloaded）。需提供 sha256 与 relative_path。
+
+**请求体：**
+```json
+{
+  "sha256": "64位十六进制",
+  "relative_path": "raw/books/math-qe/01/file.pdf",
+  "page_count": 300,
+  "absolute_path": "/full/path",
+  "file_name": "textbook_abc12345.pdf"
+}
+```
+
+**错误：** 422 sha256 格式错误或缺字段、409 非法状态迁移。
+
+#### `POST /api/v1/books/{book_id}/verify`
+
+验证书行（downloaded → verified）。
+
+#### `POST /api/v1/books/{book_id}/reject`
+
+拒绝书行（需提供原因）。
+
+**请求体：**
+```json
+{"reason": "文件损坏", "note": ""}
+```
+
+#### `POST /api/v1/books/{book_id}/supersede`
+
+标记书行过时（需提供原因）。
+
+**请求体：**
+```json
+{"reason": "已有更好版本"}
+```
+
+### 任务管理
+
+#### `GET /api/v1/tasks`
+
+任务列表（全部）。
+
+**返回：** `TaskRecord[]` — 含 task_id/task_type/status/result 等。
+
+#### `GET /api/v1/tasks/{task_id}`
+
+任务详情。
+
+**路径参数：** `task_id` — 任务 ID。
+
+**错误：** 404 任务不存在。
+
+#### `POST /api/v1/tasks/{task_type}`
+
+提交后台任务（返回 202 Accepted）。
+
+**路径参数：** `task_type` — 任务类型（如 `books_search`、`papers_search`）。
+
+**请求体：** 任务参数（类型相关）。
+
+**返回：** `{"task_id": "..."}`
+
+**错误：** 404 未知任务类型。
+
+## ④ LLM 检索课程教程·选书业务
+
+### `GET /api/v1/books/search`
+
+教材候选搜索（多来源并行，返回候选列表）。
+
+**查询参数：**
+- `q`（必填）— 搜索关键词
+- `limit`（可选，默认10，范围1-50）— 最大返回数
+- `source`（可选）— 按来源过滤
+
+**返回：** `Candidate[]` — 含 title/authors/provider/availability/links 等。
+
+### `GET /api/v1/papers/search`
+
+论文候选搜索（arXiv + 百炼评分）。
+
+**查询参数：**
+- `q`（可选）— 关键词
+- `category`（可选）— arXiv 分类
+- `author`（可选）— 作者
+- `limit`（可选，默认10，范围1-50）
+
+**返回：** `Candidate[]`。
+
+## 错误码
+
+| 状态码 | 含义 |
+| --- | --- |
+| 200 | 成功 |
+| 202 | 任务已接受（后台执行） |
+| 400 | 请求格式错误（如路径不在数据根内） |
+| 404 | 资源不存在 |
+| 409 | 非法状态迁移（状态机约束） |
+| 422 | 参数校验失败（缺必填字段、格式错误） |

@@ -1,10 +1,10 @@
 # 治理契约范本对齐（QED-022，承接根仓库 REQ-023）
 
 设计状态：Accepted
-实现状态：Not Started
-最后更新：2026-08-12
-关联代码：`tests/test_documentation.py`（未来按需要扩展守护类测试）
-关联测试：本仓库 `tests/` 契约类测试（对齐后由本仓库按需扩展 tests/contract 目录）
+实现状态：Implemented
+最后更新：2026-08-21
+关联代码：`tests/test_documentation.py`（8 个守护测试已声明契约头六字段）
+关联测试：`tests/test_documentation.py`（守护面清单五类：architecture/design/standards/guides/trackers）
 关联 ADR：—（承接根仓库 ADR 0006，见背景）
 需求方：QED-Engine（根仓库 REQ-023，范本依据根仓库 `docs/standards/governance-contract.md`）
 执行方：QED-Tracker
