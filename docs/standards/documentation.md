@@ -1,7 +1,7 @@
 # 文档规范
 
 状态：Current
-最后更新：2026-08-12
+最后更新：2026-08-23
 治理对象：文档分类、写作、元数据、索引、命名、归档与删除
 依据：QED-Engine 根仓库 `docs/standards/documentation.md` 治理模式，适配单仓库规模
 关联测试：`tests/test_documentation.py`
@@ -21,11 +21,11 @@
 | 根 `AGENTS.md` | Agent 执行入口：项目目标、任务路由、强制约束与门禁。只指引，不保存正文事实。 |
 | `docs/index.md` 与各目录 `index.md` | 只导航当前文件，不保存正文事实。 |
 | `docs/architecture/` | 当前系统边界、模块拓扑和数据不变量。 |
-| `docs/design/` | 当前契约与接口：下载/清单、论文发现、服务与外部接口（含 Axiom 消费面）、主链路、来源与评审、数据设计、治理。 |
+| `docs/design/` | 当前契约与接口：下载/清单、论文发现、服务与外部接口（含 Axiom 消费面）、主链路、来源与评审、数据设计、治理。**仅收已评审确定的设计**：未定稿/待评审设计一律随计划在 `docs/plans/` 承载，用户确定后以稳定名称迁入本目录（[ADR 0003](../adr/0003-pending-design-location.md)）。 |
 | `docs/standards/` | 工程治理规则（文档规范、ADR 治理）。 |
 | `docs/adr/` | 影响长期约束的决定、理由、后果和取代关系。 |
 | `docs/guides/` | 可重复执行的用户操作与开发门禁。 |
-| `docs/plans/` | 已批准且尚未关闭的实施计划。 |
+| `docs/plans/` | 已批准且尚未关闭的实施计划；**待评审设计内容随计划承载**，确定后按 [ADR 0003](../adr/0003-pending-design-location.md) 迁入 `design/`。 |
 | `docs/trackers/` | 全部未关闭任务、关闭台账与无状态能力路线图。 |
 | `docs/history/` | 选择性保留的历史基线（旧系统、Math-QE）。 |
 

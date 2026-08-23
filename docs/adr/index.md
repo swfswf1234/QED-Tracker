@@ -1,7 +1,7 @@
 # ADR 索引
 
 状态：Current
-最后更新：2026-08-21
+最后更新：2026-08-23
 当前版本：v0.1.0
 
 本目录登记影响长期约束的架构决策：决定、理由、后果和取代关系。规则见
@@ -13,8 +13,9 @@
 | --- | --- | --- | --- | --- | --- |
 | [0001](0001-tracker-service-architecture.md) | 服务化与统一配置接入（8901 API + 后台任务轮询 + 根 .env 直读 + dataset/qed-tracker 布局） | API 与任务 | v0.6 | Accepted | — |
 | [0002](0002-version-cleanup-governance.md) | 版本末期文档整理长效机制（version-cleanup 标准 + QED-039 长期跟踪） | 工程治理 | v0.1 | Accepted | — |
+| [0003](0003-pending-design-location.md) | 待评审设计的目录流转（Draft 设计先入 plans/，确定后落 design/；范本：根仓库 ADR 0011） | 工程治理 | v0.1 | Accepted | — |
 
-下一个可用编号：0003
+下一个可用编号：0004
 
 ## 规则
 
