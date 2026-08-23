@@ -59,6 +59,7 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/plans/2026-08-main-line-curriculum.md"),
     Path("docs/plans/2026-08-docs-restructure-alignment.md"),
     Path("docs/plans/2026-08-exploration-api-adoption.md"),
+    Path("docs/plans/2026-08-exploration-db-design.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
     Path("docs/trackers/completed.md"),

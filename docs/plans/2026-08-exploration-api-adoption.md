@@ -49,3 +49,18 @@
 ## 取代
 
 无（首次承接探索域；主链路 QED-026 的课程梳理 advisor 保持不动，探索为新并行入口）。
+
+## 详规拆分与评审流程（2026-08-23 用户裁决）
+
+实施前按三条线解耦详规，每线独立成文、**经用户评审确认后方可进入实现**；
+确认前按 [ADR 0003](../adr/0003-pending-design-location.md) 以 Draft 形态随本计划承载于
+`docs/plans/`，确定后迁入 `docs/design/`：
+
+| 详规线 | 文档 | 覆盖范围 | 状态 |
+| --- | --- | --- | --- |
+| 数据库 | [探索运行表设计详规](2026-08-exploration-db-design.md) | qt_explore_runs 表结构、状态机、索引、迁移 0008 | Draft 待评审 |
+| API 本地实现 | （待建：2026-08-exploration-api-design.md） | 端点落位、错误码映射、任务编排、幂等与孤儿兜底、adopt/apply 服务层校验 | 待启动 |
+| LLM prompt/agent | （待建：2026-08-exploration-advisor-design.md） | 课程层/领域层两 advisor：提示词、结构化输出契约、校验与修复、预算与调用记录 | 待启动 |
+
+评审顺序：数据库 → API → LLM agent（依赖关系决定）；上游契约（根仓库 §0~8 冻结版）
+不因详规重开，详规只细化本仓库内部实现。
