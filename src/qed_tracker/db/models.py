@@ -41,6 +41,18 @@ class BookStatus(StrEnum):
     SUPERSEDED = "superseded"
 
 
+class ExploreRunStatus(StrEnum):
+    """qt_explore_runs 探索运行状态机：running → ready → adopted/discarded/applied/partially_applied；failed 可重试新建。"""
+
+    RUNNING = "running"
+    READY = "ready"
+    ADOPTED = "adopted"
+    DISCARDED = "discarded"
+    FAILED = "failed"
+    APPLIED = "applied"
+    PARTIALLY_APPLIED = "partially_applied"
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -205,7 +217,6 @@ class QtSource(Base):
         Index("ix_qt_sources_book", "book_id"),
         {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
     )
-
     source_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="渠道标识（主键）")
     book_id: Mapped[str] = mapped_column(String(100), ForeignKey("qt_books.book_id"), nullable=False, comment="所属书行")
     channel: Mapped[str] = mapped_column(
@@ -223,6 +234,59 @@ class QtSource(Base):
     ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, comment="是否成功（1=成功；0=失败）")
     note: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="备注")
     attempted_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="尝试时间")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+
+
+class QtExploreRun(Base):
+    """qt_explore_runs 探索运行（私有）：一行 = 一次课程层/领域层探索（QED-040/041，单表 JSON 方案）。"""
+
+    __tablename__ = "qt_explore_runs"
+    __table_args__ = (
+        Index("ix_qt_explore_runs_course", "course_id"),
+        Index("ix_qt_explore_runs_domain", "domain_name"),
+        Index("ix_qt_explore_runs_status", "status"),
+        {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
+    )
+
+    run_id: Mapped[str] = mapped_column(String(32), primary_key=True, comment="运行标识（主键，exp_ 前缀）")
+    scope: Mapped[str] = mapped_column(
+        String(16), nullable=False, comment="范围（course=课程层探索；curriculum=新建领域探索）"
+    )
+    course_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="课程标识（scope=course 必填；curriculum 为 NULL）"
+    )
+    domain_name: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="提议的新领域名（scope=curriculum 必填；course 为 NULL）"
+    )
+    status: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default=ExploreRunStatus.RUNNING.value,
+        comment=(
+            "状态（running=运行中；ready=待采纳；adopted=已采纳；discarded=已放弃；failed=失败；"
+            "applied=已应用；partially_applied=部分应用）"
+        ),
+    )
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, comment="参数快照（mode/ref_text/ref_doc_path）")
+    proposals: Mapped[list[Any] | None] = mapped_column(
+        JSON, nullable=True, comment="推荐列表（ready 后非空：Proposal[] 或 Change[]；其余态 NULL 输出 []）"
+    )
+    adopted_ids: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, comment="已采纳 proposal_id / 已应用 change_id"
+    )
+    conflicts: Mapped[list[Any] | None] = mapped_column(
+        JSON, nullable=True, comment="应用冲突清单 [{change_id, reason}]（仅 curriculum apply 后）"
+    )
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="失败信息 {code, message}")
+    task_id: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="关联 8901 内部任务 ID")
+    meta: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True, comment="LLM 审计快照（model/calls/usage/response 哈希）"
+    )
+    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="web", comment="创建人")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="最后更新时间")
 
     def to_dict(self) -> dict[str, Any]:
         return {column.name: getattr(self, column.name) for column in self.__table__.columns}

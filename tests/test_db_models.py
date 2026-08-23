@@ -9,10 +9,12 @@ from sqlalchemy.orm import sessionmaker
 from qed_tracker.db.models import (
     Base,
     BookStatus,
+    ExploreRunStatus,
     KnowledgeStatus,
     QedCourse,
     QedDomain,
     QtBook,
+    QtExploreRun,
     QtSource,
 )
 
@@ -31,6 +33,13 @@ def test_enums_complete() -> None:
     assert {s.value for s in BookStatus} == {
         "candidate", "decided", "downloading", "downloaded", "verified",
         "failed", "rejected", "superseded",
+    }
+
+
+def test_explore_run_status_enum_complete() -> None:
+    """探索运行七态（数据库线详规）：课程层五态 + 领域层 applied 两终态。"""
+    assert {s.value for s in ExploreRunStatus} == {
+        "running", "ready", "adopted", "discarded", "failed", "applied", "partially_applied",
     }
 
 
@@ -61,3 +70,18 @@ def test_qt_books_unique_constraints() -> None:
 def test_qt_sources_foreign_key_to_books() -> None:
     fk = next(fk for fk in QtSource.__table__.foreign_keys if fk.parent.name == "book_id")
     assert fk.column.table.name == "qt_books"
+
+
+def test_qt_explore_runs_table_shape() -> None:
+    """探索运行表（数据库线详规）：单表 JSON 方案，scope 区分课程层/领域层。"""
+    table = QtExploreRun.__table__
+    tables = {t.name for t in Base.metadata.sorted_tables}
+    assert "qt_explore_runs" in tables
+    columns = {c.name for c in table.columns}
+    assert columns == {
+        "run_id", "scope", "course_id", "domain_name", "status", "params",
+        "proposals", "adopted_ids", "conflicts", "error", "task_id", "meta",
+        "created_by", "created_at", "updated_at",
+    }
+    indexes = {ix.name for ix in table.indexes}
+    assert {"ix_qt_explore_runs_course", "ix_qt_explore_runs_domain", "ix_qt_explore_runs_status"} <= indexes
