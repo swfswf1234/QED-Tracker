@@ -7,6 +7,6 @@
 
 ## 活跃计划
 
-- [探索 API 承接设计](2026-08-exploration-api-adoption.md)（2026-08-23，QED-040/041）：课程层探索端点组 + 新建领域探索/手工维护端点组，契约唯一事实源在根仓库（已冻结）。需求方：QED-Engine REQ-055/056。**2026-08-23 用户裁决**：按数据库/API/LLM 三线详规解耦、逐线评审后实施——数据库线 [探索运行表设计详规](2026-08-exploration-db-design.md)（Draft 待评审）；API 线与 LLM agent 线详规待建。
+- [探索 API 承接设计](2026-08-exploration-api-adoption.md)（2026-08-23，QED-040/041）：课程层探索端点组 + 新建领域探索/手工维护端点组，契约唯一事实源在根仓库（已冻结）。需求方：QED-Engine REQ-055/056。**2026-08-23 用户裁决**：按数据库/API/LLM 三线详规解耦、逐线评审后实施——数据库线 [探索运行表设计详规](2026-08-exploration-db-design.md)（Accepted）；API 线 [本地实现详规](2026-08-exploration-api-design.md)（Draft 待评审）；LLM agent 线详规待建。
 - [主链路第一版](2026-08-main-line-curriculum.md)（2026-08-12，QED-026）：课程梳理 → 教材条目（五要素）→ LLM 预填评价 → 人工评审 → 下载 → 验收 → 移交根仓库；CLI 跑通 00/01/02 三门基础课验证。设计见[主链路设计](../design/main-line-curriculum.md)。
 - 真实百炼与 arXiv 冒烟（QED-005）属于外部验收阻塞，直接保留在待办列表中。

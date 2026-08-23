@@ -1,6 +1,6 @@
 # 探索运行表设计详规（QED-040/041 · 数据库线）
 
-状态：Draft（待用户评审）
+状态：Accepted（2026-08-23 用户评审通过：D1~D5 推荐值生效；实现轮迁入 docs/design/ 并同步 database-schema 固定文档）
 最后更新：2026-08-23
 关联计划：[承接设计与详规拆分](2026-08-exploration-api-adoption.md)
 上游契约：根仓库 `docs/plans/2026-08-arch019-exploration-api.md` §0~8（冻结，本文不复制契约正文）

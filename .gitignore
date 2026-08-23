@@ -30,6 +30,9 @@ _file_php_response.html
 temp_stdout.txt
 temp_stderr.txt
 
+# 仓库根临时区（旧位置探索 txt 残留副本，2026-08-23 用户裁决暂不删除不入库）
+/tmp/
+
 # wget logs
 wget-log*
 
