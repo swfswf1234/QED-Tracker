@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from qed_tracker.downloader import DownloadedFile, DownloadError, DownloadManager, safe_filename
-from qed_tracker.inventory import Inventory
+from qed_tracker.inventory import Inventory, downloads_tmp_dir
 from qed_tracker.models import Candidate, CatalogTarget, ResourceKind, ResourceRecord
 
 
@@ -40,7 +40,9 @@ class ResourceService:
             # staging/final 名加 catalog_target.id 前缀，避免并发下载同名互斥（WinError 32）。
             if catalog_target:
                 slug = f"{catalog_target.id}_{slug}"
-        staging = destination_dir / f"{slug}.download"
+        # ARCH-019：staging 中间态统一放共享下载临时区（tmp 先写后原子落盘 raw）。
+        staging_dir = downloads_tmp_dir(self.inventory.data_root)
+        staging = staging_dir / f"{slug}.download"
         downloaded = self.downloader.download(candidate.download_url, staging)
         # 2026-08-09：来源声明 md5 的内容完整性校验（archive metadata 提供）。
         # resolve 已把所选文件的 md5 记入 identifiers["md5"]；不一致说明下载内容
@@ -63,6 +65,8 @@ class ResourceService:
         ):
             downloaded.path.unlink(missing_ok=True)
             return existing
+        # ARCH-019：staging 移入共享临时区后，成品目录需在此显式创建（原由 .part 同目录 mkdir 顺带完成）。
+        final.parent.mkdir(parents=True, exist_ok=True)
         os.replace(downloaded.path, final)
         final_downloaded = DownloadedFile(final, downloaded.sha256, downloaded.size_bytes, downloaded.page_count)
         return self.inventory.register_candidate(final_downloaded, candidate, kind, catalog_target)

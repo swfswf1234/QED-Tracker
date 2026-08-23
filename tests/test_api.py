@@ -146,7 +146,7 @@ def test_task_records_are_persisted_under_meta_tasks(tmp_path):
     with make_client(tmp_path, handlers={"persist": ok_handler}) as client:
         task_id = client.post("/api/v1/tasks/persist", json={}).json()["task_id"]
         _wait_finished(client, task_id)
-        assert (tmp_path / "meta" / "tasks" / f"{task_id}.json").exists()
+        assert (tmp_path / "qed-tracker" / "meta" / "tasks" / f"{task_id}.json").exists()
 
 
 def test_concurrency_is_capped_at_two(tmp_path):

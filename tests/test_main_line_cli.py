@@ -644,8 +644,6 @@ def test_mainline_verify_missing_file_returns_3(tmp_path, repo, capsys) -> None:
 def test_mainline_approve_copies_and_completes(tmp_path, repo, monkeypatch, pdf_bytes, capsys) -> None:
     import qed_tracker.cli as cli_module
 
-    root_dataset = tmp_path / "root-dataset"
-    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(root_dataset))
     knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
                                       kind="tutorial", set_no="", name="数学分析原理")
     repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
@@ -663,7 +661,8 @@ def test_mainline_approve_copies_and_completes(tmp_path, repo, monkeypatch, pdf_
     args = _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id)
     assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 0
 
-    target = root_dataset / "raw" / "books" / "math-qe" / "01_math_analysis" / "math_analysis.pdf"
+    # ARCH-019 共享布局：移交目标 raw/<domain>/<course>/
+    target = tmp_path / "raw" / "math" / "01_math_analysis" / "math_analysis.pdf"
     assert target.is_file()
     assert target.read_bytes() == pdf_bytes
     assert repo.get_knowledge(knowledge.knowledge_id).status == "completed"  # 全部书行 verified 后自动完成
@@ -684,8 +683,6 @@ def test_mainline_approve_requires_verified_book(tmp_path, repo, monkeypatch, ca
 def test_approve_verify_specific_book_multi_volume(tmp_path, repo, monkeypatch, pdf_bytes, capsys) -> None:
     import qed_tracker.cli as cli_module
 
-    root_dataset = tmp_path / "root-dataset"
-    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(root_dataset))
     knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
                                       kind="tutorial", set_no="", name="数学分析原理")
     repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
@@ -713,7 +710,7 @@ def test_approve_verify_specific_book_multi_volume(tmp_path, repo, monkeypatch, 
     assert cli_module._mainline_impl(
         _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id, book=first.book_id),
         repo, settings) == 0
-    target1 = root_dataset / "raw" / "books" / "math-qe" / "01_math_analysis" / "vol1.pdf"
+    target1 = tmp_path / "raw" / "math" / "01_math_analysis" / "vol1.pdf"
     assert target1.is_file()
     assert target1.read_bytes() == pdf_bytes
     assert repo.get_knowledge(knowledge.knowledge_id).status == "confirmed"
@@ -733,7 +730,7 @@ def test_approve_verify_specific_book_multi_volume(tmp_path, repo, monkeypatch, 
     assert cli_module._mainline_impl(
         _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id, book=second.book_id),
         repo, settings) == 0
-    target2 = root_dataset / "raw" / "books" / "math-qe" / "01_math_analysis" / "vol2.pdf"
+    target2 = tmp_path / "raw" / "math" / "01_math_analysis" / "vol2.pdf"
     assert target2.is_file()
     assert target2.read_bytes() == pdf_bytes
     assert repo.get_knowledge(knowledge.knowledge_id).status == "completed"
@@ -742,8 +739,6 @@ def test_approve_verify_specific_book_multi_volume(tmp_path, repo, monkeypatch, 
 def test_approve_missing_source_file_returns_3(tmp_path, repo, monkeypatch, capsys) -> None:
     import qed_tracker.cli as cli_module
 
-    root_dataset = tmp_path / "root-dataset"
-    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(root_dataset))
     knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
                                       kind="tutorial", set_no="", name="数学分析原理")
     repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "数学分析原理"}, textbook_intro="x")
@@ -771,7 +766,6 @@ def test_mainline_full_flow(tmp_path, repo, monkeypatch, pdf_bytes) -> None:
                               download_url="https://example.test/book.pdf")],
         data_root=tmp_path, pdf_bytes=pdf_bytes,
     ))
-    monkeypatch.setattr(cli_module, "_MAINLINE_ROOT_DATASET", str(tmp_path / "root-dataset"))
     monkeypatch.setattr(cli_module, "_mainline_advisor", lambda **kw: _FakeAdvisor())
     settings = _settings(tmp_path)
 
@@ -797,7 +791,7 @@ def test_mainline_full_flow(tmp_path, repo, monkeypatch, pdf_bytes) -> None:
     assert cli_module._mainline_impl(
         _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id), repo, settings) == 0
     assert repo.get_knowledge(knowledge.knowledge_id).status == "completed"
-    target = tmp_path / "root-dataset" / "raw" / "books" / "math-qe" / "01_math_analysis" / "math_analysis.pdf"
+    target = tmp_path / "raw" / "math" / "01_math_analysis" / "math_analysis.pdf"
     assert target.is_file()
     assert target.read_bytes() == pdf_bytes
 

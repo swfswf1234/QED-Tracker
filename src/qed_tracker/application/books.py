@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from qed_tracker.application.resources import ResourceService
 from qed_tracker.catalog import Catalog
+from qed_tracker.inventory import raw_course_dir, raw_general_dir
 from qed_tracker.matching import match_candidate
 from qed_tracker.models import Candidate, CatalogTarget, MatchResult, ResourceKind, ResourceRecord
 from qed_tracker.providers.books import BookProvider, ProviderError
@@ -100,12 +101,13 @@ class BookService:
     ) -> ResourceRecord:
         resolved = self.resolve(candidate)
         root = self.resources.inventory.data_root
+        # ARCH-019 共享布局：课程桶 raw/<domain>/<course>/；inbox/习题入领域通用桶 _general/。
         if kind == ResourceKind.EXERCISE:
-            destination = root / "raw" / "exercises" / "inbox"
+            destination = raw_general_dir(root)
         elif catalog_target:
-            destination = root / "raw" / "books" / catalog_id / catalog_target.course_id
+            destination = raw_course_dir(root, catalog_target.course_id)
         else:
-            destination = root / "raw" / "books" / "inbox"
+            destination = raw_general_dir(root)
         record = self.resources.download_candidate(
             resolved, kind=kind, destination_dir=destination, catalog_target=catalog_target
         )

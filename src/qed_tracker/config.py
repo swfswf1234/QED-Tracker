@@ -29,7 +29,7 @@ _ENV_KEYS = frozenset(("API_KEY",))
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    data_root: Path = Path("dataset/qed-tracker")
+    data_root: Path = Path("dataset")
     proxy: str = ""
     timeout_seconds: float = 30.0
     retries: int = 3
@@ -53,7 +53,8 @@ class Settings:
 
     @property
     def state_dir(self) -> Path:
-        return self.data_root / "meta"
+        # ARCH-019 统一数据根：私有状态区固定 <data_root>/qed-tracker/meta（raw/tmp 为共享布局）。
+        return self.data_root / "qed-tracker" / "meta"
 
     @property
     def db_configured(self) -> bool:
@@ -75,6 +76,7 @@ _ENV_MAP = {
     "QED_AXIOM_URL": ("axiom_url", str),
     "QED_TRACKER_PORT": ("port", int),
     "QED_TRACKER_URL": ("tracker_url", str),
+    "QED_DATA_ROOT": ("data_root", str),
     "QED_DB_HOST": ("db_host", str),
     "QED_DB_PORT": ("db_port", int),
     "QED_DB_NAME": ("db_name", str),

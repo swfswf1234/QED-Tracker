@@ -24,13 +24,10 @@ from qed_tracker.config import Settings, llm_api_key, load_settings
 from qed_tracker.courses import Curriculum
 from qed_tracker.database import upgrade_database
 from qed_tracker.downloader import DownloadManager
-from qed_tracker.inventory import Inventory
+from qed_tracker.inventory import Inventory, raw_course_dir, raw_general_dir
 from qed_tracker.models import Availability, Candidate, ResourceKind
 from qed_tracker.profiles import list_paper_profiles, load_paper_profile
 from qed_tracker.providers import ArxivProvider, BailianPaperAdvisor, create_book_providers
-
-# 主链路移交目标：根仓库 dataset 数据根（正式落地；本仓库数据根为临时中转）
-_MAINLINE_ROOT_DATASET = os.environ.get("QED_MAINLINE_ROOT", r"D:\coding\QED-Engine\dataset\qed-tracker")
 
 
 def _add_limit(parser: argparse.ArgumentParser, default: int = 10) -> None:
@@ -269,7 +266,7 @@ def _books(args, settings: Settings) -> int:
                 "url", args.url, args.title, tuple(args.author), args.language, page_url=args.url, download_url=args.url
             )
             record = resources.download_candidate(
-                candidate, kind=ResourceKind(args.kind), destination_dir=settings.data_root / "raw" / "books" / "inbox"
+                candidate, kind=ResourceKind(args.kind), destination_dir=raw_general_dir(settings.data_root)
             )
             _print(record.to_dict(), args.json)
             return 0
@@ -961,7 +958,10 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
             return path
 
         def _target(book) -> Path:
-            return Path(_MAINLINE_ROOT_DATASET) / "raw" / "books" / "math-qe" / knowledge.course_id / _source(book).name
+            return (
+                raw_course_dir(settings.data_root, knowledge.course_id, domain_id=knowledge.domain_id)
+                / _source(book).name
+            )
 
         if args.book:
             book = next((b for b in verified if b.book_id == args.book), None)
@@ -990,9 +990,9 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
                 f"ERROR: PDF 校验失败：{exc}", file=sys.stderr
             )
             return 2
-        # 移交：目标 = 根仓库 dataset/raw/books/math-qe/<course>/
+        # 移交：目标 = 数据根共享布局 raw/<domain>/<course>/
         try:
-            target_dir = Path(_MAINLINE_ROOT_DATASET) / "raw" / "books" / "math-qe" / knowledge.course_id
+            target_dir = raw_course_dir(settings.data_root, knowledge.course_id, domain_id=knowledge.domain_id)
             target_dir.mkdir(parents=True, exist_ok=True)
             target = target_dir / source.name
             if target.exists() and target.resolve() != source.resolve():

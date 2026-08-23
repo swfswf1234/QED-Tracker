@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from qed_tracker.application.resources import ResourceService
+from qed_tracker.inventory import raw_general_dir
 from qed_tracker.models import Candidate, PaperAssessment, PaperProfile, PaperSearch, ResourceKind, ResourceRecord
 from qed_tracker.profiles import CATEGORY_PATTERN
 from qed_tracker.selection_store import SelectionStore
@@ -73,7 +74,10 @@ class PaperService:
         return [self.provider.get(identifier) for identifier in identifiers]
 
     def download(self, candidate: Candidate) -> ResourceRecord:
-        destination = self.resources.inventory.data_root / "raw" / "papers" / (candidate.year or "unknown")
+        # ARCH-019 共享布局：论文落领域通用桶 papers/<year>/（raw/math/_general/papers/）。
+        destination = (
+            raw_general_dir(self.resources.inventory.data_root) / "papers" / (candidate.year or "unknown")
+        )
         return self.resources.download_candidate(candidate, kind=ResourceKind.PAPER, destination_dir=destination)
 
     def recommend(

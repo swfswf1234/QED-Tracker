@@ -1,4 +1,9 @@
-"""以 PDF 哈希为身份的本地资源清单。"""
+"""以 PDF 哈希为身份的本地资源清单。
+
+ARCH-019 统一数据根：data_root 即 <QED_DATA_ROOT> 共享树——raw/ 为原始成品区
+（唯一被外部读取），tmp/qed-tracker/downloads/ 为下载临时区（终态不保留），
+qed-tracker/meta/ 为本仓库私有状态区。
+"""
 
 from __future__ import annotations
 
@@ -12,12 +17,30 @@ from typing import Any
 from qed_tracker.downloader import DownloadedFile, inspect_pdf
 from qed_tracker.models import Candidate, CatalogTarget, ResourceKind, ResourceRecord
 
+# 领域缺省：catalog 流程当前只服务 math-qe 目录；体系扩展后由调用方传 domain_id。
+DEFAULT_DOMAIN_ID = "math"
+
+
+def raw_course_dir(data_root: Path, course_id: str, *, domain_id: str = DEFAULT_DOMAIN_ID) -> Path:
+    """课程桶：raw/<domain_id>/<course_id>/（教材/习题成品落盘位）。"""
+    return data_root / "raw" / domain_id / course_id
+
+
+def raw_general_dir(data_root: Path, *, domain_id: str = DEFAULT_DOMAIN_ID) -> Path:
+    """领域通用桶：raw/<domain_id>/_general/（inbox/论文等无法归属课程的文件）。"""
+    return data_root / "raw" / domain_id / "_general"
+
+
+def downloads_tmp_dir(data_root: Path) -> Path:
+    """下载临时区：tmp/qed-tracker/downloads/（.part/.download 中间态，终态原子替换进 raw）。"""
+    return data_root / "tmp" / "qed-tracker" / "downloads"
+
 
 class Inventory:
     def __init__(self, data_root: Path):
         self.data_root = data_root.resolve()
-        self.resources_dir = self.data_root / "meta" / "resources"
-        self.transfers_dir = self.data_root / "meta" / "transfers" / "axiom"
+        self.resources_dir = self.data_root / "qed-tracker" / "meta" / "resources"
+        self.transfers_dir = self.data_root / "qed-tracker" / "meta" / "transfers" / "axiom"
 
     def _record_path(self, digest: str) -> Path:
         return self.resources_dir / f"{digest}.json"

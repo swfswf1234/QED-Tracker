@@ -34,13 +34,24 @@ def test_load_settings_defaults_without_environment(monkeypatch, tmp_path):
 
     settings = load_settings()
 
-    assert settings.data_root == (tmp_path / "dataset" / "qed-tracker").resolve()
+    assert settings.data_root == (tmp_path / "dataset").resolve()
     assert settings.axiom_url == "http://127.0.0.1:8902"
     assert settings.port == 8901
     assert settings.db_name == "qed"
     assert settings.db_password == ""
     assert not settings.db_configured
     assert settings.state_dir == (tmp_path / "dataset" / "qed-tracker" / "meta").resolve()
+
+
+def test_load_settings_maps_qed_data_root(monkeypatch, tmp_path):
+    """ARCH-019 统一数据根：QED_DATA_ROOT→data_root 映射，三项目共享同一目录树；
+    私有状态区固定 <data_root>/qed-tracker/meta。"""
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("QED_DATA_ROOT", str(tmp_path / "shared-dataset"))
+    settings = load_settings()
+    assert settings.data_root == (tmp_path / "shared-dataset").resolve()
+    assert settings.state_dir == (tmp_path / "shared-dataset" / "qed-tracker" / "meta").resolve()
 
 
 def test_llm_key_reads_api_key_without_entering_settings(monkeypatch, tmp_path):
