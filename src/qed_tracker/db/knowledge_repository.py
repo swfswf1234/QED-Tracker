@@ -107,6 +107,67 @@ class KnowledgeRepository:
                 statement = statement.where(QedCourse.domain_id == domain_id)
             return list(session.scalars(statement))
 
+    def create_domain(
+        self,
+        *,
+        domain_id: str,
+        name: str,
+        description: str = "",
+        stages: list[str] | None = None,
+    ) -> QedDomain:
+        """幂等插入：已存在则返回既有行（对齐 create_knowledge 模式）。"""
+        with self._session_factory() as session:
+            existing = session.get(QedDomain, domain_id)
+            if existing is not None:
+                return existing
+            row = QedDomain(
+                domain_id=domain_id,
+                name=name,
+                description=description,
+                stages=stages or [],
+                created_by="api",
+                updated_by="api",
+            )
+            _touch(row, created=True)
+            session.add(row)
+            session.commit()
+            return row
+
+    def create_course(
+        self,
+        *,
+        course_id: str,
+        domain_id: str,
+        name: str,
+        stage: str = "",
+        sort_order: int = 0,
+        prerequisites: list[str] | None = None,
+        aliases: list[str] | None = None,
+        note: str = "",
+    ) -> QedCourse:
+        """幂等插入：已存在则返回既有行（对齐 create_knowledge 模式）。"""
+        with self._session_factory() as session:
+            existing = session.get(QedCourse, course_id)
+            if existing is not None:
+                return existing
+            row = QedCourse(
+                course_id=course_id,
+                domain_id=domain_id,
+                name=name,
+                stage=stage,
+                sort_order=sort_order,
+                prerequisites=prerequisites or [],
+                aliases=aliases or [],
+                related_targets=[],
+                note=note,
+                created_by="api",
+                updated_by="api",
+            )
+            _touch(row, created=True)
+            session.add(row)
+            session.commit()
+            return row
+
     # ---------------- qt_knowledge ----------------
 
     def create_knowledge(

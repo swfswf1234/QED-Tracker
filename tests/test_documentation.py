@@ -62,6 +62,7 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/plans/2026-08-exploration-db-design.md"),
     Path("docs/plans/2026-08-exploration-api-design.md"),
     Path("docs/plans/2026-08-exploration-advisor-design.md"),
+    Path("docs/plans/2026-08-exploration-api-implementation.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
     Path("docs/trackers/completed.md"),

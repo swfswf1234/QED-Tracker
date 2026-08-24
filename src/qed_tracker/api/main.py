@@ -24,7 +24,7 @@ from qed_tracker.application import BookService, ResourceService
 from qed_tracker.application.papers import PaperService
 from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key
-from qed_tracker.db.knowledge_repository import InvalidTransition, KnowledgeRepository
+from qed_tracker.db.knowledge_repository import InvalidTransition, KnowledgeRepository, tutorial_name
 from qed_tracker.db.models import QedDomain
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
@@ -71,11 +71,17 @@ class Application:
         self.papers = PaperService(papers_provider or ArxivProvider(retries=settings.retries), self.resources)
         self._db_engine = None
         self._knowledge_repository = knowledge_repository
-        if knowledge_repository is None and settings.db_configured:
+        self._exploration_repository = None
+        if settings.db_configured:
             from qed_tracker.database import create_engine_for, session_factory
 
-            self._db_engine = create_engine_for(settings)
-            self._knowledge_repository = KnowledgeRepository(session_factory(self._db_engine))
+            if self._db_engine is None:
+                self._db_engine = create_engine_for(settings)
+            if self._knowledge_repository is None:
+                self._knowledge_repository = KnowledgeRepository(session_factory(self._db_engine))
+            from qed_tracker.db.exploration_repository import ExplorationRepository
+
+            self._exploration_repository = ExplorationRepository(session_factory(self._db_engine))
         if advisor is None and settings.llm_configured:
             advisor = BailianBookAdvisor(
                 api_key=llm_api_key(),
@@ -125,7 +131,109 @@ def create_app(
         advisor=advisor,
         knowledge_repository=knowledge_repository,
     )
-    manager = TaskManager(TaskStore(settings.state_dir / "tasks"), dict(extra_handlers or {}))
+    def _advisor_kwargs() -> dict[str, Any]:
+        """每次 run 新建 advisor 实例的共享配置（L6 裁决：budget 隔离）。"""
+        return dict(
+            api_key=llm_api_key(),
+            model=settings.llm_model,
+            base_url=settings.llm_base_url,
+            timeout=settings.llm_timeout_seconds,
+            call_budget=settings.llm_call_budget,
+            max_tokens=settings.llm_max_tokens,
+            api_select=settings.api_select,
+            gateway_url=settings.llm_gateway_url,
+            engine=app._db_engine,
+        )
+
+    def _explore_course_handler(params: dict[str, Any], progress: Any) -> dict[str, Any]:
+        run_id = params.get("run_id", "")
+        if app._exploration_repository is None:
+            raise RuntimeError("数据库未配置：探索任务需要数据库")
+        repo = app._exploration_repository
+        run = repo.get_run(run_id)
+        if run is None:
+            return {"run_id": run_id, "status": "not_found"}
+        kn_repo = app._knowledge_repository
+        if kn_repo is None:
+            repo.finish_failed(run_id, error={"code": "DB_UNAVAILABLE", "message": "知识库未配置"})
+            return {"run_id": run_id, "status": "failed"}
+        course = None
+        for c in kn_repo.list_courses():
+            if c.course_id == run.course_id:
+                course = c
+                break
+        if course is None:
+            repo.finish_failed(run_id, error={"code": "COURSE_NOT_FOUND", "message": f"课程不存在：{run.course_id}"})
+            return {"run_id": run_id, "status": "failed"}
+        if app.advisor is None:
+            repo.finish_failed(run_id, error={"code": "LLM_UNAVAILABLE", "message": "LLM 未配置"})
+            return {"run_id": run_id, "status": "failed"}
+        from qed_tracker.providers.explore_advisor import CourseExploreAdvisor, ExploreAdvisorError
+
+        try:
+            advisor = CourseExploreAdvisor(**_advisor_kwargs())
+        except Exception:
+            repo.finish_failed(run_id, error={"code": "LLM_UNAVAILABLE", "message": "LLM 初始化失败"})
+            return {"run_id": run_id, "status": "failed"}
+        try:
+            course_dict = {
+                "course_id": course.course_id,
+                "name": course.name,
+                "aliases": list(course.aliases),
+                "stage": course.stage,
+                "prerequisites": list(course.prerequisites),
+                "related_targets": list(course.related_targets),
+                "note": course.note,
+            }
+            mode = run.params.get("mode", "direct")
+            ref_text = run.params.get("ref_text", "")
+            ref_doc_path = run.params.get("ref_doc_path", "")
+            proposals = advisor.propose(course_dict, mode=mode, ref_text=ref_text, ref_doc_path=ref_doc_path)
+            repo.finish_ready(run_id, proposals=proposals, meta=advisor.metadata())
+            return {"run_id": run_id, "status": "ready", "proposal_count": len(proposals)}
+        except ExploreAdvisorError as exc:
+            repo.finish_failed(run_id, error={"code": exc.code, "message": str(exc)})
+            return {"run_id": run_id, "status": "failed"}
+        finally:
+            advisor.close()
+
+    def _explore_curriculum_handler(params: dict[str, Any], progress: Any) -> dict[str, Any]:
+        run_id = params.get("run_id", "")
+        if app._exploration_repository is None:
+            raise RuntimeError("数据库未配置：探索任务需要数据库")
+        repo = app._exploration_repository
+        run = repo.get_run(run_id)
+        if run is None:
+            return {"run_id": run_id, "status": "not_found"}
+        if app.advisor is None:
+            repo.finish_failed(run_id, error={"code": "LLM_UNAVAILABLE", "message": "LLM 未配置"})
+            return {"run_id": run_id, "status": "failed"}
+        from qed_tracker.providers.explore_advisor import CurriculumExploreAdvisor, ExploreAdvisorError
+
+        try:
+            advisor = CurriculumExploreAdvisor(**_advisor_kwargs())
+        except Exception:
+            repo.finish_failed(run_id, error={"code": "LLM_UNAVAILABLE", "message": "LLM 初始化失败"})
+            return {"run_id": run_id, "status": "failed"}
+        try:
+            mode = run.params.get("mode", "direct")
+            ref_text = run.params.get("ref_text", "")
+            ref_doc_path = run.params.get("ref_doc_path", "")
+            changes = advisor.propose(run.domain_name, mode=mode, ref_text=ref_text, ref_doc_path=ref_doc_path)
+            repo.finish_ready(run_id, proposals=changes, meta=advisor.metadata())
+            return {"run_id": run_id, "status": "ready", "change_count": len(changes)}
+        except ExploreAdvisorError as exc:
+            repo.finish_failed(run_id, error={"code": exc.code, "message": str(exc)})
+            return {"run_id": run_id, "status": "failed"}
+        finally:
+            advisor.close()
+
+    explore_handlers = {
+        "explore_course": _explore_course_handler,
+        "explore_curriculum": _explore_curriculum_handler,
+    }
+    all_handlers = {**explore_handlers, **(extra_handlers or {})}
+    manager = TaskManager(TaskStore(settings.state_dir / "tasks"), all_handlers)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -222,6 +330,32 @@ def create_app(
                 for row in repo.list_courses(domain.domain_id)
             ],
         }
+
+    def api_error(status_code: int, code: str, message: str) -> HTTPException:
+        return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+    def _explore_run_view(run) -> dict[str, Any]:
+        return {
+            "run_id": run.run_id,
+            "scope": run.scope,
+            "course_id": run.course_id,
+            "domain_name": run.domain_name,
+            "status": run.status,
+            "params": run.params,
+            "proposals": run.proposals or [],
+            "adopted_proposal_ids": run.adopted_ids or [],
+            "conflicts": run.conflicts,
+            "error": run.error,
+            "task_id": run.task_id,
+            "meta": run.meta,
+            "created_at": run.created_at.isoformat() if hasattr(run.created_at, "isoformat") else str(run.created_at),
+            "updated_at": run.updated_at.isoformat() if hasattr(run.updated_at, "isoformat") else str(run.updated_at),
+        }
+
+    def _er():
+        if app._exploration_repository is None:
+            raise api_error(409, "DB_UNAVAILABLE", "数据库未配置：探索端点需 QtExploreRun 表")
+        return app._exploration_repository
 
     @fastapi_app.get("/api/v1/courses")
     def courses() -> list[dict[str, Any]]:
@@ -477,6 +611,261 @@ def create_app(
         except InvalidTransition as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return row.to_dict()
+
+    # ---------------- 课程探索端点（QED-040/041） ----------------
+
+    @fastapi_app.post("/api/v1/courses/{course_id}/explore", status_code=202)
+    def course_explore(course_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        mode = str(payload.get("mode", "")).strip()
+        if mode not in ("direct", "text", "doc"):
+            raise api_error(400, "INVALID_PARAMS", "mode 必须为 direct/text/doc")
+        if mode == "text" and not str(payload.get("ref_text", "")).strip():
+            raise api_error(400, "INVALID_PARAMS", "mode=text 需要非空 ref_text")
+        if mode == "doc":
+            ref_doc = str(payload.get("ref_doc_path", "")).strip()
+            if not ref_doc:
+                raise api_error(400, "INVALID_PARAMS", "mode=doc 需要非空 ref_doc_path")
+            from pathlib import Path
+
+            if not Path(ref_doc).is_file():
+                raise api_error(400, "INVALID_PARAMS", f"ref_doc_path 不可读：{ref_doc}")
+        kn_repo = _kn(app)
+        course = None
+        for c in kn_repo.list_courses():
+            if c.course_id == course_id:
+                course = c
+                break
+        if course is None:
+            raise api_error(404, "COURSE_NOT_FOUND", f"课程不存在：{course_id}")
+        repo = _er()
+        if repo.find_running("course", course_id) is not None:
+            raise api_error(409, "COURSE_EXPLORATION_IN_PROGRESS", f"课程 {course_id} 已有运行中的探索")
+        run = repo.create_run(
+            "course",
+            params={"mode": mode, "ref_text": payload.get("ref_text", ""), "ref_doc_path": payload.get("ref_doc_path", "")},
+            course_id=course_id,
+        )
+        record = manager.submit("explore_course", {"run_id": run.run_id})
+        repo.attach_task(run.run_id, record.task_id)
+        return {"run_id": run.run_id, "task_id": record.task_id, "status": "running"}
+
+    @fastapi_app.get("/api/v1/explore-runs/{run_id}")
+    def explore_run_detail(run_id: str) -> dict[str, Any]:
+        repo = _er()
+        run = repo.get_run(run_id)
+        if run is None:
+            raise api_error(404, "RUN_NOT_FOUND", f"探索运行不存在：{run_id}")
+        if run.status == "running" and run.task_id:
+            task = manager.get(run.task_id)
+            if task is None:
+                run = repo.finish_failed(run_id, error={"code": "TASK_LOST", "message": "关联任务不存在"})
+            elif task.status == "failed":
+                run = repo.finish_failed(run_id, error={"code": "TASK_FAILED", "message": "关联任务已失败"})
+        return _explore_run_view(run)
+
+    @fastapi_app.post("/api/v1/explore-runs/{run_id}/adopt")
+    def explore_run_adopt(run_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        repo = _er()
+        run = repo.get_run(run_id)
+        if run is None:
+            raise api_error(404, "RUN_NOT_FOUND", f"探索运行不存在：{run_id}")
+        if run.status != "ready":
+            raise api_error(409, "RUN_STATE_CONFLICT", f"运行状态 {run.status} 不允许采纳（需 ready）")
+        selected = payload.get("selected", [])
+        proposals = run.proposals or []
+        proposal_ids = {p.get("id") or p.get("proposal_id") or p.get("set_no") for p in proposals}
+        for sid in selected:
+            if sid not in proposal_ids:
+                raise api_error(400, "INVALID_PARAMS", f"proposal {sid} 不存在于推荐列表")
+        kn_repo = _kn(app)
+        tutorial_count = len([
+            k for k in kn_repo.list_knowledge(course_id=run.course_id, kind="tutorial")
+            if k.status in ("draft", "confirmed", "completed")
+        ])
+        remaining = 4 - tutorial_count
+        if len(selected) > remaining:
+            raise api_error(409, "CAPACITY_REACHED", f"课程最多 4 套教程，已 {tutorial_count}，本次最多 {remaining}")
+        # 从课程行获取 domain_id（不依赖 course_id 字符串解析）
+        course_row = None
+        for c in kn_repo.list_courses():
+            if c.course_id == run.course_id:
+                course_row = c
+                break
+        domain_id = course_row.domain_id if course_row else "math"
+        adopted = []
+        for sid in selected:
+            proposal = next((p for p in proposals if p.get("proposal_id") == sid), None)
+            if proposal is None:
+                raise api_error(400, "INVALID_PARAMS", f"未知 proposal_id：{sid}")
+            title = proposal.get("textbook", {}).get("title", "") if proposal else ""
+            authors = proposal.get("textbook", {}).get("authors", []) if proposal else []
+            set_no = proposal.get("set_no", "") if proposal else ""
+            try:
+                kn = kn_repo.create_knowledge(
+                    domain_id=domain_id,
+                    course_id=run.course_id,
+                    kind="tutorial",
+                    set_no=set_no,
+                    name=tutorial_name(set_no, title, authors),
+                )
+            except Exception as exc:
+                raise api_error(500, "KNOWLEDGE_CREATE_FAILED", f"创建知识行失败：{exc}") from exc
+            adopted.append({"knowledge_id": kn.knowledge_id, "set_name": proposal.get("set_name", "")})
+        updated_run = repo.adopt_run(run_id, adopted_ids=[a["knowledge_id"] for a in adopted])
+        return {
+            "adopted": adopted,
+            "remaining_slots": remaining - len(selected),
+            "run": _explore_run_view(updated_run),
+        }
+
+    @fastapi_app.post("/api/v1/explore-runs/{run_id}/discard")
+    def explore_run_discard(run_id: str) -> dict[str, Any]:
+        repo = _er()
+        run = repo.get_run(run_id)
+        if run is None:
+            raise api_error(404, "RUN_NOT_FOUND", f"探索运行不存在：{run_id}")
+        if run.status not in ("ready", "discarded"):
+            raise api_error(409, "RUN_STATE_CONFLICT", f"运行状态 {run.status} 不允许放弃（需 ready/discarded）")
+        updated = repo.discard_run(run_id)
+        return _explore_run_view(updated)
+
+    @fastapi_app.get("/api/v1/courses/{course_id}/explore-runs")
+    def course_explore_runs(
+        course_id: str,
+        limit: int = Query(20, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+    ) -> list[dict[str, Any]]:
+        repo = _er()
+        runs = repo.list_runs("course", course_id, limit=limit, offset=offset)
+        return [
+            {
+                "run_id": r.run_id,
+                "status": r.status,
+                "proposal_count": len(r.proposals or []),
+                "adopted_count": len(r.adopted_ids or []),
+                "created_at": r.created_at.isoformat() if hasattr(r.created_at, "isoformat") else str(r.created_at),
+                "updated_at": r.updated_at.isoformat() if hasattr(r.updated_at, "isoformat") else str(r.updated_at),
+            }
+            for r in runs
+        ]
+
+    # ---------------- 领域探索端点（QED-041） ----------------
+
+    @fastapi_app.post("/api/v1/curriculum-explore", status_code=202)
+    def curriculum_explore(payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        domain_name = str(payload.get("domain_name", "")).strip()
+        if not domain_name or len(domain_name) > 100:
+            raise api_error(400, "INVALID_PARAMS", "domain_name 非空且长度 ≤100")
+        mode = str(payload.get("mode", "")).strip()
+        if mode not in ("direct", "text", "doc"):
+            raise api_error(400, "INVALID_PARAMS", "mode 必须为 direct/text/doc")
+        if mode == "text" and not str(payload.get("ref_text", "")).strip():
+            raise api_error(400, "INVALID_PARAMS", "mode=text 需要非空 ref_text")
+        if mode == "doc":
+            ref_doc = str(payload.get("ref_doc_path", "")).strip()
+            if not ref_doc:
+                raise api_error(400, "INVALID_PARAMS", "mode=doc 需要非空 ref_doc_path")
+            from pathlib import Path
+
+            if not Path(ref_doc).is_file():
+                raise api_error(400, "INVALID_PARAMS", f"ref_doc_path 不可读：{ref_doc}")
+        repo = _er()
+        if repo.find_running("curriculum", domain_name) is not None:
+            raise api_error(409, "CURRICULUM_EXPLORATION_IN_PROGRESS", f"领域 {domain_name} 已有运行中的探索")
+        run = repo.create_run(
+            "curriculum",
+            domain_name=domain_name,
+            params={"mode": mode, "ref_text": payload.get("ref_text", ""), "ref_doc_path": payload.get("ref_doc_path", "")},
+        )
+        record = manager.submit("explore_curriculum", {"run_id": run.run_id})
+        repo.attach_task(run.run_id, record.task_id)
+        return {"run_id": run.run_id, "task_id": record.task_id, "status": "running"}
+
+    @fastapi_app.get("/api/v1/curriculum-runs/{run_id}")
+    def curriculum_run_detail(run_id: str) -> dict[str, Any]:
+        repo = _er()
+        run = repo.get_run(run_id)
+        if run is None:
+            raise api_error(404, "RUN_NOT_FOUND", f"探索运行不存在：{run_id}")
+        if run.status == "running" and run.task_id:
+            task = manager.get(run.task_id)
+            if task is None:
+                run = repo.finish_failed(run_id, error={"code": "TASK_LOST", "message": "关联任务不存在"})
+            elif task.status == "failed":
+                run = repo.finish_failed(run_id, error={"code": "TASK_FAILED", "message": "关联任务已失败"})
+        return _explore_run_view(run)
+
+    @fastapi_app.post("/api/v1/curriculum-runs/{run_id}/apply")
+    def curriculum_run_apply(run_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        repo = _er()
+        run = repo.get_run(run_id)
+        if run is None:
+            raise api_error(404, "RUN_NOT_FOUND", f"探索运行不存在：{run_id}")
+        if run.status != "ready":
+            raise api_error(409, "RUN_STATE_CONFLICT", f"运行状态 {run.status} 不允许应用（需 ready）")
+        selected = payload.get("selected", [])
+        proposals = run.proposals or []
+        change_ids = {p.get("change_id") for p in proposals}
+        for sid in selected:
+            if sid not in change_ids:
+                raise api_error(400, "INVALID_PARAMS", f"change_id {sid} 不存在于推荐列表")
+        kn_repo = _kn(app)
+        applied: list[dict[str, Any]] = []
+        conflicts: list[dict[str, Any]] = []
+        applied_domain_id: str = ""
+        for sid in selected:
+            proposal = next((p for p in proposals if p.get("change_id") == sid), None)
+            action = proposal.get("action", "")
+            entity = proposal.get("entity", "")
+            target_id = proposal.get("target_id", "")
+            payload_data = proposal.get("payload", {})
+            if action == "create_domain" and entity == "domain":
+                # 幂等创建：已存在视为冲突
+                existing_domain = None
+                for d in kn_repo.list_domains():
+                    if d.domain_id == target_id:
+                        existing_domain = d
+                        break
+                if existing_domain is not None:
+                    conflicts.append({"change_id": sid, "reason": f"领域 id 已存在：{target_id}"})
+                    continue
+                kn_repo.create_domain(
+                    domain_id=target_id,
+                    name=payload_data.get("name", ""),
+                    description=payload_data.get("description", ""),
+                    stages=payload_data.get("stages", []),
+                )
+                applied.append({"change_id": sid, "entity": "domain", "target_id": target_id})
+                applied_domain_id = target_id
+            elif action == "create_course" and entity == "course":
+                # 幂等创建：已存在视为冲突
+                existing_course = None
+                for c in kn_repo.list_courses():
+                    if c.course_id == target_id:
+                        existing_course = c
+                        break
+                if existing_course is not None:
+                    conflicts.append({"change_id": sid, "reason": f"课程 id 已存在：{target_id}"})
+                    continue
+                kn_repo.create_course(
+                    course_id=target_id,
+                    domain_id=applied_domain_id,
+                    name=payload_data.get("name", ""),
+                    stage=payload_data.get("stage", ""),
+                    sort_order=payload_data.get("sort_order", 0),
+                    prerequisites=payload_data.get("prerequisites", []),
+                    aliases=payload_data.get("aliases", []),
+                    note=payload_data.get("note", ""),
+                )
+                applied.append({"change_id": sid, "entity": "course", "target_id": target_id})
+            else:
+                conflicts.append({"change_id": sid, "reason": f"不支持的操作：{action} {entity}"})
+        updated_run = repo.apply_run(run_id, applied_ids=[a["change_id"] for a in applied], conflicts=conflicts)
+        return {
+            "applied": applied,
+            "conflicts": conflicts,
+            "run": _explore_run_view(updated_run),
+        }
 
     @fastapi_app.get("/api/v1/tasks")
     def tasks() -> list[dict[str, Any]]:
