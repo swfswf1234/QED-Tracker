@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-21
+最后更新：2026-08-24
 关联代码：`src/qed_tracker/api/main.py`、`src/qed_tracker/api/tasks.py`
 关联测试：`tests/test_api.py`、`tests/test_knowledge_api.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -17,6 +17,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | ② 数据查询 | 只读查询课程体系、知识行、书行、渠道、目录、资源 | 7 |
 | ③ 资源生命周期操作 | 状态迁移、创建、登记、任务提交 | 16 |
 | ④ LLM 检索课程教程·选书业务 | 教材/论文候选搜索 | 2 |
+| ⑤ 探索域 | 课程层/新建领域层 LLM 探索 + 手工维护 | 13 |
 
 只读查询同步返回；写操作提交后台任务（并发上限 2）或执行轻量状态迁移（同步）。
 
@@ -296,13 +297,97 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 **返回：** `Candidate[]`。
 
+## ⑤ 探索域端点
+
+### 课程层探索
+
+#### `POST /api/v1/courses/{course_id}/explore`
+
+发起课程层探索（202Accepted）。mode=direct/text/doc；text 需 ref_text ≤10000 字符。
+
+**校验序列：** 400 INVALID_PARAMS → 404 COURSE_NOT_FOUND → 409 CAPACITY_REACHED（active≥4）→ 409 COURSE_LOCKED（completed≥2）→ 幂等查重（running → 返回既有 run + deduplicated:true）→ 入队 202。
+
+**返回：** `{"run_id", "task_id", "status": "running"}` 或 deduplicated 分支。
+
+#### `GET /api/v1/explore-runs/{run_id}`
+
+探索运行详情（孤儿兜底 TASK_LOST/TASK_FAILED）。
+
+#### `POST /api/v1/explore-runs/{run_id}/adopt`
+
+采纳推荐（selected proposal_id 数组）。**单事务**：知识行插入与 run 迁移同 session，任一失败全回滚。
+
+**返回：** `{"adopted": [...], "remaining_slots", "run": {...}}`
+
+#### `POST /api/v1/explore-runs/{run_id}/discard`
+
+放弃探索（ready → discarded）。
+
+#### `GET /api/v1/courses/{course_id}/explore-runs`
+
+课程历史探索列表（limit+offset 分页）。
+
+### 新建领域层探索
+
+#### `POST /api/v1/curriculum-explore`
+
+发起新建领域探索（202 Accepted）。必填 domain_name + mode。
+
+**幂等：** running 命中 → deduplicated:true。
+
+#### `GET /api/v1/curriculum-runs/{run_id}`
+
+新建领域探索运行详情。
+
+#### `POST /api/v1/curriculum-runs/{run_id}/apply`
+
+应用课程体系变更（selected change_id 数组）。
+
+**重探语义（R3）：** domain_name 命中既有领域 → create_domain 记 skipped（非 conflicts），create_course 挂靠已有领域。
+
+**返回：** `{"applied", "conflicts", "skipped", "run": {...}}`
+
+### 手工维护
+
+#### `GET /api/v1/domains`
+
+领域列表。
+
+#### `PATCH /api/v1/domains/{domain_id}`
+
+更新领域（仅 description/stages；name 不可变）。空 body = no-op。
+
+#### `POST /api/v1/domains`
+
+创建领域（服务端生成 domain_id）。body: `{name, description?, stages?}`。
+
+**错误：** 409 DOMAIN_NAME_CONFLICT。
+
+#### `POST /api/v1/domains/{domain_id}/courses`
+
+创建课程（服务端生成 course_id）。body: `{name, stage?, sort_order?, note?}`。
+
+#### `PATCH /api/v1/courses/{course_id}`
+
+更新课程（仅 stage/sort_order/note；name 不可变）。
+
+#### `DELETE /api/v1/courses/{course_id}`
+
+删除课程。**守卫：** 有知识行 → 409 COURSE_HAS_KNOWLEDGE。
+
+#### `DELETE /api/v1/domains/{domain_id}`
+
+删除领域。**守卫：** 有课程 → 409 DOMAIN_NOT_EMPTY。
+
 ## 错误码
 
 | 状态码 | 含义 |
 | --- | --- |
 | 200 | 成功 |
+| 201 | 资源创建成功 |
 | 202 | 任务已接受（后台执行） |
-| 400 | 请求格式错误（如路径不在数据根内） |
-| 404 | 资源不存在 |
-| 409 | 非法状态迁移（状态机约束） |
+| 400 | 请求格式错误（INVALID_PARAMS） |
+| 404 | 资源不存在（COURSE_NOT_FOUND / RUN_NOT_FOUND / DOMAIN_NOT_FOUND） |
+| 409 | 冲突（CAPACITY_REACHED / COURSE_LOCKED / RUN_STATE_CONFLICT / DOMAIN_NAME_CONFLICT / COURSE_HAS_KNOWLEDGE / DOMAIN_NOT_EMPTY） |
 | 422 | 参数校验失败（缺必填字段、格式错误） |
+| 500 | 服务端错误（KNOWLEDGE_CREATE_FAILED） |

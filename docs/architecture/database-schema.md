@@ -1,8 +1,8 @@
 # 数据库设计：qed 库 qed_*/qt_* 表族（唯一事实源）
 
 设计状态：Accepted
-实现状态：Plan
-最后更新：2026-08-16
+实现状态：Implemented
+最后更新：2026-08-24
 需求方：QED-Engine（根仓库 REQ-026/REQ-029/REQ-030；2026-08-16 用户裁决知识层次重构）
 关联代码：`src/qed_tracker/db/`（models/knowledge_repository/migrations）、`src/qed_tracker/database.py`、
 `src/qed_tracker/courses.py`（migrations/data/math.json，规划退役）
@@ -49,6 +49,7 @@ qed_domain（领域，共享 qed_*）
 | `qt_knowledge` | 知识行表 | 私有 | QED-Tracker | kind=tutorial：一套教程；kind=other_material：课程延展资料归类 | 本轮新增 |
 | `qt_books` | 书行表 | 私有 | QED-Tracker | 一个文件单元（书的一册/一篇论文/一个博客快照） | 本轮新增 |
 | `qt_sources` | 渠道表 | 私有 | QED-Tracker | 一次渠道尝试 | 迁移重建（外键改挂 book_id） |
+| `qt_explore_runs` | 探索运行表 | 私有 | QED-Tracker | 一次课程层/新建领域层 LLM 探索运行 | 迁移 0008+0009（含 skipped 列） |
 | `qt_sources_legacy` | 渠道备份表 | 私有 | — | 0006 迁移改名保留的旧版渠道表快照 | 确认后由 `migrate --drop-legacy` 删除 |
 | `qt_selections` / `qt_downloads` | 旧选择/下载表 | 私有 | — | — | 存量迁移后退役（drop） |
 
@@ -246,6 +247,37 @@ CREATE TABLE qt_sources (
   数学分析原理（鲁丁）×2），另 3 册经 archive.org 自动获取；**当前阶段以固定当前课程（定稿
   固化）为主，渠道优化流程从下一门课程开始**；表结构不变，记录即优化依据。人工获取书的
   自动渠道保留 ok=0 失败留痕（note 标注"自动下载失败，转人工"），成功渠道归因以 manual 为准。
+
+## qt_explore_runs 表结构（表6，私有，迁移 0008+0009）
+
+一行 = 一次课程层/新建领域层 LLM 探索运行（单表 JSON 方案，QED-040/041）。
+
+```sql
+CREATE TABLE qt_explore_runs (
+  run_id        VARCHAR(32)   NOT NULL,            -- PK，exp_ 前缀
+  scope         VARCHAR(16)   NOT NULL,            -- course / curriculum
+  course_id     VARCHAR(64)   NULL,                -- scope=course 必填；curriculum 为 NULL
+  domain_name   VARCHAR(100)  NULL,                -- scope=curriculum 必填；course 为 NULL
+  status        VARCHAR(24)   NOT NULL DEFAULT 'running',
+  params        JSON          NOT NULL,            -- {mode, ref_text?, ref_doc_path?}
+  proposals     JSON          NULL,                -- ready 后非空：Proposal[] 或 Change[]
+  adopted_ids   JSON          NOT NULL DEFAULT ('[]'),
+  conflicts     JSON          NULL,                -- apply 后：[{change_id, reason}]
+  skipped       JSON          NULL,                -- 重探跳过：[{change_id, reason}]（0009 新增）
+  error         JSON          NULL,                -- {code, message}
+  task_id       VARCHAR(32)   NULL,                -- 8901 内部任务 ID
+  meta          JSON          NULL,                -- LLM 审计快照
+  created_by    VARCHAR(16)   NOT NULL DEFAULT '',
+  created_at    DATETIME      NOT NULL,
+  updated_at    DATETIME      NOT NULL,
+  PRIMARY KEY (run_id),
+  KEY ix_qt_explore_runs_course (course_id),
+  KEY ix_qt_explore_runs_domain (domain_name),
+  KEY ix_qt_explore_runs_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+**状态机：** running → ready → adopted / discarded / applied / partially_applied；running → failed。
 
 ## 状态机汇总与迁移合法性
 
