@@ -1,0 +1,147 @@
+{
+  "qed_domain": {
+    "table": "领域表：按学科组织课程体系，一行一个学科，记录学科介绍与学习阶段划分",
+    "columns": {
+      "domain_id": "领域标识（主键）",
+      "name": "领域名称",
+      "description": "学科介绍",
+      "stages": "学习阶段顺序",
+      "created_by": "创建人",
+      "updated_by": "最后更新人",
+      "created_at": "创建时间",
+      "updated_at": "更新时间"
+    }
+  },
+  "qed_course": {
+    "table": "课程表：登记一门课程，记录课程名称、所属阶段、先修关系与学习顺序",
+    "columns": {
+      "course_id": "课程标识（主键）",
+      "domain_id": "所属领域",
+      "sort_order": "学习顺序",
+      "name": "课程名称",
+      "aliases": "别名列表",
+      "stage": "所属阶段（本科基础/本科进阶/研究生基础/QE冲刺）",
+      "prerequisites": "先修课程",
+      "related_targets": "已验收关联目标",
+      "note": "课程介绍",
+      "created_by": "创建人",
+      "updated_by": "最后更新人",
+      "created_at": "创建时间",
+      "updated_at": "更新时间"
+    }
+  },
+  "qt_knowledge": {
+    "table": "知识行表：登记一套教程或一组课程延展资料，承载教材/习题集简介与决定引用，指引资源检索",
+    "columns": {
+      "knowledge_id": "知识行标识（主键）",
+      "domain_id": "所属领域",
+      "course_id": "所属课程",
+      "kind": "类型（tutorial=教程套系；other_material=延展资料归类）",
+      "set_no": "套标记（1~4=中文套；en=英文套；空=无配套）",
+      "name": "名称",
+      "textbook_ref": "教材决定引用",
+      "exercise_ref": "习题集决定引用",
+      "textbook_intro": "教材简介",
+      "exercise_intro": "习题集简介",
+      "materials_intro": "延展资料简介",
+      "status": "状态（draft=探索中；confirmed=已定稿；completed=已完成；rejected=已否决；superseded=已替代）",
+      "reject_reason": "否决原因",
+      "supersede_reason": "替代原因",
+      "created_by": "创建人",
+      "updated_by": "最后更新人",
+      "created_at": "创建时间",
+      "confirmed_at": "定稿时间",
+      "completed_at": "完成时间",
+      "rejected_at": "否决时间",
+      "superseded_at": "替代时间",
+      "updated_at": "更新时间"
+    }
+  },
+  "qt_books": {
+    "table": "书行表：登记一册/一卷/一个快照，跟踪候选→决定→下载→验证的完整生命周期",
+    "columns": {
+      "book_id": "书行标识（主键）",
+      "knowledge_id": "所属知识行",
+      "kind": "类型（textbook=教材；exercise=习题集；supplement=补充；paper=论文；blog=博客；other=其他）",
+      "roles": "角色（textbook=教材；exercise=习题集；solutions=解答）",
+      "title": "书名（不含卷）",
+      "part": "卷标识（空=整本；第一册/上册/博文序号）",
+      "display_title": "展示名",
+      "file_name": "落盘文件名",
+      "authors": "作者",
+      "language": "语言",
+      "version": "版本信息",
+      "source": "候选来源方案",
+      "original_url": "原始来源链接",
+      "sha256": "文件哈希",
+      "relative_path": "相对数据根路径",
+      "absolute_path": "dataset 绝对路径",
+      "page_count": "页数",
+      "status": "状态（candidate=候选；decided=已决定；downloading=下载中；downloaded=已下载；verified=已验证；failed=失败；rejected=已否决；superseded=已替代）",
+      "reject_reason": "否决原因",
+      "rejected_by": "否决人",
+      "supersede_reason": "替代原因",
+      "review_note": "审理备注",
+      "created_by": "创建人",
+      "updated_by": "最后更新人",
+      "created_at": "创建时间",
+      "decided_at": "决定下载时间",
+      "downloaded_at": "下载完成时间",
+      "verified_at": "验证通过时间",
+      "rejected_at": "否决时间",
+      "superseded_at": "替代时间",
+      "updated_at": "更新时间"
+    }
+  },
+  "qt_sources": {
+    "table": "渠道表：记录为某本书尝试的下载渠道及成败，用于归因成功来源与评估渠道有效性",
+    "columns": {
+      "source_id": "渠道标识（主键）",
+      "book_id": "所属书行",
+      "channel": "渠道（manual=人工；internet_archive=互联网档案馆；open_library=开放图书馆；google_books=谷歌图书；libgen_li=图书馆链接）",
+      "provider_id": "提供方标识",
+      "page_url": "页面地址",
+      "download_url": "下载地址",
+      "file_keywords": "检索关键词",
+      "ok": "是否成功（1=成功；0=失败）",
+      "note": "备注",
+      "attempted_at": "尝试时间"
+    }
+  },
+  "qt_sources_legacy": {
+    "table": "渠道备份表：0006 迁移时保留的旧版渠道表快照，确认数据无误后可删除",
+    "columns": {
+      "source_id": "渠道标识（主键）",
+      "download_id": "所属下载记录（旧三表外键）",
+      "channel": "渠道（manual=人工；internet_archive=互联网档案馆；open_library=开放图书馆；google_books=谷歌图书；libgen_li=图书馆链接）",
+      "provider_id": "提供方标识",
+      "page_url": "页面地址",
+      "download_url": "下载地址",
+      "file_keywords": "检索关键词",
+      "ok": "是否成功（1=成功；0=失败）",
+      "note": "备注",
+      "attempted_at": "尝试时间"
+    }
+  },
+  "qt_explore_runs": {
+    "table": "探索运行表：一行 = 一次课程层/新建领域层 LLM 探索运行（QED-040/041，单表 JSON 方案）",
+    "columns": {
+      "run_id": "运行标识（主键，exp_ 前缀）",
+      "scope": "范围（course=课程层探索；curriculum=新建领域探索）",
+      "course_id": "课程标识（scope=course 必填；curriculum 为 NULL）",
+      "domain_name": "提议的新领域名（scope=curriculum 必填；course 为 NULL）",
+      "status": "状态（running=运行中；ready=待采纳；adopted=已采纳；discarded=已放弃；failed=失败；applied=已应用；partially_applied=部分应用）",
+      "params": "参数快照（mode/ref_text/ref_doc_path）",
+      "proposals": "推荐列表（ready 后非空：Proposal[] 或 Change[]；其余态 NULL 输出 []）",
+      "adopted_ids": "已采纳 proposal_id / 已应用 change_id",
+      "conflicts": "应用冲突清单（仅 curriculum apply 后）",
+      "skipped": "重探跳过清单 [{change_id, reason}]（domain_name 命中既有领域时）",
+      "error": "失败信息 {code, message}",
+      "task_id": "关联 8901 内部任务 ID",
+      "meta": "LLM 审计快照（model/calls/usage/response 哈希）",
+      "created_by": "创建人",
+      "created_at": "创建时间",
+      "updated_at": "最后更新时间"
+    }
+  }
+}

@@ -292,3 +292,262 @@ def test_adopt_run_builder_failure_rolls_back_everything(tmp_path):
         "builder 失败后 run 必须保持 ready"
     checking.close()
     engine.dispose()
+
+
+# =====================================================================
+# REQ-059 增补契约测试（Step 3）
+# =====================================================================
+
+# -------- R1/R2: GET /domains + PATCH /domains/{id} --------
+
+def test_get_domains_returns_all(env):
+    """GET /api/v1/domains 返回所有领域（插入序）。"""
+    client, _, _ = env
+    resp = client.get("/api/v1/domains")
+    assert resp.status_code == 200
+    domains = resp.json()
+    assert len(domains) >= 1
+    ids = [d["domain_id"] for d in domains]
+    assert "math" in ids
+
+
+def test_get_domains_empty(tmp_path):
+    """空库返回空列表。"""
+    engine = create_engine(f"sqlite:///{tmp_path / 'empty.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    settings = load_settings(data_root=tmp_path)
+    app = create_app(settings, knowledge_repository=KnowledgeRepository(lambda: factory()))
+    with TestClient(app) as c:
+        resp = c.get("/api/v1/domains")
+        assert resp.status_code == 200
+        assert resp.json() == []
+    engine.dispose()
+
+
+def test_patch_domain_updates_description_and_stages(env):
+    """PATCH 可改 description/stages，name 不可变。"""
+    client, _, _ = env
+    resp = client.patch("/api/v1/domains/math", json={"description": "新简介", "stages": ["A", "B"]})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["description"] == "新简介"
+    assert body["stages"] == ["A", "B"]
+    assert body["name"] == "数学"  # name 未变
+
+
+def test_patch_domain_empty_body_noop(env):
+    """空 body 返回当前对象，不修改任何字段。"""
+    client, _, _ = env
+    before = client.get("/api/v1/domains").json()
+    math_before = next(d for d in before if d["domain_id"] == "math")
+    resp = client.patch("/api/v1/domains/math", json={})
+    assert resp.status_code == 200
+    assert resp.json()["description"] == math_before["description"]
+    assert resp.json()["stages"] == math_before["stages"]
+
+
+def test_patch_domain_not_found(env):
+    client, _, _ = env
+    resp = client.patch("/api/v1/domains/nonexistent", json={"description": "x"})
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "DOMAIN_NOT_FOUND"
+
+
+# -------- R3: 重探语义（apply 分支） --------
+
+_CURRICULUM_PROPOSALS = [
+    {"change_id": "ch_000000000001", "action": "create_domain", "entity": "domain",
+     "target_id": "new_domain", "payload": {"name": "新领域", "description": "新领域描述", "stages": ["本科基础"]}},
+    {"change_id": "ch_000000000002", "action": "create_course", "entity": "course",
+     "target_id": "c_new_001", "payload": {"name": "实变函数", "stage": "本科进阶", "sort_order": 3}},
+]
+
+# 重探场景：domain name="数学" 命中已有领域
+_CURRICULUM_PROPOSALS_REEXPLORE = [
+    {"change_id": "ch_000000000001", "action": "create_domain", "entity": "domain",
+     "target_id": "math_new", "payload": {"name": "数学", "description": "重探", "stages": ["本科基础"]}},
+    {"change_id": "ch_000000000002", "action": "create_course", "entity": "course",
+     "target_id": "c_re_001", "payload": {"name": "实变函数", "stage": "本科进阶", "sort_order": 3}},
+]
+
+
+class FakeCurriculumWithProposals:
+    """返回固定 curriculum proposals 的 fake advisor（首次探索场景）。"""
+
+    def __init__(self, **kwargs):
+        pass
+
+    def propose(self, domain_name, *, mode, ref_text="", ref_doc_path=""):
+        GATE.wait(timeout=5)
+        return [dict(p) for p in _CURRICULUM_PROPOSALS]
+
+    def close(self):
+        pass
+
+    def metadata(self):
+        return {"model": "fake", "calls": 1}
+
+
+class FakeCurriculumReexplore:
+    """返回重探场景 proposals（domain name 命中已有领域）。"""
+
+    def __init__(self, **kwargs):
+        pass
+
+    def propose(self, domain_name, *, mode, ref_text="", ref_doc_path=""):
+        GATE.wait(timeout=5)
+        return [dict(p) for p in _CURRICULUM_PROPOSALS_REEXPLORE]
+
+    def close(self):
+        pass
+
+    def metadata(self):
+        return {"model": "fake", "calls": 1}
+
+
+def test_curriculum_apply_with_existing_domain_records_skipped(env, monkeypatch):
+    """重探：domain_name 命中既有领域 → create_domain 记 skipped，create_course 挂靠既有领域。"""
+    from qed_tracker.providers import explore_advisor
+    monkeypatch.setattr(explore_advisor, "CurriculumExploreAdvisor", FakeCurriculumReexplore)
+
+    client, _, er_repo = env
+    # 发起探索
+    resp = client.post("/api/v1/curriculum-explore", json={"domain_name": "数学", "mode": "direct"})
+    assert resp.status_code == 202
+    run_id = resp.json()["run_id"]
+    # 直接设 run 为 ready（跳过 background task 依赖）+ 注入 proposals
+    from qed_tracker.db.models import QtExploreRun
+    with er_repo._session_factory() as s:
+        row = s.get(QtExploreRun, run_id)
+        row.status = "ready"
+        row.proposals = [dict(p) for p in _CURRICULUM_PROPOSALS_REEXPLORE]
+        s.commit()
+
+    # apply：ch_000000000001 是 add_domain，name="数学" 命中已有领域 → skipped
+    apply_resp = client.post(f"/api/v1/curriculum-runs/{run_id}/apply",
+                             json={"selected": ["ch_000000000001", "ch_000000000002"]})
+    assert apply_resp.status_code == 200
+    body = apply_resp.json()
+    assert body["run"]["status"] == "applied"
+    assert body["conflicts"] == []
+    assert len(body["skipped"]) == 1
+    assert body["skipped"][0]["change_id"] == "ch_000000000001"
+
+
+def test_curriculum_apply_first_exploration_no_skipped(env, monkeypatch):
+    """首次探索：domain_name 不命中 → create_domain 正常执行，skipped 为空。"""
+    from qed_tracker.providers import explore_advisor
+    monkeypatch.setattr(explore_advisor, "CurriculumExploreAdvisor", FakeCurriculumWithProposals)
+
+    client, _, er_repo = env
+    resp = client.post("/api/v1/curriculum-explore", json={"domain_name": "概率论", "mode": "direct"})
+    assert resp.status_code == 202
+    run_id = resp.json()["run_id"]
+    # 直接设 run 为 ready + 注入 proposals
+    from qed_tracker.db.models import QtExploreRun
+    with er_repo._session_factory() as s:
+        row = s.get(QtExploreRun, run_id)
+        row.status = "ready"
+        row.proposals = [dict(p) for p in _CURRICULUM_PROPOSALS]
+        s.commit()
+
+    apply_resp = client.post(f"/api/v1/curriculum-runs/{run_id}/apply",
+                             json={"selected": ["ch_000000000001", "ch_000000000002"]})
+    assert apply_resp.status_code == 200
+    body = apply_resp.json()
+    assert body["run"]["status"] == "applied"
+    assert body["skipped"] == []
+
+
+# -------- 手工五端点（§11.3 字段口径） --------
+
+def test_post_domain_server_generated_id(env):
+    """POST /domains 服务端生成 domain_id，body 无需 domain_id。"""
+    client, _, _ = env
+    resp = client.post("/api/v1/domains", json={"name": "线性代数", "description": "线性空间", "stages": ["本科基础"]})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["domain_id"]  # 非空，服务端生成
+    assert body["name"] == "线性代数"
+    assert body["description"] == "线性空间"
+
+
+def test_post_domain_missing_name_422(env):
+    client, _, _ = env
+    resp = client.post("/api/v1/domains", json={})
+    assert resp.status_code == 422
+
+
+def test_post_domain_name_conflict_409(env):
+    client, _, _ = env
+    resp = client.post("/api/v1/domains", json={"name": "数学"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "DOMAIN_NAME_CONFLICT"
+
+
+def test_post_course_under_domain_server_generated_id(env):
+    """POST /domains/{id}/courses 服务端生成 course_id。"""
+    client, _, _ = env
+    resp = client.post("/api/v1/domains/math/courses",
+                       json={"name": "实变函数", "stage": "本科进阶", "sort_order": 3})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["course_id"]  # 非空
+    assert body["name"] == "实变函数"
+    assert body["domain_id"] == "math"
+
+
+def test_patch_course_only_stage_sort_note(env):
+    """PATCH /courses/{id} 只能改 stage/sort_order/note，name 不可变。"""
+    client, _, _ = env
+    resp = client.patch("/api/v1/courses/01_math_analysis",
+                        json={"stage": "本科进阶", "sort_order": 5, "note": "新介绍"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["stage"] == "本科进阶"
+    assert body["sort_order"] == 5
+    assert body["note"] == "新介绍"
+    assert body["name"] == "数学分析"  # name 未变
+
+
+def test_patch_course_not_found(env):
+    client, _, _ = env
+    resp = client.patch("/api/v1/courses/nonexistent", json={"stage": "x"})
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "COURSE_NOT_FOUND"
+
+
+def test_delete_course_guard_has_knowledge(env, monkeypatch):
+    """DELETE 有知识行的课程 → 409 COURSE_HAS_KNOWLEDGE。"""
+    client, kn_repo, _ = env
+    _seed_knowledge(kn_repo, set_no="1", status="draft")
+    resp = client.delete("/api/v1/courses/01_math_analysis")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "COURSE_HAS_KNOWLEDGE"
+
+
+def test_delete_course_not_found(env):
+    client, _, _ = env
+    resp = client.delete("/api/v1/courses/nonexistent")
+    assert resp.status_code == 404
+
+
+def test_delete_domain_guard_not_empty(env):
+    """DELETE 有课程的领域 → 409 DOMAIN_NOT_EMPTY。"""
+    client, _, _ = env
+    resp = client.delete("/api/v1/domains/math")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "DOMAIN_NOT_EMPTY"
+
+
+def test_delete_empty_domain_succeeds(env, monkeypatch):
+    """DELETE 空领域（无课程）→ 200。"""
+    client, _, _ = env
+    # 先建一个空领域
+    post_resp = client.post("/api/v1/domains", json={"name": "空领域"})
+    assert post_resp.status_code == 201
+    domain_id = post_resp.json()["domain_id"]
+    # 删掉
+    del_resp = client.delete(f"/api/v1/domains/{domain_id}")
+    assert del_resp.status_code == 200

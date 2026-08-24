@@ -26,6 +26,8 @@ from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key
 from qed_tracker.db.exploration_repository import InvalidRunState
 from qed_tracker.db.knowledge_repository import (
+    CourseHasKnowledge,
+    DomainNotEmpty,
     InvalidTransition,
     KnowledgeRepository,
     tutorial_name,
@@ -353,6 +355,7 @@ def create_app(
             "proposals": run.proposals or [],
             "adopted_proposal_ids": run.adopted_ids or [],
             "conflicts": run.conflicts,
+            "skipped": getattr(run, "skipped", None) or [],
             "error": run.error,
             "task_id": run.task_id,
             "meta": run.meta,
@@ -378,6 +381,123 @@ def create_app(
         if domain is None:
             raise HTTPException(status_code=404, detail=f"未知学科课程体系：{domain_id}")
         return _domain_view(repo, domain)
+
+    # ---------------- REQ-059: 领域管理五端点 ----------------
+
+    def _domain_view_flat(domain: QedDomain) -> dict[str, Any]:
+        return {
+            "domain_id": domain.domain_id,
+            "name": domain.name,
+            "description": domain.description,
+            "stages": domain.stages or [],
+        }
+
+    @fastapi_app.get("/api/v1/domains")
+    def list_domains() -> list[dict[str, Any]]:
+        repo = _kn(app)
+        return [_domain_view_flat(d) for d in repo.list_domains()]
+
+    @fastapi_app.patch("/api/v1/domains/{domain_id}")
+    def patch_domain(domain_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        repo = _kn(app)
+        try:
+            row = repo.update_domain(
+                domain_id,
+                description=payload.get("description"),
+                stages=payload.get("stages"),
+            )
+        except KeyError:
+            raise api_error(404, "DOMAIN_NOT_FOUND", f"领域不存在：{domain_id}") from None
+        return _domain_view_flat(row)
+
+    def _gen_domain_id(name: str) -> str:
+        """服务端 domain_id 生成：slug 直用，否则 d_<md5[:10]>。"""
+        slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+        if _SLUG_RE.match(slug):
+            return slug
+        import hashlib as _hl
+        return f"d_{_hl.md5(name.encode()).hexdigest()[:10]}"
+
+    def _gen_course_id(domain_id: str, name: str) -> str:
+        import hashlib as _hl
+        return f"c_{_hl.md5(f'{domain_id}:{name}'.encode()).hexdigest()[:10]}"
+
+    _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}$")
+
+    @fastapi_app.post("/api/v1/domains", status_code=201)
+    def create_domain(payload: dict[str, Any]) -> dict[str, Any]:
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            raise api_error(422, "INVALID_PARAMS", "name 不能为空")
+        repo = _kn(app)
+        # name 唯一性检查
+        for d in repo.list_domains():
+            if d.name == name:
+                raise api_error(409, "DOMAIN_NAME_CONFLICT", f"领域名已存在：{name}")
+        domain_id = _gen_domain_id(name)
+        row = repo.create_domain(
+            domain_id=domain_id,
+            name=name,
+            description=payload.get("description", ""),
+            stages=payload.get("stages", []),
+        )
+        return _domain_view_flat(row)
+
+    @fastapi_app.post("/api/v1/domains/{domain_id}/courses", status_code=201)
+    def create_course(domain_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            raise api_error(422, "INVALID_PARAMS", "name 不能为空")
+        repo = _kn(app)
+        domain = next((d for d in repo.list_domains() if d.domain_id == domain_id), None)
+        if domain is None:
+            raise api_error(404, "DOMAIN_NOT_FOUND", f"领域不存在：{domain_id}")
+        course_id = _gen_course_id(domain_id, name)
+        row = repo.create_course(
+            course_id=course_id,
+            domain_id=domain_id,
+            name=name,
+            stage=payload.get("stage", ""),
+            sort_order=payload.get("sort_order", 0),
+            note=payload.get("note", ""),
+        )
+        return row.to_dict()
+
+    @fastapi_app.patch("/api/v1/courses/{course_id}")
+    def patch_course(course_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        repo = _kn(app)
+        try:
+            row = repo.update_course(
+                course_id,
+                stage=payload.get("stage"),
+                sort_order=payload.get("sort_order"),
+                note=payload.get("note"),
+            )
+        except KeyError:
+            raise api_error(404, "COURSE_NOT_FOUND", f"课程不存在：{course_id}") from None
+        return row.to_dict()
+
+    @fastapi_app.delete("/api/v1/courses/{course_id}")
+    def delete_course(course_id: str) -> dict[str, str]:
+        repo = _kn(app)
+        try:
+            repo.delete_course(course_id)
+        except KeyError:
+            raise api_error(404, "COURSE_NOT_FOUND", f"课程不存在：{course_id}") from None
+        except CourseHasKnowledge as exc:
+            raise api_error(409, "COURSE_HAS_KNOWLEDGE", str(exc)) from None
+        return {"ok": "true"}
+
+    @fastapi_app.delete("/api/v1/domains/{domain_id}")
+    def delete_domain(domain_id: str) -> dict[str, str]:
+        repo = _kn(app)
+        try:
+            repo.delete_domain(domain_id)
+        except KeyError:
+            raise api_error(404, "DOMAIN_NOT_FOUND", f"领域不存在：{domain_id}") from None
+        except DomainNotEmpty as exc:
+            raise api_error(409, "DOMAIN_NOT_EMPTY", str(exc)) from None
+        return {"ok": "true"}
 
     def _book_transition(book_id: str, op) -> dict[str, Any]:
         repo = _kn(app)
@@ -855,7 +975,8 @@ def create_app(
         kn_repo = _kn(app)
         applied: list[dict[str, Any]] = []
         conflicts: list[dict[str, Any]] = []
-        applied_domain_id: str = ""
+        skipped: list[dict[str, Any]] = []
+        resolved_domain_id: str = ""  # create_domain 成功时的目标 id（供后续 create_course 使用）
         for sid in selected:
             proposal = next((p for p in proposals if p.get("change_id") == sid), None)
             action = proposal.get("action", "")
@@ -863,23 +984,25 @@ def create_app(
             target_id = proposal.get("target_id", "")
             payload_data = proposal.get("payload", {})
             if action == "create_domain" and entity == "domain":
-                # 幂等创建：已存在视为冲突
+                domain_name = payload_data.get("name", "")
+                # 重探分支（R3）：按 name 查已有领域 → skipped
                 existing_domain = None
                 for d in kn_repo.list_domains():
-                    if d.domain_id == target_id:
+                    if d.domain_id == target_id or d.name == domain_name:
                         existing_domain = d
                         break
                 if existing_domain is not None:
-                    conflicts.append({"change_id": sid, "reason": f"领域 id 已存在：{target_id}"})
+                    skipped.append({"change_id": sid, "reason": f"领域已存在：{existing_domain.name}"})
+                    resolved_domain_id = existing_domain.domain_id
                     continue
                 kn_repo.create_domain(
                     domain_id=target_id,
-                    name=payload_data.get("name", ""),
+                    name=domain_name,
                     description=payload_data.get("description", ""),
                     stages=payload_data.get("stages", []),
                 )
                 applied.append({"change_id": sid, "entity": "domain", "target_id": target_id})
-                applied_domain_id = target_id
+                resolved_domain_id = target_id
             elif action == "create_course" and entity == "course":
                 # 幂等创建：已存在视为冲突
                 existing_course = None
@@ -890,9 +1013,11 @@ def create_app(
                 if existing_course is not None:
                     conflicts.append({"change_id": sid, "reason": f"课程 id 已存在：{target_id}"})
                     continue
+                # create_course 挂靠 resolved_domain_id（重探时用已有领域）
+                domain_id = resolved_domain_id or target_id
                 kn_repo.create_course(
                     course_id=target_id,
-                    domain_id=applied_domain_id,
+                    domain_id=domain_id,
                     name=payload_data.get("name", ""),
                     stage=payload_data.get("stage", ""),
                     sort_order=payload_data.get("sort_order", 0),
@@ -903,10 +1028,12 @@ def create_app(
                 applied.append({"change_id": sid, "entity": "course", "target_id": target_id})
             else:
                 conflicts.append({"change_id": sid, "reason": f"不支持的操作：{action} {entity}"})
-        updated_run = repo.apply_run(run_id, applied_ids=[a["change_id"] for a in applied], conflicts=conflicts)
+        updated_run = repo.apply_run(run_id, applied_ids=[a["change_id"] for a in applied],
+                                     conflicts=conflicts, skipped=skipped)
         return {
             "applied": applied,
             "conflicts": conflicts,
+            "skipped": skipped,
             "run": _explore_run_view(updated_run),
         }
 

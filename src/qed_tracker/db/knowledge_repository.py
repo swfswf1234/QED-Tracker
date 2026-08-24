@@ -33,6 +33,14 @@ class InvalidTransition(RuntimeError):
     """状态机迁移非法。"""
 
 
+class DomainNotEmpty(RuntimeError):
+    """删除非空领域（仍有课程）。"""
+
+
+class CourseHasKnowledge(RuntimeError):
+    """删除有知识行的课程。"""
+
+
 _HIDDEN_KNOWLEDGE_STATUSES = {KnowledgeStatus.REJECTED.value, KnowledgeStatus.SUPERSEDED.value}
 _HIDDEN_BOOK_STATUSES = {BookStatus.REJECTED.value, BookStatus.SUPERSEDED.value}
 
@@ -172,6 +180,68 @@ class KnowledgeRepository:
             session.add(row)
             session.commit()
             return row
+
+    def update_domain(self, domain_id: str, *, description: str | None = None,
+                      stages: list[str] | None = None) -> QedDomain:
+        """更新领域（仅 description/stages；name 不可变）。"""
+        with self._session_factory() as session:
+            row = session.get(QedDomain, domain_id)
+            if row is None:
+                raise KeyError(f"领域不存在：{domain_id}")
+            if description is not None:
+                row.description = description
+            if stages is not None:
+                row.stages = stages
+            row.updated_at = utc_now()
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def update_course(self, course_id: str, *, stage: str | None = None,
+                      sort_order: int | None = None, note: str | None = None) -> QedCourse:
+        """更新课程（仅 stage/sort_order/note；name 不可变）。"""
+        with self._session_factory() as session:
+            row = session.get(QedCourse, course_id)
+            if row is None:
+                raise KeyError(f"课程不存在：{course_id}")
+            if stage is not None:
+                row.stage = stage
+            if sort_order is not None:
+                row.sort_order = sort_order
+            if note is not None:
+                row.note = note
+            row.updated_at = utc_now()
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def delete_course(self, course_id: str) -> None:
+        """删除课程：有知识行 → CourseHasKnowledge。"""
+        with self._session_factory() as session:
+            row = session.get(QedCourse, course_id)
+            if row is None:
+                raise KeyError(f"课程不存在：{course_id}")
+            kn_count = session.scalar(
+                select(func.count()).select_from(QtKnowledge).where(QtKnowledge.course_id == course_id)
+            )
+            if kn_count:
+                raise CourseHasKnowledge(f"课程 {course_id} 仍有 {kn_count} 条知识行，禁止删除")
+            session.delete(row)
+            session.commit()
+
+    def delete_domain(self, domain_id: str) -> None:
+        """删除领域：有课程 → DomainNotEmpty。"""
+        with self._session_factory() as session:
+            row = session.get(QedDomain, domain_id)
+            if row is None:
+                raise KeyError(f"领域不存在：{domain_id}")
+            course_count = session.scalar(
+                select(func.count()).select_from(QedCourse).where(QedCourse.domain_id == domain_id)
+            )
+            if course_count:
+                raise DomainNotEmpty(f"领域 {domain_id} 仍有 {course_count} 门课程，禁止删除")
+            session.delete(row)
+            session.commit()
 
     # ---------------- qt_knowledge ----------------
 

@@ -80,7 +80,7 @@ def test_qt_explore_runs_table_shape() -> None:
     columns = {c.name for c in table.columns}
     assert columns == {
         "run_id", "scope", "course_id", "domain_name", "status", "params",
-        "proposals", "adopted_ids", "conflicts", "error", "task_id", "meta",
+        "proposals", "adopted_ids", "conflicts", "skipped", "error", "task_id", "meta",
         "created_by", "created_at", "updated_at",
     }
     indexes = {ix.name for ix in table.indexes}

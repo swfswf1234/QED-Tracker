@@ -170,14 +170,16 @@ class ExplorationRepository:
             raise
 
     def apply_run(
-        self, run_id: str, *, applied_ids: list[str], conflicts: list[dict[str, Any]]
+        self, run_id: str, *, applied_ids: list[str], conflicts: list[dict[str, Any]],
+        skipped: list[dict[str, Any]] | None = None,
     ) -> QtExploreRun:
-        """应用课程体系变更：全成功 applied / 有冲突 partially_applied（冲突清单随行记录）。"""
+        """应用课程体系变更：全成功 applied / 有冲突 partially_applied（冲突/跳过清单随行记录）。"""
         target = ExploreRunStatus.PARTIALLY_APPLIED if conflicts else ExploreRunStatus.APPLIED
         existing = self.get_run(run_id)
         merged = [*(existing.adopted_ids if existing else []), *applied_ids]
         return self._transition(
             run_id, (ExploreRunStatus.READY,), target, adopted_ids=merged, conflicts=conflicts,
+            skipped=skipped or [],
         )
 
     def attach_task(self, run_id: str, task_id: str) -> QtExploreRun:

@@ -279,6 +279,9 @@ class QtExploreRun(Base):
     conflicts: Mapped[list[Any] | None] = mapped_column(
         JSON, nullable=True, comment="应用冲突清单 [{change_id, reason}]（仅 curriculum apply 后）"
     )
+    skipped: Mapped[list[Any] | None] = mapped_column(
+        JSON, nullable=True, comment="重探跳过清单 [{change_id, reason}]（domain_name 命中既有领域时）"
+    )
     error: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="失败信息 {code, message}")
     task_id: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="关联 8901 内部任务 ID")
     meta: Mapped[dict[str, Any] | None] = mapped_column(
