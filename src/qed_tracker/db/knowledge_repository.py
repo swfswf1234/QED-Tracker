@@ -94,6 +94,11 @@ class KnowledgeRepository:
     def __init__(self, session_factory: Callable[[], Session]):
         self._session_factory = session_factory
 
+    @property
+    def session_factory(self) -> Callable[[], Session]:
+        """公开只读访问：探索域组合操作需与知识行共享同一事务工厂。"""
+        return self._session_factory
+
     # ---------------- 共享表只读（qed_domain / qed_course 所有权在建表与种子脚本） ----------------
 
     def list_domains(self) -> list[QedDomain]:
@@ -200,6 +205,25 @@ class KnowledgeRepository:
                 session.add(row)
             session.commit()
             return row
+
+    @staticmethod
+    def build_tutorial_row(
+        *, domain_id: str, course_id: str, set_no: str = "", name: str = ""
+    ) -> QtKnowledge:
+        """构造未落库的 draft 教程行：探索采纳单事务复用（id 规则与 create_knowledge 一致）。"""
+        row = QtKnowledge(
+            knowledge_id=_id("kn", domain_id, course_id, "tutorial", set_no, name),
+            domain_id=domain_id,
+            course_id=course_id,
+            kind="tutorial",
+            set_no=set_no,
+            name=name,
+            textbook_intro="",
+            exercise_intro="",
+            materials_intro="",
+        )
+        _touch(row, created=True)
+        return row
 
     def list_knowledge(
         self,

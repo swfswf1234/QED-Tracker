@@ -136,12 +136,29 @@ class ExplorationRepository:
     def finish_failed(self, run_id: str, *, error: dict[str, Any]) -> QtExploreRun:
         return self._transition(run_id, (ExploreRunStatus.RUNNING,), ExploreRunStatus.FAILED, error=error)
 
-    def adopt_run(self, run_id: str, *, adopted_ids: list[str]) -> QtExploreRun:
-        existing = self.get_run(run_id)
-        merged = [*(existing.adopted_ids if existing else []), *adopted_ids]
-        return self._transition(
-            run_id, (ExploreRunStatus.READY,), ExploreRunStatus.ADOPTED, adopted_ids=merged,
-        )
+    def adopt_run(
+        self, run_id: str, *, adopted_ids: list[str], knowledge_builder=None
+    ) -> QtExploreRun:
+        """ready→adopted（A1 单事务裁决）。
+
+        knowledge_builder(session) 在与 run 迁移相同的事务内落知识行：
+        任一失败整体回滚（无孤儿知识行，run 保持 ready）。
+        """
+        with self._session_factory() as session:
+            row = session.get(QtExploreRun, run_id)
+            if row is None:
+                raise KeyError(f"探索运行不存在:{run_id}")
+            if ExploreRunStatus(row.status) is not ExploreRunStatus.READY:
+                raise InvalidRunState(f"运行状态 {row.status} 不允许采纳（需 ready）")
+            if knowledge_builder is not None:
+                knowledge_builder(session)
+            merged = [*(row.adopted_ids or []), *adopted_ids]
+            row.status = ExploreRunStatus.ADOPTED.value
+            row.adopted_ids = merged
+            row.updated_at = _utc_now()
+            session.commit()
+            session.refresh(row)
+            return row
 
     def discard_run(self, run_id: str) -> QtExploreRun:
         try:

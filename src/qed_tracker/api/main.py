@@ -24,7 +24,12 @@ from qed_tracker.application import BookService, ResourceService
 from qed_tracker.application.papers import PaperService
 from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key
-from qed_tracker.db.knowledge_repository import InvalidTransition, KnowledgeRepository, tutorial_name
+from qed_tracker.db.exploration_repository import InvalidRunState
+from qed_tracker.db.knowledge_repository import (
+    InvalidTransition,
+    KnowledgeRepository,
+    tutorial_name,
+)
 from qed_tracker.db.models import QedDomain
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
@@ -72,16 +77,19 @@ class Application:
         self._db_engine = None
         self._knowledge_repository = knowledge_repository
         self._exploration_repository = None
-        if settings.db_configured:
+        # 会话工厂来源：优先复用注入 repo 的工厂（测试 SQLite 路径），
+        # 否则凭据齐备时自建 MySQL engine——两表域操作必须共享同一事务边界。
+        factory = knowledge_repository.session_factory if knowledge_repository is not None else None
+        if factory is None and settings.db_configured:
             from qed_tracker.database import create_engine_for, session_factory
 
-            if self._db_engine is None:
-                self._db_engine = create_engine_for(settings)
-            if self._knowledge_repository is None:
-                self._knowledge_repository = KnowledgeRepository(session_factory(self._db_engine))
+            self._db_engine = create_engine_for(settings)
+            factory = session_factory(self._db_engine)
+            self._knowledge_repository = KnowledgeRepository(factory)
+        if factory is not None:
             from qed_tracker.db.exploration_repository import ExplorationRepository
 
-            self._exploration_repository = ExplorationRepository(session_factory(self._db_engine))
+            self._exploration_repository = ExplorationRepository(factory)
         if advisor is None and settings.llm_configured:
             advisor = BailianBookAdvisor(
                 api_key=llm_api_key(),
@@ -616,11 +624,16 @@ def create_app(
 
     @fastapi_app.post("/api/v1/courses/{course_id}/explore", status_code=202)
     def course_explore(course_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        # 校验序列（契约冻结）：400 → 404 → 409 CAPACITY_REACHED → 409 COURSE_LOCKED
+        # → running 幂等查重（返回既有 run + deduplicated）→ 入队 202。
         mode = str(payload.get("mode", "")).strip()
         if mode not in ("direct", "text", "doc"):
             raise api_error(400, "INVALID_PARAMS", "mode 必须为 direct/text/doc")
-        if mode == "text" and not str(payload.get("ref_text", "")).strip():
+        ref_text = payload.get("ref_text", "")
+        if mode == "text" and not str(ref_text).strip():
             raise api_error(400, "INVALID_PARAMS", "mode=text 需要非空 ref_text")
+        if len(str(ref_text)) > 10000:
+            raise api_error(400, "INVALID_PARAMS", "ref_text 超长（≤10000 字符）")
         if mode == "doc":
             ref_doc = str(payload.get("ref_doc_path", "")).strip()
             if not ref_doc:
@@ -637,12 +650,27 @@ def create_app(
                 break
         if course is None:
             raise api_error(404, "COURSE_NOT_FOUND", f"课程不存在：{course_id}")
+        tutorial_rows = kn_repo.list_knowledge(course_id=course_id, kind="tutorial")
+        active_count = sum(1 for k in tutorial_rows if k.status in ("draft", "confirmed", "completed"))
+        completed_count = sum(1 for k in tutorial_rows if k.status == "completed")
+        if active_count >= 4:
+            raise api_error(409, "CAPACITY_REACHED",
+                            f"课程最多 4 套教程，已 {active_count}，拒绝新建探索")
+        if completed_count >= 2:
+            raise api_error(409, "COURSE_LOCKED",
+                            f"该课程已有 {completed_count} 套教程完成审核，停止自动加入新教程")
         repo = _er()
-        if repo.find_running("course", course_id) is not None:
-            raise api_error(409, "COURSE_EXPLORATION_IN_PROGRESS", f"课程 {course_id} 已有运行中的探索")
+        running = repo.find_running("course", course_id)
+        if running is not None:
+            return {
+                "run_id": running.run_id,
+                "task_id": running.task_id,
+                "status": running.status,
+                "deduplicated": True,
+            }
         run = repo.create_run(
             "course",
-            params={"mode": mode, "ref_text": payload.get("ref_text", ""), "ref_doc_path": payload.get("ref_doc_path", "")},
+            params={"mode": mode, "ref_text": ref_text, "ref_doc_path": payload.get("ref_doc_path", "")},
             course_id=course_id,
         )
         record = manager.submit("explore_course", {"run_id": run.run_id})
@@ -672,8 +700,11 @@ def create_app(
         if run.status != "ready":
             raise api_error(409, "RUN_STATE_CONFLICT", f"运行状态 {run.status} 不允许采纳（需 ready）")
         selected = payload.get("selected", [])
+        if not isinstance(selected, list) or not selected:
+            raise api_error(400, "INVALID_PARAMS", "selected 必须是非空数组")
         proposals = run.proposals or []
-        proposal_ids = {p.get("id") or p.get("proposal_id") or p.get("set_no") for p in proposals}
+        # proposal_id 严格匹配（服务端生成 pp_ 前缀），不接受任何兜底别名
+        proposal_ids = {p.get("proposal_id") for p in proposals}
         for sid in selected:
             if sid not in proposal_ids:
                 raise api_error(400, "INVALID_PARAMS", f"proposal {sid} 不存在于推荐列表")
@@ -685,6 +716,8 @@ def create_app(
         remaining = 4 - tutorial_count
         if len(selected) > remaining:
             raise api_error(409, "CAPACITY_REACHED", f"课程最多 4 套教程，已 {tutorial_count}，本次最多 {remaining}")
+        selected_set = set(selected)
+        selected_proposals = [p for p in proposals if p.get("proposal_id") in selected_set]
         # 从课程行获取 domain_id（不依赖 course_id 字符串解析）
         course_row = None
         for c in kn_repo.list_courses():
@@ -692,26 +725,30 @@ def create_app(
                 course_row = c
                 break
         domain_id = course_row.domain_id if course_row else "math"
-        adopted = []
-        for sid in selected:
-            proposal = next((p for p in proposals if p.get("proposal_id") == sid), None)
-            if proposal is None:
-                raise api_error(400, "INVALID_PARAMS", f"未知 proposal_id：{sid}")
-            title = proposal.get("textbook", {}).get("title", "") if proposal else ""
-            authors = proposal.get("textbook", {}).get("authors", []) if proposal else []
-            set_no = proposal.get("set_no", "") if proposal else ""
-            try:
-                kn = kn_repo.create_knowledge(
+        adopted: list[dict[str, Any]] = []
+
+        def _builder(db_session) -> None:
+            """A1 单事务：知识行与 run 迁移同 session，任一失败整体回滚。"""
+            for proposal in selected_proposals:
+                textbook = proposal.get("textbook") or {}
+                set_no = str(proposal.get("set_no", "") or "")
+                row = KnowledgeRepository.build_tutorial_row(
                     domain_id=domain_id,
                     course_id=run.course_id,
-                    kind="tutorial",
                     set_no=set_no,
-                    name=tutorial_name(set_no, title, authors),
+                    name=tutorial_name(set_no, str(textbook.get("title", "")), textbook.get("authors", [])),
                 )
-            except Exception as exc:
-                raise api_error(500, "KNOWLEDGE_CREATE_FAILED", f"创建知识行失败：{exc}") from exc
-            adopted.append({"knowledge_id": kn.knowledge_id, "set_name": proposal.get("set_name", "")})
-        updated_run = repo.adopt_run(run_id, adopted_ids=[a["knowledge_id"] for a in adopted])
+                db_session.add(row)
+                adopted.append({"knowledge_id": row.knowledge_id,
+                                "set_name": proposal.get("set_name", "")})
+
+        try:
+            updated_run = repo.adopt_run(run_id, adopted_ids=[a["knowledge_id"] for a in adopted],
+                                         knowledge_builder=_builder)
+        except InvalidRunState as exc:
+            raise api_error(409, "RUN_STATE_CONFLICT", str(exc)) from exc
+        except Exception as exc:
+            raise api_error(500, "KNOWLEDGE_CREATE_FAILED", f"创建知识行失败：{exc}") from exc
         return {
             "adopted": adopted,
             "remaining_slots": remaining - len(selected),
@@ -770,8 +807,14 @@ def create_app(
             if not Path(ref_doc).is_file():
                 raise api_error(400, "INVALID_PARAMS", f"ref_doc_path 不可读：{ref_doc}")
         repo = _er()
-        if repo.find_running("curriculum", domain_name) is not None:
-            raise api_error(409, "CURRICULUM_EXPLORATION_IN_PROGRESS", f"领域 {domain_name} 已有运行中的探索")
+        running = repo.find_running("curriculum", domain_name)
+        if running is not None:
+            return {
+                "run_id": running.run_id,
+                "task_id": running.task_id,
+                "status": running.status,
+                "deduplicated": True,
+            }
         run = repo.create_run(
             "curriculum",
             domain_name=domain_name,
