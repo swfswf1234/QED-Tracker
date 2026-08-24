@@ -1,7 +1,7 @@
-# 探索 API 承接设计（根仓库 REQ-055/056，契约已冻结）
+# 探索 API 承接设计（根仓库 REQ-055/056，契约已冻结；含 REQ-059 增补）
 
 状态：Accepted
-最后更新：2026-08-23
+最后更新：2026-08-24
 关联代码：`src/qed_tracker/api/main.py`、`src/qed_tracker/db/models.py`（承接时落位）
 关联测试：`tests/test_api.py`、`tests/test_knowledge_api.py`（扩展面）
 
@@ -64,3 +64,37 @@
 
 评审顺序：数据库 → API → LLM agent（依赖关系决定）；上游契约（根仓库 §0~8 冻结版）
 不因详规重开，详规只细化本仓库内部实现。
+
+## REQ-059 增补（2026-08-24 需求方 QED-Engine 登记，待本仓库评审确认）
+
+### 背景
+
+QED-Engine 下载管理左树交互 v2 落地（全弹窗探索流 + 手工维护与探索解耦，2026-08-24
+用户裁决）：树数据源切换为真实领域课程体系（GET /courses，QED-033 已上线），手工
+「添加领域/新增课程/修改/删除」成为独立入口。消费侧已完成：8900 透传路由上线
+（含本文档 §2.2 未列的 GET /domains、PATCH /domains/{id} 等），上游未实现端点按 404
+优雅降级。以下增补经根仓库用户评审批准，登记至本仓库走评审流程。
+
+### 范围增补（并入 QED-041）
+
+| # | 增补项 | 类型 | 说明 |
+| --- | --- | --- | --- |
+| R1 | `GET /api/v1/domains` | 新端点 | 只读领域列表（`[{domain_id,name,description,stages,…}]`），树第一层备用数据源与管理视图基础 |
+| R2 | `PATCH /api/v1/domains/{domain_id}` | 新端点 | 仅 `description`/`stages` 可改；`name` 锁死不入请求体；空 body 视为 no-op |
+| R3 | 重探语义：apply 对「目标领域已存在」的 create_domain 条目跳过标记 | 行为变更 | 取代 DOMAIN_NAME_CONFLICT 冲突路径；详细行为定义见 [API 详规 §11](2026-08-exploration-api-design.md) |
+
+### 字段口径差异（需求方请求，相对 §2.2 与 API 详规 §8 表）
+
+- `POST /domains`：**domain_id 由服务端生成**，请求体 `{name, description?, stages?}`。
+- `POST /domains/{id}/courses`：**course_id 由服务端生成**，请求体 `{name, stage?, sort_order?, note?}`。
+- `PATCH /courses/{id}`：仅 `stage`/`sort_order`/`note` 可改（`name` 一并锁死，较决策点 A3 更严）。
+- 删除防护错误码建议：`DOMAIN_NOT_EMPTY`（域下有课程行）、`COURSE_HAS_KNOWLEDGE`
+  （课下有非终态知识行）——命名本仓库可调，回执根仓库备案即可。
+
+### 验收标准增补（并入 QED-041 成功标准）
+
+- 契约测试覆盖 R1/R2 正常流与 `404 DOMAIN_NOT_FOUND`；
+- apply 重探分支：已存在领域 + create_domain/create_course 混合勾选 → create_domain 记入
+  skipped（响应与 run 增加 `skipped: [{change_id, reason}]`，平行于 conflicts；结构如本仓库
+  另有更优形态，回执时备案、前端随回执适配），create_course 正常落库，run→applied；
+- 回执根仓库 REQ-059（提交号 + 测试输出）。

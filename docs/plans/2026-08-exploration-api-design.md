@@ -1,7 +1,7 @@
 # 探索 API 本地实现详规（QED-040/041 · API 线）
 
-状态：Draft（待用户评审）
-最后更新：2026-08-23
+状态：Draft（待用户评审；§11 为 REQ-059 需求方输入，一并待评）
+最后更新：2026-08-24
 关联计划：[承接设计与详规拆分](2026-08-exploration-api-adoption.md)、[数据库线详规](2026-08-exploration-db-design.md)（Accepted）
 上游契约：根仓库 `docs/plans/2026-08-arch019-exploration-api.md` §0~8（冻结，本文不重写契约语义，只落本仓库实现细节）
 
@@ -282,6 +282,50 @@ stage 校验基准【本地已定】：取值必须 ∈ 所属领域 qed_domain.
 - 用例矩阵：§1~§8 全端点正常流；三类 409；幂等 deduplicated；adopt 强校验与未知 id；
   discard 幂等；孤儿 running 双分支兜底；apply applied/partially_applied 双分支；
   手工端点两类 409 + stage 校验；错误结构 detail.code/message 断言。
+
+## 11. REQ-059 增补需求（2026-08-24 需求方输入，评审确认后并入 §6~§8）
+
+> 登记来源：QED-Engine REQ-059（下载管理左树 v2 + 手工维护解耦，2026-08-24 用户裁决）。
+> 本章为**需求方输入的增量契约**，不改动上方已定正文；评审通过后由本仓库并入对应章节
+> 并同步根仓库冻结契约修订版。
+
+### 11.1 新端点
+
+| 方法/路径 | 输入 | 成功输出 | 错误 |
+| --- | --- | --- | --- |
+| GET /api/v1/domains | 无 | `qed_domain` 全行 to_dict 数组 `[{domain_id,name,description,stages,…}]`（插入序） | — |
+| PATCH /api/v1/domains/{domain_id} | body `{description?, stages?}`；空 body = no-op 返回当前对象；name 不在可改集 | 更新后领域对象 to_dict | 404 DOMAIN_NOT_FOUND |
+
+### 11.2 重探行为定义（§7 apply 增补分支）
+
+- 发起（§6 POST /curriculum-explore）**维持冻结契约不变**：不校验 domain_name 重名，
+  重名处理收敛到 apply。
+- apply 时目标领域解析：`params.domain_name` 匹配既有 qed_domain（name 或提议 id 命中）：
+  - **命中（重探）**：create_domain 条目不执行、不计冲突，记入响应与 run 的新增字段
+    `"skipped": [{ "change_id": "ch_01", "reason": "领域已存在：高等数学" }]`
+    （平行于 conflicts；run 同步持久化 skipped）；全部 create_course 挂靠该既有领域
+    （target 领域 = 解析命中行），仅当课程级变更全成功 → run→applied；
+  - 未命中（初探）：行为同现正文，create_domain 正常执行。
+- create_course 目标 course_id 已存在 → **维持冲突路径**（COURSE_ALREADY_EXISTS/conflicts），
+  不静默覆盖、不跳过。
+- 兼容性说明：skipped 为新增可选输出字段，旧消费方按「无该字段=无跳过」读取不受影响；
+  QED-Engine 前端将随回执适配展示「N 项已存在跳过」。
+
+### 11.3 字段口径差异（相对 §8 表，需求方请求项）
+
+| 端点 | §8 表现状 | REQ-059 请求口径 |
+| --- | --- | --- |
+| POST /domains | domain_id 必填（请求体生成） | **domain_id 服务端生成（slug）不入请求体**；body `{name, description?, stages?}` |
+| POST /domains/{id}/courses | course_id/sort_order 必填 | **course_id 服务端生成**；body `{name, stage?, sort_order?, note?}` 全可选除 name |
+| PATCH /courses/{id} | name/stage/sort_order/prerequisites/aliases/note 可改（A3 仅锁归属） | **仅 stage/sort_order/note 可改（name 一并锁死）** |
+| DELETE 防护码 | 未定名 | 建议 `DOMAIN_NOT_EMPTY` / `COURSE_HAS_KNOWLEDGE`（命名本仓库定夺，回执备案） |
+
+### 11.4 测试用例增补建议（并入 §10 矩阵)
+
+- R1/R2 正常流 + PATCH 空 body no-op + 404 分支；
+- 重探三分支：①已存在领域+混合勾选 → skipped 落 run 且 create_course 挂靠既有领域；
+  ②不存在领域 → 行为与现契约一致；③create_course 重名 → conflicts 路径不变；
+- 手工五端点按 11.3 新口径的全量回归（含 name 缺省 422、删除防护两类 409 新码名）。
 
 ## 决策点汇总（请逐条确认）
 
