@@ -26,9 +26,9 @@ python -m pip install -e ".[dev]"
 
 ## 分支与提交
 
-- `release` 用于日常开发，较大改动从它派生 `feat/*`。
-- 发布候选从 `release` 合入 `main`。
-- `main` 上的修复发布后必须同步回 `release`。
+- `develop` 用于日常开发，较大改动从它派生 `feat/*`。
+- 发布候选从 `develop` 合入 `main`。
+- `main` 上的修复发布后必须同步回 `develop`。
 - 提交保持单一目的，不回滚无关用户改动；过程由 Git 记录，不新增逐日 worklog。
 
 ## 实现约束
