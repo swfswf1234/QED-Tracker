@@ -17,7 +17,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | ② 数据查询 | 只读查询课程体系、知识行、书行、渠道、目录、资源 | 7 |
 | ③ 资源生命周期操作 | 状态迁移、创建、登记、任务提交 | 16 |
 | ④ LLM 检索课程教程·选书业务 | 教材/论文候选搜索 | 2 |
-| ⑤ 探索域 | 课程层/新建领域层 LLM 探索 + 手工维护 | 13 |
+| ⑤ 探索域 | 课程层/新建领域层 LLM 探索 + 手工维护 + prompt 优化评估 | 14 |
 
 只读查询同步返回；写操作提交后台任务（并发上限 2）或执行轻量状态迁移（同步）。
 
@@ -378,6 +378,21 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 #### `DELETE /api/v1/domains/{domain_id}`
 
 删除领域。**守卫：** 有课程 → 409 DOMAIN_NOT_EMPTY。
+
+### prompt 优化评估（QED-043，评估模式）
+
+#### `POST /api/v1/prompt-explores/dry-run`
+
+领域知识探索**评估模式**（同步执行，非 202）：不走正式流程——不写 `qt_prompt_runs`、
+不入任务队列；唯一痕迹是 `qed_llm_calls` 的 LLM 日志（`prompt_template=domain-explore/<step>@v1`）。
+
+**body：** `{domain_name 必填, scope_hint?（默认本科-硕士）, mode? direct/text/doc 默认 direct, ref_text?, ref_doc_path?}`
+
+**返回：** `{"dry_run": true, "report": {domain, directions, courses, path(含 graph_td)}, "calls": [{step, template_id, duration_ms}]}`
+
+**错误：** 400 INVALID_PARAMS（参数/doc 文件不可读）→ 409 LLM_UNAVAILABLE（未配置 API_KEY）→ 502 LLM_UNAVAILABLE/BUDGET_EXHAUSTED（模型调用失败）。
+
+模板事实源：`src/qed_tracker/prompt_lab/templates.py`（学科中立守护见 tests/test_prompt_lab.py）。
 
 ## 错误码
 
