@@ -36,6 +36,8 @@ from qed_tracker.db.models import QedDomain
 from qed_tracker.downloader import DownloadManager
 from qed_tracker.inventory import Inventory
 from qed_tracker.models import Candidate
+from qed_tracker.prompt_lab.pipeline import DomainPipeline, NameConfirmationRequired, PipelineError
+from qed_tracker.prompt_lab.templates import DEFAULT_SCOPE
 from qed_tracker.providers import ArxivProvider, create_book_providers
 from qed_tracker.providers.book_advisor import BailianBookAdvisor
 
@@ -1040,6 +1042,43 @@ def create_app(
     @fastapi_app.get("/api/v1/tasks")
     def tasks() -> list[dict[str, Any]]:
         return [record.to_dict() for record in manager.list()]
+
+    # ---------------- prompt 优化 dry-run 端点（QED-043 评估模式） ----------------
+    # 不走正式流程：不写 qt_prompt_runs、不入任务队列；唯一痕迹是 qed_llm_calls 的 LLM 日志。
+
+    @fastapi_app.post("/api/v1/prompt-explores/dry-run")
+    def prompt_explore_dry_run(payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        domain_name = str(payload.get("domain_name", "")).strip()
+        if not domain_name or len(domain_name) > 100:
+            raise api_error(400, "INVALID_PARAMS", "domain_name 非空且长度 ≤100")
+        mode = str(payload.get("mode", "")).strip() or "direct"
+        if mode not in ("direct", "text", "doc"):
+            raise api_error(400, "INVALID_PARAMS", "mode 必须为 direct/text/doc")
+        if settings.api_select != "qed-engine" and not llm_api_key():
+            raise api_error(409, "LLM_UNAVAILABLE", "未配置 API_KEY：dry-run 需要 LLM（可在 .env 提供）")
+        scope_hint = str(payload.get("scope_hint", "")).strip() or DEFAULT_SCOPE
+        try:
+            pipeline = DomainPipeline(**_advisor_kwargs())
+        except Exception as exc:  # noqa: BLE001 - 初始化失败统一映射
+            raise api_error(409, "LLM_UNAVAILABLE", f"管线初始化失败：{exc}") from exc
+        try:
+            report = pipeline.explore(
+                domain_name,
+                scope_hint=scope_hint,
+                mode=mode,
+                ref_text=str(payload.get("ref_text", "")),
+                ref_doc_path=str(payload.get("ref_doc_path", "")),
+                confirm_name_override=str(payload.get("confirm_name_override", "")).strip(),
+            )
+        except NameConfirmationRequired as exc:
+            # P12 阶段一：评估期直接返回标记，人工确认后以规范名重新发起
+            return {"dry_run": True, "confirmation_required": True, "name_check": exc.name_check}
+        except PipelineError as exc:
+            status_code = 400 if exc.code == "INVALID_PARAMS" else 502
+            raise api_error(status_code, exc.code, str(exc)) from exc
+        finally:
+            pipeline.close()
+        return {"dry_run": True, "confirmation_required": False, "report": report, "calls": list(pipeline.step_calls)}
 
     @fastapi_app.get("/api/v1/tasks/{task_id}")
     def task_detail(task_id: str) -> dict[str, Any]:
