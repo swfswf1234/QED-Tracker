@@ -53,6 +53,30 @@ class ExploreRunStatus(StrEnum):
     PARTIALLY_APPLIED = "partially_applied"
 
 
+class PromptRunTask(StrEnum):
+    """qt_prompt_runs 探索任务域：领域知识探索 / 课程知识探索（QED-043）。"""
+
+    DOMAIN = "domain_explore"
+    COURSE = "course_explore"
+
+
+class PromptRunStatus(StrEnum):
+    """qt_prompt_runs 运行状态机：running → ready → applied；failed 可重试新建。"""
+
+    RUNNING = "running"
+    READY = "ready"
+    APPLIED = "applied"
+    FAILED = "failed"
+
+
+class PromptRunReview(StrEnum):
+    """qt_prompt_runs.run 级审核态（调用级审核在 qed_llm_calls，REQ-060 落地后迁回）。"""
+
+    UNREVIEWED = "unreviewed"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -288,6 +312,56 @@ class QtExploreRun(Base):
         JSON, nullable=True, comment="LLM 审计快照（model/calls/usage/response 哈希）"
     )
     created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="web", comment="创建人")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="最后更新时间")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+
+
+class QtPromptRun(Base):
+    """qt_prompt_runs prompt 优化探索运行（私有，QED-043）：一行 = 一次领域/课程知识探索。
+
+    调用明细（模板编号/问句/回答）在共享表 qed_llm_calls（按 prompt_template 关联）；
+    本表只存参数快照、状态机、聚合报告与审核态。
+    """
+
+    __tablename__ = "qt_prompt_runs"
+    __table_args__ = (
+        Index("ix_qt_prompt_runs_task", "task"),
+        Index("ix_qt_prompt_runs_status", "status"),
+        Index("ix_qt_prompt_runs_subject", "subject"),
+        {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
+    )
+
+    run_id: Mapped[str] = mapped_column(String(32), primary_key=True, comment="运行标识（主键，prd_ 前缀）")
+    task: Mapped[str] = mapped_column(
+        String(16), nullable=False, comment="任务（domain_explore=领域知识探索；course_explore=课程知识探索）"
+    )
+    subject: Mapped[str] = mapped_column(
+        String(100), nullable=False, comment="探索对象（领域名或课程 id）"
+    )
+    scope_hint: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", comment="默认范围说明（如 本科-硕士）"
+    )
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, comment="参数快照（mode/ref_text/ref_doc_path）")
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=PromptRunStatus.RUNNING.value,
+        comment="状态（running=运行中；ready=待审核；applied=已应用；failed=失败）",
+    )
+    report: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True, comment="聚合报告（ready 后非空：领域/课程探索报告）"
+    )
+    review_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=PromptRunReview.UNREVIEWED.value,
+        comment="run 级审核态（unreviewed/approved/rejected）",
+    )
+    calls_review: Mapped[list[Any]] = mapped_column(
+        JSON, nullable=False, default=list,
+        comment="REQ-060 落地前的调用级审核过渡存储：[{template_id, review_status, review_note}]",
+    )
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="失败信息 {code, message}")
+    task_id: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="关联 8901 内部任务 ID")
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="最后更新时间")
 

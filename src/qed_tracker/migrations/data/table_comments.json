@@ -143,5 +143,23 @@
       "created_at": "创建时间",
       "updated_at": "最后更新时间"
     }
+  },
+  "qt_prompt_runs": {
+    "table": "prompt 优化探索运行表：一行 = 一次领域/课程知识 LLM 探索运行（QED-043，调用明细在共享表 qed_llm_calls）",
+    "columns": {
+      "run_id": "运行标识（主键，prd_ 前缀）",
+      "task": "任务（domain_explore=领域知识探索；course_explore=课程知识探索）",
+      "subject": "探索对象（领域名或课程 id）",
+      "scope_hint": "默认范围说明（如 本科-硕士）",
+      "params": "参数快照（mode/ref_text/ref_doc_path）",
+      "status": "状态（running=运行中；ready=待审核；applied=已应用；failed=失败）",
+      "report": "聚合报告（ready 后非空：领域/课程探索报告）",
+      "review_status": "run 级审核态（unreviewed/approved/rejected）",
+      "calls_review": "REQ-060 落地前的调用级审核过渡存储 [{template_id, review_status, review_note}]",
+      "error": "失败信息 {code, message}",
+      "task_id": "关联 8901 内部任务 ID",
+      "created_at": "创建时间",
+      "updated_at": "最后更新时间"
+    }
   }
 }
