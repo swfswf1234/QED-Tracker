@@ -1,7 +1,7 @@
 # 完成台账
 
 状态：Current
-最后更新：2026-08-21
+最后更新：2026-08-25
 
 本文件只追加已关闭任务的简短结果、提交或本地验证证据。
 
@@ -40,3 +40,5 @@
 | QED-033 | 2026-08-18 | 8901 课程体系只读端点完成：`GET /api/v1/courses`（按领域分组全量，sort_order 有序）与 `GET /api/v1/courses/{domain_id}`（未知 404）；无 DB 409；**纯只读透出、数据加工对 QED-Engine 透明**（支撑根仓库 REQ-035 课程体系数据源切换）。 | 提交（QED-033）；`/courses` 4 用例 + 全量 **213 passed + 3 skipped + ruff clean**；8901 真实冒烟（math 1 领域/4 阶段/14 门课、课程字段恰 7 契约字段、/courses/math 200、/courses/phys 404）；契约节写入 database-schema.md「课程体系只读端点」。 |
 | QED-034 | 2026-08-18 | 01 套 qt_books 数据纠偏 + solutions/supplement 词汇全量退休：吉米多维奇/费定晖 title 还原真实书名（原误写「数学分析原理（Rudin）」、part 误作第N册）、Rudin 两版 part 清空（版本归 display_title）、微积分学教程/习题课讲义 title 去作者、陈纪修上/下册 roles=[textbook,exercises]、答案册→exercise/[exercises]、习题课讲义 roles 收敛 [exercises]；models.py 退休 SUPPLEMENT/SOLUTIONS + catalog 54 目标 book×37+exercise×17；database-schema.md 书行响应契约（title/display_title 必含，前端消费 display_title）。 | 提交（QED-034）；事务 UPDATE 12 行（updated_by=data_fix，仅元数据列，磁盘零触碰）；全量 **213 passed + 3 skipped + ruff + git diff --check**；8901 冒烟 3 套全 200（kind/roles/title/part/display_title 全部符合）；证据归档 docs/history/qed-034-book-data-cleanup/（before/after 全行 dump + API 冒烟）。 |
 | QED-035 | 2026-08-18 | 生命周期脚本 `_pid_is_alive` 编码修复完成（承接根仓库 REQ-040）：中文 Windows tasklist GBK 表头 utf-8 解码失败 → readerthread 中断 → stdout=None → TypeError → 停止/重启退出码 1 的故障闭环——`errors="replace"` 容忍非 utf-8 输出 + `(result.stdout or "")` 空值兜底（范式由根仓库 web 脚本同构验证）。 | 提交（QED-035）；回归测试 test_pid_is_alive_tolerates_non_utf8_stdout（stdout=None 不抛错/errors 参数存在/正常 ASCII 判定三场景）；全量 **214 passed + 3 skipped + ruff clean + git diff --check** + 文档治理 8 passed；真实 8901 冒烟（既有运行实例 stop exit 0 + PID 清理、start --wait healthy、restart exit 0，此前同操作退出码 1）；**REQ-040 回执内容已整理，待用户授权写入根仓库 REQ-040 行**。 |
+| QED-040 | 2026-08-25 | [跨项目] 课程层探索端点组完成（REQ-055）：explore / runs 轮询 / adopt / discard / 历史列表五端点 + CourseExploreAdvisor + qt_explore_runs 课程层语义 + adopt 单事务建 draft qt_knowledge；同对象 running 幂等查重与 CAPACITY_REACHED/COURSE_LOCKED/RUN_STATE_CONFLICT 三态防护。 计划详规（三线承接/db/api/llm/implementation 五份）随关闭自 docs/plans/ 清理，Git 历史可恢复。 | 提交 d033513+9b4fda3；契约测试覆盖五端点含三态与幂等去重；全量门禁全绿；B 组联调真实冒烟通过——explore→ready（qwen-plus 3 套推荐 Rudin/Zorich/Tao）→adopt→qt_knowledge 3 行 draft 落库；回执根仓库 REQ-055 已由其 completed.md 记录关闭（2026-08-24）。 |
+| QED-041 | 2026-08-25 | [跨项目] 新建领域探索端点组+手工维护完成（REQ-056）：curriculum-explore / curriculum-runs 详情与 apply（冲突拒绝标记不覆盖、重探 skipped 语义）+ 手工 CRUD 五端点（两类 409 防护）；REQ-059 增补随本批实现（GET/PATCH domains、domain_id/course_id 服务端生成、PATCH courses 字段口径），skipped 输出结构以迁移 0009 + apply 实现备案，根仓库 REQ-059 随其联调验收自行收口。 | 提交 e4072ef（领域层 3 端点 + CurriculumExploreAdvisor + 幂等 create_domain/create_course）+ 9b4fda3（REQ-059 增补 + 0009 skipped 列迁移）；真实冒烟通过——「高等数学」doc 模式探索 ready（约17s）→ 全选 apply 零冲突落库 qed_domain×1 / qed_course×6（运行态 applied）；回执根仓库 REQ-056 已由其 completed.md 记录关闭（2026-08-24）。 |
