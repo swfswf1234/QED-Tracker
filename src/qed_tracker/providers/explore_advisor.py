@@ -81,6 +81,7 @@ class ExploreAdvisorBase:
     """共享骨架：LlmClient 组装、_structured 校验+一次修复重试、审计留存。"""
 
     contract_version = "explore-v1"
+    template_id = ""  # prompt 模板编号（子类覆盖，如 "course-explore/propose@v1"）
     repair_note = "修复给定响应，使其成为符合原契约的严格 JSON。只输出 JSON。"
 
     def __init__(
@@ -122,9 +123,11 @@ class ExploreAdvisorBase:
             "last_payload": self.last_payload,
         }
 
-    def _structured(self, messages: list[dict[str, str]], validate: Callable[[object], T]) -> T:
+    def _structured(self, messages: list[dict[str, str]], validate: Callable[[object], T], *,
+                    template_id: str | None = None) -> T:
+        call_id = self.template_id if template_id is None else template_id
         try:
-            content = self._complete(messages)
+            content = self._complete(messages, template_id=call_id)
         except LlmClientError as exc:
             raise ExploreAdvisorError(str(exc)) from exc
         try:
@@ -135,7 +138,7 @@ class ExploreAdvisorBase:
                 {"role": "user", "content": f"原契约:{messages[-1]['content'][:6000]}\n待修复响应:{content[:8000]}"},
             ]
             try:
-                repaired = self._complete(repair)
+                repaired = self._complete(repair, template_id=call_id)
             except LlmClientError as exc:
                 raise ExploreAdvisorError(str(exc)) from exc
             try:
@@ -143,12 +146,13 @@ class ExploreAdvisorBase:
             except (json.JSONDecodeError, ValueError, TypeError) as exc:
                 raise ExploreAdvisorError(f"探索结构化响应无效：{exc}") from first_error
 
-    def _complete(self, messages: list[dict[str, str]]) -> str:
+    def _complete(self, messages: list[dict[str, str]], *, template_id: str | None = None) -> str:
         if self.calls >= self.call_budget:
             raise ExploreAdvisorError("已达到探索模型调用预算", code="BUDGET_EXHAUSTED")
         self.calls += 1
+        call_template = self.template_id if template_id is None else template_id
         try:
-            content = self.llm_client.complete(messages)
+            content = self.llm_client.complete(messages, prompt_template=call_template)
         except LlmClientError as exc:
             raise ExploreAdvisorError(str(exc)) from exc
         self.usages.append(self.llm_client.last_usage)
@@ -199,6 +203,7 @@ class CourseExploreAdvisor(ExploreAdvisorBase):
     """课程层：为本课程检索最合适"教材+配套习题集"成套方案（2~4 套）。"""
 
     contract_version = "course-explore-v1"
+    template_id = "course-explore/propose@v1"
 
     def propose(
         self,
@@ -273,6 +278,7 @@ class CurriculumExploreAdvisor(ExploreAdvisorBase):
     """领域层：为新领域设计课程体系变更序列（create_domain 居首 + create_course）。"""
 
     contract_version = "curriculum-explore-v1"
+    template_id = "curriculum-explore/propose@v1"
 
     _USER_TEMPLATE = (
         "为下述新领域设计课程体系。要求：\n"

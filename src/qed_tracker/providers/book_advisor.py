@@ -23,6 +23,7 @@ T = TypeVar("T")
 
 class BailianBookAdvisor:
     contract_version = "book-eval-v1"
+    assess_template_id = "book-eval/assess@v1"
 
     def __init__(
         self,
@@ -131,10 +132,10 @@ class BailianBookAdvisor:
                 result.append(BookAssessment(item["provider_id"], score, verdict, summary.strip()))
             return result
 
-        return self._structured(messages, validate)
+        return self._structured(messages, validate, template_id=self.assess_template_id)
 
-    def _structured(self, messages: list[dict[str, str]], validate: Callable[[object], T]) -> T:
-        content = self._complete(messages)
+    def _structured(self, messages: list[dict[str, str]], validate: Callable[[object], T], *, template_id: str) -> T:
+        content = self._complete(messages, template_id=template_id)
         try:
             return validate(json.loads(content))
         except (json.JSONDecodeError, ValueError, TypeError) as first_error:
@@ -142,20 +143,20 @@ class BailianBookAdvisor:
                 {"role": "system", "content": "修复给定响应，使其成为符合原契约的严格 JSON。只输出 JSON。"},
                 {"role": "user", "content": f"原契约：{messages[-1]['content'][:6000]}\n待修复响应：{content[:8000]}"},
             ]
-            repaired = self._complete(repair)
+            repaired = self._complete(repair, template_id=template_id)
             try:
                 return validate(json.loads(repaired))
             except (json.JSONDecodeError, ValueError, TypeError) as exc:
                 raise ValueError(f"百炼结构化响应无效：{exc}") from first_error
 
-    def _complete(self, messages: list[dict[str, str]]) -> str:
+    def _complete(self, messages: list[dict[str, str]], *, template_id: str) -> str:
         if not self.llm_client.is_gateway and not self.llm_client.configured:
             raise ValueError("未配置 API_KEY（可在自身 .env 或根 .env 提供）")
         if self.calls >= self.call_budget:
             raise ValueError("已达到教材评估模型调用预算")
         self.calls += 1
         try:
-            content = self.llm_client.complete(messages)
+            content = self.llm_client.complete(messages, prompt_template=template_id)
         except LlmClientError as exc:
             raise ValueError(str(exc)) from exc
         self.usages.append(self.llm_client.last_usage)

@@ -134,7 +134,7 @@ class LlmClient:
             status, error = "error", "模型响应格式无效"
             raise LlmClientError(error) from exc
         finally:
-            self._record_call(prompt, content, started, status=status, error=error)
+            self._record_call(prompt, content, started, status=status, error=error, prompt_template=prompt_template)
         return content
 
     # ---------------- gateway（8900 /api/v1/llm/text） ----------------
@@ -154,6 +154,9 @@ class LlmClient:
             )
             response.raise_for_status()
             body = response.json()
+            if body.get("success") is False:
+                # 网关失败语义（ARCH-016）：reply="" + success=false + error —— 抛错而非空串穿透
+                raise LlmClientError(f"网关调用失败：{body.get('error') or '未知错误'}")
             reply = body.get("reply")
             if not isinstance(reply, str):
                 raise LlmClientError("网关响应格式无效")
@@ -173,7 +176,14 @@ class LlmClient:
     # ---------------- qed_llm_calls 调用记录（仅 direct） ----------------
 
     def _record_call(
-        self, prompt: str, response_text: str, started: float, *, status: str, error: str
+        self,
+        prompt: str,
+        response_text: str,
+        started: float,
+        *,
+        status: str,
+        error: str,
+        prompt_template: str = "",
     ) -> None:
         if self.engine is None:
             return
@@ -183,7 +193,7 @@ class LlmClient:
             "provider": "qwen",
             "model": self.model_name,
             "endpoint": "text",
-            "prompt_template": "",
+            "prompt_template": prompt_template,
             "prompt": prompt,
             "response": response_text,
             "duration_ms": int((time.monotonic() - started) * 1000),

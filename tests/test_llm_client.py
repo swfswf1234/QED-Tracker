@@ -104,6 +104,22 @@ def test_gateway_mode_works_without_api_key() -> None:
     assert client.complete([{"role": "user", "content": "x"}]) == "ok"
 
 
+def test_gateway_failure_surfaces_error_instead_of_empty_reply() -> None:
+    """网关失败语义：reply="" + success=false + error —— 必须抛错，不允许空串穿透为合法回答。"""
+    client = LlmClient(
+        api_select="qed-engine",
+        api_key="",
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda r: httpx.Response(200, json={"reply": "", "call_id": None,
+                                                    "success": False, "error": "模型调用失败：ReadTimeout"})
+            )
+        ),
+    )
+    with pytest.raises(LlmClientError, match="ReadTimeout"):
+        client.complete([{"role": "user", "content": "x"}])
+
+
 def test_direct_missing_key_raises() -> None:
     client = LlmClient(api_select="local", api_key="")
     with pytest.raises(LlmClientError, match="未配置"):
@@ -141,6 +157,30 @@ def test_direct_records_call_into_qed_llm_calls() -> None:
             text("SELECT service, mode, provider, endpoint, status FROM qed_llm_calls")
         ).first()
     assert tuple(row) == ("qed_tracker", "api", "qwen", "text", "success")
+    client.close()
+
+
+def test_direct_records_prompt_template_identifier() -> None:
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE qed_llm_calls (service VARCHAR(32), mode VARCHAR(16), provider VARCHAR(32),"
+                " model VARCHAR(64), endpoint VARCHAR(16), prompt_template VARCHAR(255), prompt TEXT,"
+                " response TEXT, duration_ms INT, status VARCHAR(16), error VARCHAR(500), created_at DATETIME)"
+            )
+        )
+    client = _direct_client(lambda r: _dash_response("recorded"), engine=engine)
+    assert (
+        client.complete(
+            [{"role": "user", "content": "hi"}], prompt_template="domain-explore/scope@v1"
+        )
+        == "recorded"
+    )
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT prompt_template, prompt FROM qed_llm_calls")).first()
+    assert row[0] == "domain-explore/scope@v1"
+    assert "hi" in row[1]
     client.close()
 
 
