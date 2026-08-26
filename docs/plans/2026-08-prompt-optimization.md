@@ -1,7 +1,7 @@
 # prompt 优化模块设计（领域/课程知识探索工作台）
 
 状态：Accepted（2026-08-24 用户裁决：①独立并行模块，不动 QED-040/041 冻结契约；②分步管线，每步独立模板；③调用记录全部进共享表 `qed_llm_calls`，表改造通知 QED-Engine（REQ-060）；④run 聚合私有表 `qt_prompt_runs`（用户审核通过）；⑤模板代码注册不建表（`prompt_lab/templates.py` 即审核入口）；⑥报告人工审核后手动应用入库；⑦方向分组 + 四档层级（基础/进阶/核心/冲刺）；⑧课程侧知识树→教程两步；⑨验收路径：模板审核后以「高等数学」真实冒烟，产出与 `tmp/高等数学探索.txt` 对比近似度）
-最后更新：2026-08-24
+最后更新：2026-08-26
 关联任务：todo [QED-043（长期任务）](../trackers/todo.md)；需求方：QED-Engine 根仓库 REQ-060（qed_llm_calls 改造通知）；上游：根仓库 `docs/design/llm-gateway-and-model-management.md`（qed_llm_calls 契约）
 
 ## 背景与目标
@@ -34,8 +34,15 @@ prompt 工作台：分步管线的每个 prompt 模板集中注册、版本化�
 | P11 | 评估模式先行（2026-08-24 用户裁决） | `POST /api/v1/prompt-explores/dry-run` 同步执行、只记录 LLM 日志（qed_llm_calls）、不写 qt_prompt_runs/不入队/不 apply；用户先评估 LLM 效果与模板质量，再走正式流程（Phase B） |
 | P12 | v3 三步管线 + 名称确认流（2026-08-24 用户裁决）：scope/describe 删除 → **domain@v1**（名称校验/规范化 final_name + 描述 ≤200 字 + classic_tracks 可空 + entry_requirements）/ **courses@v3**（清华命名基准、禁拆学期名、不过于抽象、aliases 别名、track∈主线、summary 60~200 字）/ **path@v3**（assignments: tier 四档 + prerequisites，服务端无环校验）；名称不一致时提前结束并返回 name_check 标记，人工确认后带 confirm_name_override 重发（正式流程 Phase B 做 run 待确认态 + 前端弹窗）；graph TD 由 prerequisites 服务端推导渲染 |
 | P13 | 领域先验知识注册表（2026-08-24 用户裁决）：`prompt_lab/priors.py` 精确域名匹配（未命中不影响其它领域），首批高等数学（中文翻译的美版经典教材偏好/分析代数概率三主线提示/国内命名惯例/三门基石课锚点/QE 冲刺顶峰）；templates.py 保持学科中立（守护测试强制），后续课程侧管线复用同一份先验 |
+| P14 | 调用审阅载体收口（2026-08-26 用户裁决）：REQ-060 已落地（qed_llm_calls 扩展列 task/step/review_status/review_note + GET 过滤增强 + PATCH review 端点 + web-ui 控制台审核页），取消 `tmp/prompt-eval/` 人工导出实践并删除该目录；调用审阅一律走共享表 + 根仓库前端，prompt 优化循环只以 qed_llm_calls call_id 为准 |
+| P15 | 探索管线模型选型（2026-08-26 用户裁决）：采纳 QED-Engine 侧诊断——courses@v3 长结构化 JSON 生成在 qwen3.8 思考型大参数模型上推理延迟极端（>600s/>1200s 均未完成），prompt 本身无罪（qwen-plus 历史基线 42~56s 稳定）；**探索类管线步骤用 qwen-plus 级非思考型模型**；坚持推理型需单独放宽 `QED_LLM_TIMEOUT` 并接受分钟级等待。QED-Tracker 侧参照跑复核（calls 91~93，domain@v1 单步）：qwen3.8-max 39.8s / qwen3.7-plus 35.0s / qwen3.8-27b 28.3s 全部 name_check.valid=true **通过**——领域小步骤三模型均可用；课程检索优化后置（课程管线未重新规划前不做 courses 步模型对照）。配套落地：REQ-061 的 `QED_LLM_TIMEOUT` 键映射同步进本仓（默认 300s，原 60s 硬顶即基线 §7 超时预算开放问题的裁决落点=调大 timeout）；per-step 模型覆盖治理占位 todo QED-045 |
+| P15a | 探索管线模型修订（2026-08-26 用户裁决）：qwen-plus 免费额度耗尽（call 96，AllocationQuota.FreeTierOnly），探索管线切换 **qwen3.7-plus**——高等数学批全链验证可用（calls 97~99：domain 39.9s / courses 95.5s / path 47.3s 全 success；**courses@v3 95.5s 在旧默认 60s 下必死，REQ-061 同步必要性实证**）。P15 对 qwen3.8 思考型的禁用结论不变；性能代价：三步耗时约为 qwen-plus 的 2~5 倍 |
 
 ## 共享表改造通知（REQ-060，由 QED-Engine 实现）
+
+**状态（2026-08-26）**：已落地（用户确认）。五件事全部完成：扩展列 / `GET /api/v1/llm/calls` 过滤增强 /
+`PATCH /api/v1/llm/calls/{id}/review` 审核端点 / 控制台调用检索页增强 / 文档登记。下方"改造前的兼容路径"
+（calls_review JSON 过渡）不再需要，Phase B 起审核态直接落共享表列。
 
 `qed_llm_calls` 现有结构（根仓库 `backend/qed_engine/services/llm/call_log.py`）：
 `id / service / mode / provider / model / endpoint / prompt_template VARCHAR(255) / prompt MEDIUMTEXT /
@@ -175,7 +182,18 @@ CLI：`qed-tracker promptlab domain "高等数学"`（`--scope`/`--ref-doc`）�
   经四轮真实评估迭代：path 缺 slug→payload 补对照、describe 缺方向清单→并入 courses、
   日志缺编号→逐步透传、slug 连字符→v3 文案强化）**；「高等数学」（确认流实战：LLM 建议"数学"，
   人工裁决保留原名后 confirm_name_override 重跑成功，16 门课清华课程代码依据）与
-  「计算机科学与技术」（direct 一次通过，16 门课）双领域 ready；审阅文件导出 `tmp/prompt-eval/`。
+  「计算机科学与技术」（direct 一次通过，16 门课）双领域 ready；审阅文件导出 `tmp/prompt-eval/`
+  （**该通道已取消**：P14，2026-08-26 REQ-060 落地后审阅走共享表 + 根仓库前端，目录已删除）；
+  模型选型参照跑（2026-08-26，P15）：domain@v1 单步三模型复核全通过（calls 91~93，
+   见基线文档 §3 参照跑台账），课程检索优化后置。
+- **探索轮 v2/v4/v4（P16，2026-08-26，calls 100~102）**：domain@v2 / courses@v4 / path@v4 全链
+  验证通过（qwen3.7-plus，高等数学）；domain 文案五项落地（括号限定名/scope 权威边界/description
+  质量锚点/下游用途/中文输出）；priors 四主线对齐 + 分步裁剪注入；pipeline scope_hint 贯穿 +
+  tracks 全量含 summary + count_range + university_basis 可空；输出 13 门（10 slug 直接命中 + 2
+  slug 漂移 + 1 extra 高等概率论）；DAG 5/10 完全一致；classic_tracks 漂移（LLM 输出"基础
+  数学/应用数学/概率论与数理统计"三主线而非 golden 四主线），需后续优化 priors tracks_hint 文案。
+  知识文档 `docs/plans/domain-math-advanced.json`（12 门 + 17 扩展 + DAG）已定稿并迁入
+  `docs/guides/`。
 - **Phase B 正式流程**：课程 2 步管线（tree/tutorials）+ `/api/v1/prompt-explores`（202 入队）
   + runs 列表/详情/review/apply 端点组 + CLI（依据 B0 评估结论启动）。
 - **Phase C**：apply 落库（领域报告 → qed_domain/qed_course）+ 模板按审核反馈迭代

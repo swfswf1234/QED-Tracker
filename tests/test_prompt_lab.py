@@ -1,7 +1,7 @@
 """prompt_lab 模板注册表与领域管线契约（QED-043 · v3 三步管线，2026-08-24 用户裁决 P12/P13）。
 
 守护面：
-- 注册表：domain@v1 / courses@v3 / path@v3 三步齐全（describe 已删除）；
+- 注册表：domain@v2 / courses@v4 / path@v4 三步齐全（describe 已删除）；
 - 学科中立：templates.py 禁止学科绑定词（领域专属知识归 priors.py）；
 - priors：精确域名匹配，未命中不影响其它领域；
 - 各步 validate：数量/枚举/引用/无环/禁拆学期等规则；
@@ -26,7 +26,7 @@ from qed_tracker.prompt_lab.pipeline import (
     NameConfirmationRequired,
     PipelineError,
 )
-from qed_tracker.prompt_lab.priors import get_prior
+from qed_tracker.prompt_lab.priors import PRIOR_KEYS_BY_STEP, get_prior, get_prior_for_step
 from qed_tracker.prompt_lab.templates import TIERS, get_template, render_graph_td
 
 # ---------------- 注册表 ----------------
@@ -39,9 +39,9 @@ def test_registry_contains_three_steps_with_ids() -> None:
         ("domain-explore", "courses"),
         ("domain-explore", "path"),
     }
-    assert steps[("domain-explore", "domain")] == "domain-explore/domain@v1"
-    assert steps[("domain-explore", "courses")] == "domain-explore/courses@v3"
-    assert steps[("domain-explore", "path")] == "domain-explore/path@v3"
+    assert steps[("domain-explore", "domain")] == "domain-explore/domain@v2"
+    assert steps[("domain-explore", "courses")] == "domain-explore/courses@v4"
+    assert steps[("domain-explore", "path")] == "domain-explore/path@v4"
 
 
 def test_unknown_template_raises() -> None:
@@ -69,6 +69,33 @@ def test_prior_matches_exact_domain_only() -> None:
     assert list(get_prior("高等数学 ").keys()) == list(prior.keys())  # 去空白后命中
     assert get_prior("物理学") == {}
     assert get_prior("不存在的领域") == {}
+
+
+def test_priors_tracks_hint_aligns_four_tracks() -> None:
+    """知识文档定稿后主线提示对齐四条经典主线（用户裁决 2026-08-26）。"""
+    hint = get_prior("高等数学")["tracks_hint"]
+    for track_name in ("分析学", "代数学", "概率与统计", "几何与拓扑"):
+        assert track_name in hint
+
+
+def test_priors_naming_convention_resolves_domain_aliases() -> None:
+    """「数学」「数学（高等数学）」等称呼应能归一到规范名「高等数学」。"""
+    naming = get_prior("高等数学")["naming_convention"]
+    assert "高等数学" in naming
+    assert "数学（高等数学）" in naming
+
+
+def test_get_prior_for_step_trims_by_step() -> None:
+    """分步裁剪注入表：domain=4 键 / courses=全量 / path=仅 capstone_hint。"""
+    assert set(PRIOR_KEYS_BY_STEP["domain"]) == {
+        "naming_convention", "tracks_hint", "anchor_courses", "level_default",
+    }
+    assert set(PRIOR_KEYS_BY_STEP["path"]) == {"capstone_hint"}
+    full = get_prior("高等数学")
+    assert set(get_prior_for_step("高等数学", "domain")) == set(PRIOR_KEYS_BY_STEP["domain"])
+    assert set(get_prior_for_step("高等数学", "courses")) == set(full)
+    assert get_prior_for_step("高等数学", "path") == {"capstone_hint": full["capstone_hint"]}
+    assert get_prior_for_step("物理学", "domain") == {}
 
 
 # ---------------- step1 domain 校验 ----------------
@@ -101,6 +128,20 @@ def test_domain_validate_rules() -> None:
         domain_t.validate({k: v for k, v in ok.items() if k != "name_check"})
 
 
+def test_domain_template_v2_contract_notes() -> None:
+    """探索轮裁决五项文案要素：括号限定名合法化/scope 权威边界/description 质量锚点/下游用途/中文输出。"""
+    domain_t = get_template("domain-explore", "domain")
+    user_text = domain_t.build_user(
+        {"domain_name": "示例领域", "scope_hint": _SCOPE_HINT, "user_input": "", "prior_knowledge": {}}
+    )
+    assert "括号" in user_text  # 带括号的学科限定名是合法名称
+    assert "范围边界" in user_text and "权威" in user_text  # scope_hint 职责升级
+    assert "定性" in user_text  # description 第一层质量锚点
+    assert "套话" in user_text  # 禁空泛套话
+    assert "学习顺序" in user_text  # 下游用途说明
+    assert "中文" in (domain_t.system + user_text)  # 显式中文输出（system 段声明）
+
+
 # ---------------- step2 courses 校验 ----------------
 
 
@@ -115,7 +156,7 @@ def _course(slug: str, name: str, **overrides) -> dict:
 
 
 def _ok_rest() -> list[dict]:
-    return [_course("b", "课程乙"), _course("c", "课程丙"), _course("d", "课程丁")]
+    return [_course("course_b", "课程乙"), _course("course_c", "课程丙"), _course("course_d", "课程丁")]
 
 
 def test_courses_validate_rules() -> None:
@@ -135,9 +176,12 @@ def test_courses_validate_rules() -> None:
     # summary 过短
     with pytest.raises(ValueError):
         courses_t.validate({"courses": [_course("a", "课程", summary="太短"), *_ok_rest()]})
-    # university_basis 为空
-    with pytest.raises(ValueError):
-        courses_t.validate({"courses": [_course("a", "课程", university_basis=[]), *_ok_rest()]})
+    # university_basis 可为空数组或缺省（V1 放宽：确无对应依据时不强制编造）
+    ok_empty = courses_t.validate({"courses": [_course("crs", "课程", university_basis=[]), *_ok_rest()]})
+    assert ok_empty["courses"][0]["university_basis"] == []
+    missing = _course("crs2", "课程")
+    missing.pop("university_basis")
+    courses_t.validate({"courses": [missing, *_ok_rest()]})
     # 连字符 slug
     with pytest.raises(ValueError):
         courses_t.validate({"courses": [_course("algorithms-and-ds", "课程"), *_ok_rest()]})
@@ -251,7 +295,7 @@ def test_domain_pipeline_runs_three_steps_and_aggregates_report() -> None:
     assert pipeline.calls == 3
     assert [c["step"] for c in pipeline.step_calls] == ["domain", "courses", "path"]
     assert [c["template_id"] for c in pipeline.step_calls] == [
-        "domain-explore/domain@v1", "domain-explore/courses@v3", "domain-explore/path@v3",
+        "domain-explore/domain@v2", "domain-explore/courses@v4", "domain-explore/path@v4",
     ]
 
 
@@ -270,14 +314,18 @@ def test_pipeline_payload_carries_prior_and_slugs() -> None:
     domain_user = captured[0]["messages"][1]["content"]
     courses_user = captured[1]["messages"][1]["content"]
     path_user = captured[2]["messages"][1]["content"]
-    # step1 注入先验知识与默认范围
+    # step1 注入分步裁剪后的先验（domain 步不含教材偏好/顶峰提示）与默认范围
     assert "prior_knowledge" in domain_user
+    assert "naming_convention" in domain_user
+    assert "textbook_preference" not in domain_user
     assert _SCOPE_HINT in domain_user
-    # step2 注入领域结果（描述/主线名）
-    assert '"classic_tracks"' in courses_user
-    assert '"track"' in courses_user
-    # step3 注入课程清单（slug+name+track）
+    # step2 携带权威范围、主线全量对象（含 summary）与数量区间入参
+    assert '"scope_hint"' in courses_user
+    assert '"summary"' in courses_user
+    assert '"count_range"' in courses_user
+    # step3 注入课程清单（slug+name+track+summary，作为前置判断依据）
     assert '"slug": "math_analysis"' in path_user
+    assert '"summary"' in path_user
     assert '"track": "分析"' in path_user
 
 
@@ -357,5 +405,5 @@ def test_pipeline_writes_per_step_template_ids_to_call_log() -> None:
     with engine.connect() as conn:
         rows = conn.execute(text("SELECT prompt_template FROM qed_llm_calls ORDER BY id")).fetchall()
     assert [r[0] for r in rows] == [
-        "domain-explore/domain@v1", "domain-explore/courses@v3", "domain-explore/path@v3",
+        "domain-explore/domain@v2", "domain-explore/courses@v4", "domain-explore/path@v4",
     ]

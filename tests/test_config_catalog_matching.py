@@ -29,6 +29,19 @@ def test_load_settings_reads_qed_variables_from_environment(monkeypatch, tmp_pat
     assert settings.db_configured
 
 
+def test_load_settings_maps_llm_timeout(monkeypatch, tmp_path):
+    """REQ-061 同步：QED_LLM_TIMEOUT→llm_timeout_seconds（根仓库同键名约定）。
+
+    原默认 60s 硬顶曾致 courses@v3 长生成（47~72s）ReadTimeout；可配置后按根 .env 治理。
+    """
+    monkeypatch.setenv("QED_LLM_TIMEOUT", "300")
+    monkeypatch.chdir(tmp_path)
+
+    settings = load_settings()
+
+    assert settings.llm_timeout_seconds == 300.0
+
+
 def test_load_settings_defaults_without_environment(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 
@@ -40,6 +53,7 @@ def test_load_settings_defaults_without_environment(monkeypatch, tmp_path):
     assert settings.db_name == "qed"
     assert settings.db_password == ""
     assert not settings.db_configured
+    assert settings.llm_timeout_seconds == 300.0  # REQ-061 同步：默认 300s（原 60s 硬顶）
     assert settings.state_dir == (tmp_path / "dataset" / "qed-tracker" / "meta").resolve()
 
 

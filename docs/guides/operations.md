@@ -13,21 +13,23 @@ qed-tracker config show
 ```
 
 配置读取优先级：真实环境变量 → 本仓库 `.env`（自身配置）→ 根仓库 `.env`（兜底）→ 内置最小
-默认值。本仓库 `.env` 模板（密钥可留空，由根仓库 `.env` 兜底；`API_KEY` 为**唯一密钥变量**，
-QED-038/ARCH-017 起逐厂商 key 别名全部取消、无回退；厂商选择由根仓库 `QED_API_PROVIDER` 决定）：
+默认值。**REQ-063 公共键精简（2026-08-26）**：与根重复的非密公共配置由根 `.env` 唯一事实源
+提供（`QED_LLM_GATEWAY_URL`、`QED_DB_PORT/NAME/USER`、`QED_LLM_TIMEOUT=300` 等，内置默认同值），
+本仓库 `.env` 不再重复。本仓库 `.env` 模板（`API_KEY` 为**唯一密钥变量**，QED-038/ARCH-017 起
+逐厂商 key 别名全部取消、无回退；厂商选择由根仓库 `QED_API_PROVIDER` 决定；两密钥为
+**独立运行底线键**——单独 clone 无父级根 `.env` 时保证 LLM 与 DB 能力完整，不得删除）：
 
 ```dotenv
-# 模型模式：local=直连 dashscope qwen（默认）；qed-engine=经 8900 网关 /llm/text（不接触密钥）
+# 模型模式：local=直连 dashscope qwen；qed-engine=经 8900 网关 /llm/text（不接触密钥）。
+# 注意：本仓 local 与根仓库 local（LM Studio 本地模型）语义不同，此语义钉不可删。
 QED_API_SELECT=local
 API_KEY=
-QED_LLM_GATEWAY_URL=http://127.0.0.1:8900
-QED_MODEL=qwen-plus
+# 探索管线模型（P15 纪律覆盖；2026-08-26 起 qwen3.7-plus——qwen-plus 免费额度耗尽）
+QED_MODEL=qwen3.7-plus
 QED_DB_HOST=127.0.0.1
-QED_DB_PORT=3306
-QED_DB_NAME=qed
-QED_DB_USER=root
 QED_DB_PASSWORD=
 QED_TRACKER_PORT=8901
+QED_DATA_ROOT=D:\coding\QED-Engine\dataset
 ```
 
 既有非密钥私有配置（`QED_AXIOM_URL`、`QED_TRACKER_URL`、`QED_PROXY`、`QED_TIMEOUT_SECONDS`、

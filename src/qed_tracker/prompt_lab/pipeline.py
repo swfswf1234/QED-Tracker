@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 from qed_tracker.prompt_lab import templates as templates_mod
-from qed_tracker.prompt_lab.priors import get_prior
+from qed_tracker.prompt_lab.priors import get_prior_for_step
 from qed_tracker.prompt_lab.templates import _DEFAULT_SCOPE
 from qed_tracker.providers.explore_advisor import ExploreAdvisorBase, _read_reference
 
@@ -77,20 +77,25 @@ class DomainPipeline(ExploreAdvisorBase):
         ref_text: str = "",
         ref_doc_path: str = "",
         confirm_name_override: str = "",
+        count_min: int = 10,
+        count_max: int = 14,
     ) -> dict[str, Any]:
-        """confirm_name_override 非空 = 人工已确认领域名（P12 弹窗流），跳过确认检查并以该名贯穿后续。"""
+        """confirm_name_override 非空 = 人工已确认领域名（P12 弹窗流），跳过确认检查并以该名贯穿后续。
+
+        count_min/count_max 为核心课程数量区间（探索轮裁决入参化，默认 10~14），仅约束 step2 文案。
+        """
         domain_template = templates_mod.get_template("domain-explore", "domain")
         courses_template = templates_mod.get_template("domain-explore", "courses")
         path_template = templates_mod.get_template("domain-explore", "path")
 
         reference = _read_reference(mode, ref_text, ref_doc_path)
-        prior = get_prior(domain_name)
 
         # step1 领域探索与校验（名称需确认且未带人工确认时提前结束）
         domain = self._run(
             domain_template,
             {"domain_name": domain_name, "scope_hint": scope_hint,
-             "user_input": reference, "prior_knowledge": prior},
+             "user_input": reference,
+             "prior_knowledge": get_prior_for_step(domain_name, "domain")},
             {},
         )
         final_name = (confirm_name_override or "").strip() or str(domain_name)
@@ -101,7 +106,7 @@ class DomainPipeline(ExploreAdvisorBase):
         ):
             raise NameConfirmationRequired(name_check)
 
-        # step2 核心课程与简述
+        # step2 核心课程与简述（主线全量含 summary；scope_hint 权威边界贯穿）
         tracks = domain["classic_tracks"]
         courses = self._run(
             courses_template,
@@ -109,21 +114,24 @@ class DomainPipeline(ExploreAdvisorBase):
                 "name": final_name,
                 "description": domain["description"],
                 "level": domain["level"],
-                "classic_tracks": [t["name"] for t in tracks],
+                "classic_tracks": tracks,
                 "entry_requirements": domain["entry_requirements"],
-            }, "prior_knowledge": prior},
+            }, "count_range": {"min": count_min, "max": count_max},
+             "scope_hint": scope_hint,
+             "prior_knowledge": get_prior_for_step(final_name, "courses")},
             {"track_names": {t["name"] for t in tracks}},
         )
         course_slugs = {c["slug"] for c in courses["courses"]}
 
-        # step3 学习顺序与层级
+        # step3 学习顺序与层级（课程清单带 summary 作为前置判断依据）
         path = self._run(
             path_template,
             {"domain": {"name": final_name, "description": domain["description"],
-                        "classic_tracks": [t["name"] for t in tracks]},
-             "courses": [{"slug": c["slug"], "name": c["name"], "track": c["track"]}
-                         for c in courses["courses"]],
-             "prior_knowledge": prior},
+                        "classic_tracks": tracks},
+             "courses": [{"slug": c["slug"], "name": c["name"], "track": c["track"],
+                          "summary": c["summary"]} for c in courses["courses"]],
+             "scope_hint": scope_hint,
+             "prior_knowledge": get_prior_for_step(final_name, "path")},
             {"course_slugs": course_slugs},
         )
         tiers = {a["slug"]: a["tier"] for a in path["assignments"]}

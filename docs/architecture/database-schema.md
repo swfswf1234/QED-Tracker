@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-24
+最后更新：2026-08-26
 需求方：QED-Engine（根仓库 REQ-026/REQ-029/REQ-030；2026-08-16 用户裁决知识层次重构）
 关联代码：`src/qed_tracker/db/`（models/knowledge_repository/migrations）、`src/qed_tracker/database.py`、
 `src/qed_tracker/courses.py`（migrations/data/math.json，规划退役）
@@ -50,6 +50,7 @@ qed_domain（领域，共享 qed_*）
 | `qt_books` | 书行表 | 私有 | QED-Tracker | 一个文件单元（书的一册/一篇论文/一个博客快照） | 本轮新增 |
 | `qt_sources` | 渠道表 | 私有 | QED-Tracker | 一次渠道尝试 | 迁移重建（外键改挂 book_id） |
 | `qt_explore_runs` | 探索运行表 | 私有 | QED-Tracker | 一次课程层/新建领域层 LLM 探索运行 | 迁移 0008+0009（含 skipped 列） |
+| `qt_prompt_runs` | prompt 优化探索运行表 | 私有 | QED-Tracker | 一次领域/课程知识探索运行（prompt 优化模块 QED-043） | 迁移 0010 新增 |
 | `qt_sources_legacy` | 渠道备份表 | 私有 | — | 0006 迁移改名保留的旧版渠道表快照 | 确认后由 `migrate --drop-legacy` 删除 |
 | `qt_selections` / `qt_downloads` | 旧选择/下载表 | 私有 | — | — | 存量迁移后退役（drop） |
 
@@ -278,6 +279,41 @@ CREATE TABLE qt_explore_runs (
 ```
 
 **状态机：** running → ready → adopted / discarded / applied / partially_applied；running → failed。
+
+## qt_prompt_runs 表结构（表7，私有，迁移 0010）
+
+一行 = 一次领域/课程知识探索运行（prompt 优化模块 QED-043）。调用明细（模板编号/问句/回答）
+在共享表 `qed_llm_calls`（按 `prompt_template` = `{task}/{step}@v{n}` 编号关联）；本表只存
+参数快照、状态机、聚合报告与 run 级审核态。
+
+```sql
+CREATE TABLE qt_prompt_runs (
+  run_id        VARCHAR(32)   NOT NULL,            -- PK，prd_ 前缀
+  task          VARCHAR(16)   NOT NULL,            -- domain_explore=领域知识探索 / course_explore=课程知识探索
+  subject       VARCHAR(100)  NOT NULL,            -- 探索对象（领域名或课程 id）
+  scope_hint    VARCHAR(500)  NOT NULL DEFAULT '', -- 默认范围说明（如 本科-硕士）
+  params        JSON          NOT NULL,            -- 参数快照 {mode, ref_text?, ref_doc_path?}
+  status        VARCHAR(16)   NOT NULL DEFAULT 'running', -- running/ready/applied/failed
+  report        JSON          NULL,                -- ready 后非空：领域/课程探索聚合报告
+  review_status VARCHAR(16)   NOT NULL DEFAULT 'unreviewed', -- run 级审核态 unreviewed/approved/rejected
+  calls_review  JSON          NOT NULL DEFAULT ('[]'), -- REQ-060 落地前的调用级审核过渡存储
+  error         JSON          NULL,                -- {code, message}
+  task_id       VARCHAR(32)   NULL,                -- 关联 8901 内部任务 ID
+  created_at    DATETIME      NOT NULL,
+  updated_at    DATETIME      NOT NULL,
+  PRIMARY KEY (run_id),
+  KEY ix_qt_prompt_runs_task (task),
+  KEY ix_qt_prompt_runs_status (status),
+  KEY ix_qt_prompt_runs_subject (subject)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='prompt优化探索运行表：一次领域/课程知识探索运行的参数快照、状态机与聚合报告';
+```
+
+**状态机：** running → ready → applied；running → failed；同对象 `running` 行幂等查重。
+评估模式（`POST /api/v1/prompt-explores/dry-run`）不写本表——唯一痕迹是 `qed_llm_calls` 调用日志。
+
+> **calls_review 过渡说明（P14，2026-08-26）**：REQ-060 已落地（qed_llm_calls 扩展列
+> task/step/review_status/review_note + 审核端点 + 根仓库前端），调用级审核一律落共享表列；
+> 本列仅作历史过渡保留兼容，Phase B 正式流程不再写入。
 
 ## 状态机汇总与迁移合法性
 

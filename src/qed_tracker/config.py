@@ -38,7 +38,7 @@ class Settings:
     tls_verify: bool = True
     llm_model: str = "qwen-plus"
     llm_base_url: str = _DASH_SCOPE_BASE_URL
-    llm_timeout_seconds: float = 60.0
+    llm_timeout_seconds: float = 300.0  # REQ-061：原 60s 硬顶致长生成 ReadTimeout，与根仓库默认对齐
     llm_call_budget: int = 6
     llm_max_tokens: int = 4096
     api_select: str = "local"  # local/api=直连 dashscope qwen；qed-engine=经 8900 网关（QED-037）
@@ -87,6 +87,7 @@ _ENV_MAP = {
     "QED_RETRIES": ("retries", int),
     "QED_TLS_VERIFY": ("tls_verify", _bool),
     "QED_LLM_BASE_URL": ("llm_base_url", str),
+    "QED_LLM_TIMEOUT": ("llm_timeout_seconds", float),  # REQ-061 同步：根仓库同键名，原 60s 硬顶致长生成 ReadTimeout
     "QED_API_SELECT": ("api_select", str),
     "QED_LLM_GATEWAY_URL": ("llm_gateway_url", str),
 }

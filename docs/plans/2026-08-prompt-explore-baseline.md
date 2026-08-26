@@ -1,9 +1,9 @@
 # 领域探索 prompt 优化基线（QED-043）
 
 状态：Active（基线已冻结：后续模板/先验优化一律以本文件第 5 节为对照基准；真实对照口径待用户评估确定）
-最后更新：2026-08-25
-关联任务：todo [QED-043（长期任务）](../trackers/todo.md)；关联设计：[prompt 优化模块设计](2026-08-prompt-optimization.md)（P11/P12/P13）
-数据来源：共享表 `qed_llm_calls` id 073~079（MySQL qed 库，qwen-plus，dry-run 模式）
+最后更新：2026-08-26
+关联任务：todo [QED-043（长期任务）](../trackers/todo.md)；关联设计：[prompt 优化模块设计](2026-08-prompt-optimization.md)（P11/P12/P13/P15）
+数据来源：共享表 `qed_llm_calls` id 073~079（MySQL qed 库，qwen-plus，dry-run 模式）；模型参照跑 91~93（2026-08-26）
 参考文本：`<数据根>/tmp/exploration/高等数学探索.txt`（golden 参照，对照口径未定）
 
 ## 1. 目的与使用方式
@@ -56,6 +56,48 @@
 背景：62~72 为当日调试轮（5 次 courses ReadTimeout，60s 预算不足）；45~48 为 v2 迭代历史轮；
 49~58 为 v3 早轮。均不入基线。
 
+### 模型选型参照跑（2026-08-26，calls 91~93；裁决见 prompt-optimization P15）
+
+判据（用户裁决）：领域查询（domain@v1 单步）成功即通过；courses 步不做模型对照
+（课程管线未重新规划前优化后置）。脚本 `tmp/model_reference_run.py`（tmp/ 不入库），
+与 `explore()` step1 完全同参（模板/先验/scope 一致），subject=数学分析。
+
+| id | 模型 | 耗时 | name_check | 说明 |
+| --- | --- | --- | --- | --- |
+| 91 | qwen3.8-max | 39.8s | valid=true 直通 | 思考型大参数在领域小步骤正常（与 Engine 侧「同模型 domain 小任务 62s 正常」互证） |
+| 92 | qwen3.7-plus | 35.0s | valid=true 直通 | classic_tracks 输出 3 条（其余两轮 4 条，跨模型非确定性正常） |
+| 93 | qwen3.8-27b | 28.3s | valid=true 直通 | 三者最快 |
+
+对照证据：Engine 侧同批 courses@v3 在 qwen3.8 系思考型上 >600s/>1200s 未完成
+（call 82/85/86）；qwen-plus 基线 courses@v3 42~56s 稳定成功（本表 75/78）。
+结论：领域小步骤三模型均可用；长结构化 JSON 生成（courses@v3）仍须 qwen-plus 级模型。
+
+### Round-1 重跑台账（2026-08-26，calls 97~99；qwen3.7-plus，高等数学批）
+
+背景：qwen-plus 免费额度耗尽（call 96，AllocationQuota.FreeTierOnly），用户裁决探索管线
+切换 qwen3.7-plus；本轮零 prompt 变更，兼作 TIMEOUT=300 修复后稳定性参照。
+流程对齐基线 74~76（confirm_name_override="高等数学"）。
+
+| id | 模板 | 耗时 | 说明 |
+| --- | --- | --- | --- |
+| 97 | domain@v1 | 39.9s | valid=true 直通（与参照跑 call 92 的 35.0s 同量级） |
+| 98 | courses@v3 | 95.5s | **旧默认 60s 预算下必死——REQ-061 同步必要性实证** |
+| 99 | path@v3 | 47.3s | 输出量小但耗时约为 qwen-plus 基线（8.6~9.1s）的 5 倍 |
+
+13 门课 / DAG 边 19 条 / tier 分布 基础3·进阶5·核心4·冲刺1。定性对比见 §6-8。
+
+### 探索轮 v2/v4/v4（2026-08-26，calls 100~102；qwen3.7-plus，高等数学批）
+
+背景：P16 决策行落地后，模板升级为 domain@v2 / courses@v4 / path@v4（priors 四主线对齐 + 分步裁剪 + scope_hint 贯穿 + university_basis 可空 + 数量区间入参化）；本轮为 v2/v4/v4 首次全链验证。流程对齐基线 74~76（confirm_name_override="高等数学"）。
+
+| id | 模板 | 耗时 | 说明 |
+| --- | --- | --- | --- |
+| 100 | domain@v2 | 35.2s | valid=true 直通（括号名「数学（高等数学）」被接受，未触发确认流） |
+| 101 | courses@v4 | 110.1s | 13 门课（10 slug 直接命中 + 2 slug 漂移 + 1 extra 高等概率论），10~14 范围内 |
+| 102 | path@v4 | 77.9s | 四档全使用（基础2·进阶5·核心5·冲刺1），无环无自环 |
+
+定性对比：classic_tracks 漂移——LLM 输出"基础数学/应用数学/概率论与数理统计"三主线，而非 golden 四主线（分析学/代数学/概率与统计/几何与拓扑）；DAG 5/10 完全一致；概统计数分先修（golden 无先修）、ODE 多加高代、实变/泛函/微几多加拓扑。详见 prompt-optimization P16。
+
 ## 4. domain@v1 基线输出要点（call 74）
 
 - `name_check.valid=false`，reason：高等数学是工科公共课泛称；`suggested_name=数学`；**人工裁决保留原名**。
@@ -99,16 +141,29 @@
    「分析主线/代数主线…」命名；74 为「本科-硕士」与「分析学/代数学…」命名）。下游 track 逐字匹配
    依赖该输出，稳定性影响可比性。
 6. **性能贴线**：courses@v3 成功耗时 47~52s，逼近 60s ReadTimeout（62~72 五次超时即此原因）；
-   输出瘦身或超时调大二选一待裁决。
+   输出瘦身或超时调大二选一待裁决。→ **已裁决（2026-08-26，P15）**：调大 client timeout——
+   REQ-061 的 `QED_LLM_TIMEOUT` 键映射同步进本仓，默认 300s；输出契约暂不压缩。
 7. **university_basis 可信度**：清华课程代码未抽查；「多所顶尖大学共同开设」式兜底措辞本轮未出现，
    但历史轮出现过，需持续观察。
+8. **Round-1 重跑定性对比（2026-08-26，calls 97~99 vs 基线 §5，零 prompt 变更）**：
+   - 课程集合：实质新增 **ODE/PDE 自发入选**（§6-1 缺失主干被 qwen3.7-plus 补齐——§7 开放问题
+     「ODE/PDE 入选方式」的直接数据点：无需 priors 锚点即可出现）；slug 漂移 2 处
+     （complex_analysis→functions_of_complex_variables；概率统计 slug 简化）；真实缺失 1 门
+     （numerical_analysis 数值分析）；课名漂移（实变函数 vs 基线"实变函数与泛函分析基础"）。
+   - tier 漂移大：代数拓扑 冲刺→核心、抽象代数 核心→进阶、随机过程 核心→进阶；
+     泛函分析仍冲刺（§6-2 存疑未变，预期内）。
+   - DAG：19 边 vs 基线 16；概率统计挂数分先修（基线基石无先修）；点集拓扑不再挂高代；
+     随机过程仍无实变/泛函前置（§6-3 存疑延续）；ODE→PDE 链合理。
+   - 结论：同 v3 prompt 跨模型跨轮漂移显著（课程集合/tier/slug 全维），单轮定性差异仅供
+     参照不构成回归判定；优化轮改动评估须固定同模型同日多轮取交集。
 
 ## 7. 开放问题（等下一步评估和确定）
 
 - 真实对照口径：以参考文本为 golden 时，课程集合覆盖率 / DAG 边正确性 / 主线命名一致性如何量化？
 - ODE/PDE 是否必须入选？若是，走 priors.anchor_courses 扩充还是 templates 层「各主线本科主干齐全」约束？
 - 泛函分析 tier 是否纠偏为「核心」？
-- 超时预算处理：调大 client timeout 还是压缩 courses 输出契约？
+- ~~超时预算处理：调大 client timeout 还是压缩 courses 输出契约？~~ **已裁决（P15，2026-08-26）**：
+  调大 timeout（`QED_LLM_TIMEOUT` 默认 300s）；输出契约暂不压缩。
 - 计算机批 tier 分布（进阶 8 门偏多、核心仅 2 门）是否符合预期，是否需要通用 tier 校准规则？
 
 ## 关联文档

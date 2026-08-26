@@ -51,6 +51,7 @@
 | `API_KEY` | 空 | **唯一密钥变量**（逐厂商 key 别名已全部取消、无回退；根仓库 ARCH-017 收敛）；厂商由根仓库侧 `QED_API_PROVIDER` 决定（QED-Tracker 只以 qwen 提供 API，不感知该变量） |
 | `QED_LLM_GATEWAY_URL` | `http://127.0.0.1:8900` | `qed-engine` 模式读取；`local`/`api` 模式忽略 |
 | `QED_MODEL` | `qwen-plus` | 文字模型名（`llm_model`） |
+| `QED_LLM_TIMEOUT` | `300` | LLM 上游调用超时秒数（`llm_timeout_seconds`；REQ-061 同步 2026-08-26：原 60s 硬编码默认曾致 courses@v3 长生成 ReadTimeout，键名与根仓库约定一致） |
 | `QED_DB_HOST` | `127.0.0.1` | 见 `QED_DB_*` |
 | `QED_DB_PORT` | `3306` | 见 `QED_DB_*` |
 | `QED_DB_NAME` | `qed` | 见 `QED_DB_*` |
@@ -62,6 +63,13 @@
   `QED_DB_PASSWORD`，承载 qed 库连接（调用记录写 `qed_llm_calls` 复用）。
 - 既有非密钥私有配置（`QED_AXIOM_URL`、`QED_TRACKER_URL`、`QED_PROXY`、`QED_TIMEOUT_SECONDS`、
   `QED_RETRIES`、`QED_TLS_VERIFY`、`QED_SOURCES` 等）继续由自身 `.env` 承载，行为不变。
+- **REQ-063 公共键下沉（2026-08-26 用户裁决，方案一）**：与根 `.env` 重复且内置默认同值的
+  `QED_LLM_GATEWAY_URL` / `QED_DB_PORT` / `QED_DB_NAME` / `QED_DB_USER` 从自身 `.env` 删除
+  （根兜底与内置默认两条路径行为均不变）；`API_KEY` / `QED_DB_PASSWORD` 为**独立运行底线键**
+  留守本文件（单独 clone 无父级根 `.env` 时保证 LLM 与 DB 能力完整）；`QED_MODEL` 为 P15
+  探索纪律有意覆盖（2026-08-26 起取值 `qwen3.7-plus`——qwen-plus 免费额度耗尽，calls 97~99
+  全链验证可用；回执注明偏差）；`QED_API_SELECT=local` 为语义钉不可删（两仓 local
+  语义不同：本仓=直连 dashscope，根仓=LM Studio 本地模型）。
 
 ## 改动范围
 

@@ -60,7 +60,7 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/plans/2026-08-docs-restructure-alignment.md"),
     Path("docs/plans/2026-08-prompt-explore-baseline.md"),
     Path("docs/plans/2026-08-prompt-optimization.md"),
-    Path("docs/plans/2026-08-prompt-explore-baseline.md"),
+    Path("docs/plans/2026-08-db-api-docs-completion.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
     Path("docs/trackers/completed.md"),
