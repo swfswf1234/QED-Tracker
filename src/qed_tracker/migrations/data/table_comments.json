@@ -1,11 +1,16 @@
 {
   "qed_domain": {
-    "table": "领域表：按学科组织课程体系，一行一个学科，记录学科介绍与学习阶段划分",
+    "table": "领域表：按学科组织课程体系，一行一个学科，记录学科介绍、探索范围与学习阶段划分",
     "columns": {
       "domain_id": "领域标识（主键）",
       "name": "领域名称",
       "description": "学科介绍",
+      "level": "探索范围",
+      "scope": "学科知识",
+      "exploration_stage": "流程状态",
+      "classic_tracks": "课程方向",
       "stages": "学习阶段顺序",
+      "path_results": "学习流程",
       "created_by": "创建人",
       "updated_by": "最后更新人",
       "created_at": "创建时间",
@@ -20,10 +25,12 @@
       "sort_order": "学习顺序",
       "name": "课程名称",
       "aliases": "别名列表",
-      "stage": "所属阶段（本科基础/本科进阶/研究生基础/QE冲刺）",
+      "track": "课程所属学术方向",
+      "stage": "所属阶段",
       "prerequisites": "先修课程",
       "related_targets": "已验收关联目标",
-      "note": "课程介绍",
+      "description": "课程介绍",
+      "exploration_stage": "流程状态",
       "created_by": "创建人",
       "updated_by": "最后更新人",
       "created_at": "创建时间",
@@ -121,45 +128,6 @@
       "ok": "是否成功（1=成功；0=失败）",
       "note": "备注",
       "attempted_at": "尝试时间"
-    }
-  },
-  "qt_explore_runs": {
-    "table": "探索运行表：一行 = 一次课程层/新建领域层 LLM 探索运行（QED-040/041，单表 JSON 方案）",
-    "columns": {
-      "run_id": "运行标识（主键，exp_ 前缀）",
-      "scope": "范围（course=课程层探索；curriculum=新建领域探索）",
-      "course_id": "课程标识（scope=course 必填；curriculum 为 NULL）",
-      "domain_name": "提议的新领域名（scope=curriculum 必填；course 为 NULL）",
-      "status": "状态（running=运行中；ready=待采纳；adopted=已采纳；discarded=已放弃；failed=失败；applied=已应用；partially_applied=部分应用）",
-      "params": "参数快照（mode/ref_text/ref_doc_path）",
-      "proposals": "推荐列表（ready 后非空：Proposal[] 或 Change[]；其余态 NULL 输出 []）",
-      "adopted_ids": "已采纳 proposal_id / 已应用 change_id",
-      "conflicts": "应用冲突清单（仅 curriculum apply 后）",
-      "skipped": "重探跳过清单 [{change_id, reason}]（domain_name 命中既有领域时）",
-      "error": "失败信息 {code, message}",
-      "task_id": "关联 8901 内部任务 ID",
-      "meta": "LLM 审计快照（model/calls/usage/response 哈希）",
-      "created_by": "创建人",
-      "created_at": "创建时间",
-      "updated_at": "最后更新时间"
-    }
-  },
-  "qt_prompt_runs": {
-    "table": "prompt 优化探索运行表：一行 = 一次领域/课程知识 LLM 探索运行（QED-043，调用明细在共享表 qed_llm_calls）",
-    "columns": {
-      "run_id": "运行标识（主键，prd_ 前缀）",
-      "task": "任务（domain_explore=领域知识探索；course_explore=课程知识探索）",
-      "subject": "探索对象（领域名或课程 id）",
-      "scope_hint": "默认范围说明（如 本科-硕士）",
-      "params": "参数快照（mode/ref_text/ref_doc_path）",
-      "status": "状态（running=运行中；ready=待审核；applied=已应用；failed=失败）",
-      "report": "聚合报告（ready 后非空：领域/课程探索报告）",
-      "review_status": "run 级审核态（unreviewed/approved/rejected）",
-      "calls_review": "REQ-060 落地前的调用级审核过渡存储 [{template_id, review_status, review_note}]",
-      "error": "失败信息 {code, message}",
-      "task_id": "关联 8901 内部任务 ID",
-      "created_at": "创建时间",
-      "updated_at": "最后更新时间"
     }
   }
 }

@@ -165,15 +165,16 @@ def test_migrate_reuses_old_format_row_after_rename(db, tmp_path):
     old_id = _id("kn", "math", "01_math_analysis", "tutorial", "2", "微积分学教程 套2")
     with engine.begin() as conn:
         conn.execute(text(
-            "INSERT INTO qed_domain (domain_id, name, description, stages, created_by, updated_by,"
-            " created_at, updated_at) VALUES"
-            " ('math','数学','d',json_array('本科基础'),'','','2026-08-01 10:00:00','2026-08-01 10:00:00')"
+            "INSERT INTO qed_domain (domain_id, name, description, level, scope,"
+            " exploration_stage, classic_tracks, stages, path_results,"
+            " created_by, updated_by, created_at, updated_at) VALUES"
+            " ('math','数学','d','','','未开始','[]',json_array('本科基础'),NULL,'','','2026-08-01 10:00:00','2026-08-01 10:00:00')"
         ))
         conn.execute(text(
-            "INSERT INTO qed_course (course_id, domain_id, sort_order, name, aliases, stage, prerequisites,"
-            " related_targets, note, created_by, updated_by, created_at, updated_at) VALUES"
-            " ('01_math_analysis','math',0,'数学分析',json_array(),'本科基础',json_array(),json_array(),'n',"
-            " '','','2026-08-01 10:00:00','2026-08-01 10:00:00')"
+            "INSERT INTO qed_course (course_id, domain_id, sort_order, name, aliases, track, stage, prerequisites,"
+            " related_targets, description, exploration_stage, created_by, updated_by, created_at, updated_at) VALUES"
+            " ('01_math_analysis','math',0,'数学分析',json_array(),'','本科基础',json_array(),json_array(),'n',"
+            " '未开始','','','2026-08-01 10:00:00','2026-08-01 10:00:00')"
         ))
         conn.execute(text(
             "INSERT INTO qt_knowledge (knowledge_id, domain_id, course_id, kind, set_no, name,"

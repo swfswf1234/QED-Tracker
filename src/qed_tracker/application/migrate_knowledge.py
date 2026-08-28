@@ -117,8 +117,10 @@ def migrate_curriculum(session_factory: Callable[[], Session], courses_dir: Path
         ).fetchone()
         if domain is None:
             session.execute(
-                text("INSERT INTO qed_domain (domain_id, name, description, stages, created_by,"
-                     " updated_by, created_at, updated_at) VALUES (:d, :n, :desc, :stages, '', '', :t, :t)"),
+                text("INSERT INTO qed_domain (domain_id, name, description, level, scope,"
+                     " exploration_stage, classic_tracks, stages, path_results,"
+                     " created_by, updated_by, created_at, updated_at)"
+                     " VALUES (:d, :n, :desc, '', '', '未开始', '[]', :stages, NULL, '', '', :t, :t)"),
                 {"d": value["subject"], "n": value["name"], "desc": value.get("description", ""),
                  "stages": json.dumps(value["stages"], ensure_ascii=False), "t": now},
             )
@@ -135,27 +137,29 @@ def migrate_curriculum(session_factory: Callable[[], Session], courses_dir: Path
             ).fetchone()
             if existing is None:
                 session.execute(
-                    text("INSERT INTO qed_course (course_id, domain_id, sort_order, name, aliases, stage,"
-                         " prerequisites, related_targets, note, created_by, updated_by, created_at, updated_at)"
-                         " VALUES (:c, :d, :s, :n, :aliases, :stage, :pre, :rel, :note, '', '', :t, :t)"),
+                    text("INSERT INTO qed_course (course_id, domain_id, sort_order, name, aliases, track,"
+                         " stage, prerequisites, related_targets, description, exploration_stage,"
+                         " created_by, updated_by, created_at, updated_at)"
+                         " VALUES (:c, :d, :s, :n, :aliases, '', :stage, :pre, :rel, :desc, '未开始',"
+                         " '', '', :t, :t)"),
                     {"c": item["course_id"], "d": value["subject"], "s": index, "n": item["name"],
                      "aliases": json.dumps(item.get("aliases", []), ensure_ascii=False),
                      "stage": item["stage"],
                      "pre": json.dumps(item.get("prerequisites", []), ensure_ascii=False),
                      "rel": json.dumps(item.get("related_targets", []), ensure_ascii=False),
-                     "note": item.get("note", ""), "t": now},
+                     "desc": item.get("note", item.get("description", "")), "t": now},
                 )
             else:
                 session.execute(
                     text("UPDATE qed_course SET sort_order=:s, name=:n, aliases=:aliases, stage=:stage,"
-                         " prerequisites=:pre, related_targets=:rel, note=:note, updated_at=:t"
+                         " prerequisites=:pre, related_targets=:rel, description=:desc, updated_at=:t"
                          " WHERE course_id=:c"),
                     {"c": item["course_id"], "s": index, "n": item["name"],
                      "aliases": json.dumps(item.get("aliases", []), ensure_ascii=False),
                      "stage": item["stage"],
                      "pre": json.dumps(item.get("prerequisites", []), ensure_ascii=False),
                      "rel": json.dumps(item.get("related_targets", []), ensure_ascii=False),
-                     "note": item.get("note", ""), "t": now},
+                     "desc": item.get("note", item.get("description", "")), "t": now},
                 )
         session.commit()
 

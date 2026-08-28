@@ -41,6 +41,10 @@ class CourseHasKnowledge(RuntimeError):
     """删除有知识行的课程。"""
 
 
+class AdoptionConflict(RuntimeError):
+    """A2 采纳冲突：同课程套号已被不同知识行占用。"""
+
+
 _HIDDEN_KNOWLEDGE_STATUSES = {KnowledgeStatus.REJECTED.value, KnowledgeStatus.SUPERSEDED.value}
 _HIDDEN_BOOK_STATUSES = {BookStatus.REJECTED.value, BookStatus.SUPERSEDED.value}
 
@@ -120,6 +124,14 @@ class KnowledgeRepository:
                 statement = statement.where(QedCourse.domain_id == domain_id)
             return list(session.scalars(statement))
 
+    def get_domain(self, domain_id: str) -> QedDomain | None:
+        with self._session_factory() as session:
+            return session.get(QedDomain, domain_id)
+
+    def get_course(self, course_id: str) -> QedCourse | None:
+        with self._session_factory() as session:
+            return session.get(QedCourse, course_id)
+
     def create_domain(
         self,
         *,
@@ -127,6 +139,9 @@ class KnowledgeRepository:
         name: str,
         description: str = "",
         stages: list[str] | None = None,
+        level: str = "",
+        scope: str = "",
+        classic_tracks: list[dict[str, Any]] | None = None,
     ) -> QedDomain:
         """幂等插入：已存在则返回既有行（对齐 create_knowledge 模式）。"""
         with self._session_factory() as session:
@@ -138,6 +153,9 @@ class KnowledgeRepository:
                 name=name,
                 description=description,
                 stages=stages or [],
+                level=level,
+                scope=scope,
+                classic_tracks=classic_tracks or [],
                 created_by="api",
                 updated_by="api",
             )
@@ -156,7 +174,8 @@ class KnowledgeRepository:
         sort_order: int = 0,
         prerequisites: list[str] | None = None,
         aliases: list[str] | None = None,
-        note: str = "",
+        description: str = "",
+        track: str = "",
     ) -> QedCourse:
         """幂等插入：已存在则返回既有行（对齐 create_knowledge 模式）。"""
         with self._session_factory() as session:
@@ -172,7 +191,8 @@ class KnowledgeRepository:
                 prerequisites=prerequisites or [],
                 aliases=aliases or [],
                 related_targets=[],
-                note=note,
+                description=description,
+                track=track,
                 created_by="api",
                 updated_by="api",
             )
@@ -182,8 +202,12 @@ class KnowledgeRepository:
             return row
 
     def update_domain(self, domain_id: str, *, description: str | None = None,
-                      stages: list[str] | None = None) -> QedDomain:
-        """更新领域（仅 description/stages；name 不可变）。"""
+                      stages: list[str] | None = None, level: str | None = None,
+                      scope: str | None = None,
+                      classic_tracks: list[dict[str, Any]] | None = None,
+                      path_results: dict[str, Any] | None = None,
+                      exploration_stage: str | None = None) -> QedDomain:
+        """更新领域（name 不可变；path_results/exploration_stage 属探索产物，本仓库写方）。"""
         with self._session_factory() as session:
             row = session.get(QedDomain, domain_id)
             if row is None:
@@ -192,14 +216,26 @@ class KnowledgeRepository:
                 row.description = description
             if stages is not None:
                 row.stages = stages
+            if level is not None:
+                row.level = level
+            if scope is not None:
+                row.scope = scope
+            if classic_tracks is not None:
+                row.classic_tracks = classic_tracks
+            if path_results is not None:
+                row.path_results = path_results
+            if exploration_stage is not None:
+                row.exploration_stage = exploration_stage
             row.updated_at = utc_now()
             session.commit()
             session.refresh(row)
             return row
 
     def update_course(self, course_id: str, *, stage: str | None = None,
-                      sort_order: int | None = None, note: str | None = None) -> QedCourse:
-        """更新课程（仅 stage/sort_order/note；name 不可变）。"""
+                      sort_order: int | None = None, description: str | None = None,
+                      aliases: list[str] | None = None, track: str | None = None,
+                      prerequisites: list[str] | None = None) -> QedCourse:
+        """更新课程（name 不可变；exploration_stage 由探索流程管理）。"""
         with self._session_factory() as session:
             row = session.get(QedCourse, course_id)
             if row is None:
@@ -208,8 +244,14 @@ class KnowledgeRepository:
                 row.stage = stage
             if sort_order is not None:
                 row.sort_order = sort_order
-            if note is not None:
-                row.note = note
+            if description is not None:
+                row.description = description
+            if aliases is not None:
+                row.aliases = aliases
+            if track is not None:
+                row.track = track
+            if prerequisites is not None:
+                row.prerequisites = prerequisites
             row.updated_at = utc_now()
             session.commit()
             session.refresh(row)
@@ -294,6 +336,61 @@ class KnowledgeRepository:
         )
         _touch(row, created=True)
         return row
+
+    def adopt_tutorials(self, course_id: str, tutorials: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """A2 课程知识采纳：每套一条 draft 知识行，预填 set_no/name/双 ref/双 intro。
+
+        幂等：同 course+set_no+name（id 规则 kn_md5(...)）命中 → 返回既有行（existing=True），
+        不改动已落库内容；同 set_no 被不同知识行占用 → AdoptionConflict（端点映射 409）。
+        单事务批量提交，逐套返回 {knowledge_id, set_no, name, status, existing}。
+        """
+        with self._session_factory() as session:
+            course = session.get(QedCourse, course_id)
+            if course is None:
+                raise KeyError(f"课程不存在：{course_id}")
+            domain_id = course.domain_id
+            existing_rows = list(session.scalars(
+                select(QtKnowledge).where(
+                    QtKnowledge.course_id == course_id, QtKnowledge.kind == "tutorial"
+                )
+            ))
+            by_id = {r.knowledge_id: r for r in existing_rows}
+            by_set = {r.set_no: r for r in existing_rows}
+            pending: list[tuple[QtKnowledge, bool]] = []
+            for item in tutorials:
+                set_no = str(item.get("set_no", "")).strip()
+                name = str(item.get("set_name", "")).strip()
+                textbook = item.get("textbook") or {}
+                exercise = item.get("exercise")
+                kid = _id("kn", domain_id, course_id, "tutorial", set_no, name)
+                hit = by_id.get(kid)
+                if hit is not None:
+                    pending.append((hit, True))
+                    continue
+                conflict = by_set.get(set_no)
+                if conflict is not None:
+                    raise AdoptionConflict(
+                        f"课程 {course_id} 套号 {set_no} 已被知识行 "
+                        f"{conflict.knowledge_id}（{conflict.name}）占用"
+                    )
+                row = self.build_tutorial_row(domain_id=domain_id, course_id=course_id,
+                                              set_no=set_no, name=name)
+                row.textbook_ref = dict(textbook)
+                row.textbook_intro = str(textbook.get("intro", ""))
+                if exercise:
+                    row.exercise_ref = dict(exercise)
+                    row.exercise_intro = str(exercise.get("intro", ""))
+                session.add(row)
+                by_set[set_no] = row
+                by_id[kid] = row
+                pending.append((row, False))
+            session.commit()
+            results: list[dict[str, Any]] = []
+            for row, existing in pending:
+                session.refresh(row)
+                results.append({"knowledge_id": row.knowledge_id, "set_no": row.set_no,
+                                "name": row.name, "status": row.status, "existing": existing})
+            return results
 
     def list_knowledge(
         self,

@@ -65,7 +65,17 @@ def _modify(table: str, name: str, col_type: str, nullable: str, default, commen
 
 def _apply(apply_comments: bool) -> None:
     conn = op.get_bind()
+    existing_tables = {
+        row[0]
+        for row in conn.execute(
+            text("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()")
+        )
+    }
     for table, meta in _load_comments().items():
+        if table not in existing_tables:
+            # Optional tables (e.g. the qt_sources_legacy backup created only
+            # when legacy data existed) may be absent on a fresh upgrade path.
+            continue
         table_comment = meta["table"] if apply_comments else ""
         op.execute(
             f"ALTER TABLE `{table}` COMMENT = '{table_comment.replace(chr(39), chr(39) * 2)}'"
@@ -73,7 +83,10 @@ def _apply(apply_comments: bool) -> None:
         columns = _columns(conn, table)
         for col, comment in meta["columns"].items():
             if col not in columns:
-                raise RuntimeError(f"column {table}.{col} not found")
+                # Columns added by later migrations (e.g. 0011/0012 exploration
+                # fields) do not exist yet on a fresh upgrade path: skip them
+                # instead of failing the whole chain.
+                continue
             col_type, nullable, default = columns[col]
             col_comment = comment if apply_comments else ""
             op.execute(_modify(table, col, col_type, nullable, default, col_comment))

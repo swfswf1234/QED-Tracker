@@ -41,12 +41,13 @@ SMOKE_ENABLED = os.environ.get("QED_DB_SMOKE") == "1" and bool(
 pytestmark = pytest.mark.skipif(not SMOKE_ENABLED, reason="仅本机 MySQL 冒烟（设置 QED_DB_SMOKE=1 启用）")
 
 DOMAIN_COLUMNS = {
-    "domain_id", "name", "description", "stages", "created_by", "updated_by", "created_at", "updated_at",
+    "domain_id", "name", "description", "level", "scope", "exploration_stage",
+    "classic_tracks", "stages", "path_results", "created_by", "updated_by", "created_at", "updated_at",
 }
 
 COURSE_COLUMNS = {
-    "course_id", "domain_id", "sort_order", "name", "aliases", "stage", "prerequisites",
-    "related_targets", "note", "created_by", "updated_by", "created_at", "updated_at",
+    "course_id", "domain_id", "sort_order", "name", "aliases", "track", "stage", "prerequisites",
+    "related_targets", "description", "exploration_stage", "created_by", "updated_by", "created_at", "updated_at",
 }
 
 KNOWLEDGE_COLUMNS = {

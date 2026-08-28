@@ -57,7 +57,7 @@ def _course_to_dataclass(row) -> Course:
         stage=row.stage,
         prerequisites=tuple(row.prerequisites or []),
         related_targets=tuple(row.related_targets or []),
-        note=row.note,
+        note=row.description,
     )
 
 
