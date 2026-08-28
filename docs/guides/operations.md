@@ -24,7 +24,7 @@ qed-tracker config show
 # 注意：本仓 local 与根仓库 local（LM Studio 本地模型）语义不同，此语义钉不可删。
 QED_API_SELECT=local
 API_KEY=
-# 探索管线模型（P15 纪律覆盖；2026-08-26 起 qwen3.7-plus——qwen-plus 免费额度耗尽）
+# 探索管线模型（P15 纪律覆盖；2026-08-26 起 qwen3.7-plus）
 QED_MODEL=qwen3.7-plus
 QED_DB_HOST=127.0.0.1
 QED_DB_PASSWORD=

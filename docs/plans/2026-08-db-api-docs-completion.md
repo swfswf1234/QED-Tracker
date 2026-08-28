@@ -15,7 +15,7 @@ plans 骨架（本文件）→ design/ 分域确认文档（正式格式）→ a
 
 | 目标文档 | 现状 | 差距 |
 | --- | --- | --- |
-| `architecture/database-schema.md`（唯一事实源） | 五层模型 DDL 齐全（qt_prompt_runs 已于 2026-08-26 补录） | 缺 ER 关系总览、逐表字段字典、迁移史（0001~0010）、qed_llm_calls 所有权边界章节 |
+| `architecture/database-schema.md`（唯一事实源） | 五层模型 DDL 齐全 | 缺 ER 关系总览、逐表字段字典、迁移史（0001~0013）、qed_llm_calls 所有权边界章节 |
 | `architecture/api.md` | 五类端点简介+返回要点 | 未达五要素标准（接口/简介/**输入/输出/范例**）；路由数量与 `main.py` 实现有漂移风险 |
 
 ## 2. 范围清单（立项盘点以实现为准，本清单为快照）
@@ -25,7 +25,7 @@ plans 骨架（本文件）→ design/ 分域确认文档（正式格式）→ a
 - **共享表**：qed_domain / qed_course（所有权 QED-Tracker，其他项目只读）；qed_llm_calls
   （**根仓库所有**，本仓仅经 `llm_client._record_call` 写入 direct 调用记录；扩展列
   task/step/review_status/review_note 属 REQ-060 契约，文档须写明双向边界）
-- **私有表**：qt_knowledge / qt_books / qt_sources / qt_explore_runs（0008+0009）/ qt_prompt_runs（0010）
+- **私有表**：qt_knowledge / qt_books / qt_sources
 - **退役表处置**：qt_selections / qt_downloads（drop）、qt_sources_legacy（`migrate --drop-legacy` 删除）
 - 补齐项：ER 关系图（五层主链 + 两张探索运行表旁路）、字段字典（含中文注释来源
   `migrations/data/table_comments.json`）、索引清单、迁移史时间线

@@ -1,7 +1,5 @@
 # QED-039 文档体系范本对齐 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** 按 QED-Engine 根仓库 ADR 0010 对齐 QED-Tracker 文档体系三层结构：architecture/（确定文档）→ design/（相对确定）→ trackers/（实时状态）
 
 **Architecture:** architecture/ 固定化（5 确定文档）+ 新增 api.md + database-schema.md 升级 + project-status.md 移出 + design/ 三态清理 + adr/index 版本声明 + 契约测试同步

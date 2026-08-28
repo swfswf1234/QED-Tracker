@@ -31,7 +31,7 @@
 - **名称确认流（P12）**：domain 步 `name_check.valid=false` 或建议名不同且无人工确认时抛
   `NameConfirmationRequired` 提前结束；带 `confirm_name_override` 重跑则以该名贯穿全程。
 - **评估模式（P11）**：`POST /api/v1/prompt-explores/dry-run` 同步执行，只落 qed_llm_calls，
-  不写 qt_prompt_runs、不入队、不 apply。
+  不入队、不 apply。
 - **跨步校验**：courses.track 必须逐字 ∈ classic_tracks；path.assignments 必须与课程清单完全一致。
 
 ## 3. 基线运行台账（qed_llm_calls 073~079）
@@ -74,8 +74,7 @@
 
 ### Round-1 重跑台账（2026-08-26，calls 97~99；qwen3.7-plus，高等数学批）
 
-背景：qwen-plus 免费额度耗尽（call 96，AllocationQuota.FreeTierOnly），用户裁决探索管线
-切换 qwen3.7-plus；本轮零 prompt 变更，兼作 TIMEOUT=300 修复后稳定性参照。
+背景：用户裁决探索管线切换 qwen3.7-plus；本轮零 prompt 变更，兼作 TIMEOUT=300 修复后稳定性参照。
 流程对齐基线 74~76（confirm_name_override="高等数学"）。
 
 | id | 模板 | 耗时 | 说明 |

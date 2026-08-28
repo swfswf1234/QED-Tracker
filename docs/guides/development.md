@@ -1,7 +1,7 @@
 # 开发指南
 
 状态：Current
-最后更新：2026-08-17
+最后更新：2026-08-28
 
 ## 当前事实来源
 
@@ -16,10 +16,12 @@
 
 ## 安装与依赖
 
-Python 版本和依赖以 `pyproject.toml` 为唯一事实源：
+Python 版本和依赖以 `pyproject.toml` 为唯一事实源。本机开发环境为 conda 环境 `qed_env`
+（`D:\software\anaconda3\envs\qed_env`），命令统一经 `conda run -n qed_env <命令>` 执行，
+避免 shell 落到 anaconda base 缺少项目依赖：
 
 ```powershell
-python -m pip install -e ".[dev]"
+conda run -n qed_env python -m pip install -e ".[dev]"
 ```
 
 配置直读根仓库 `.env` 的 `QED_*` 变量，无根 `.env` 时使用内置最小默认值。
@@ -48,13 +50,13 @@ python -m pip install -e ".[dev]"
 
 ## 验证门禁
 
-安装开发依赖后运行：
+安装开发依赖后运行（conda 环境 `qed_env`，见「安装与依赖」）：
 
 ```powershell
-python -m pytest tests -q
-python -m ruff check src tests scripts
-qed-tracker --version
-qed-tracker --json catalog list
+conda run -n qed_env python -m pytest tests -q
+conda run -n qed_env python -m ruff check src tests scripts
+conda run -n qed_env qed-tracker --version
+conda run -n qed_env qed-tracker --json catalog list
 git diff --check
 git diff --cached --check
 ```
