@@ -183,4 +183,8 @@ def test_production_package_has_no_removed_runtime_dependencies():
     assert not list((root / "app").rglob("*.py"))
     # scripts/ 自 QED-032（2026-08-17）起为正式生命周期脚本目录；
     # 只允许本仓库声明的脚本，新增脚本需同步本守卫（防旧布局无声明残留）。
-    assert set((root / "scripts").rglob("*.py")) == {root / "scripts" / "qed_tracker_service.py"}
+    # apply_table_comments.py：表/列注释幂等同步工具（2026-08-28 注释补齐轮，复用于加列后）。
+    assert set((root / "scripts").rglob("*.py")) == {
+        root / "scripts" / "qed_tracker_service.py",
+        root / "scripts" / "apply_table_comments.py",
+    }
