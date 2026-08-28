@@ -34,13 +34,15 @@ DOMAIN_PRIORS: dict[str, dict[str, str]] = {
 
 PRIOR_KEYS_BY_STEP: dict[str, tuple[str, ...]] = {
     # 探索管线各步注入的先验键集（分步裁剪，2026-08-26 用户裁决）：
-    # domain 步只喂命名/主线/基石/层级四键；courses 步全量；path 步仅顶峰提示。
+    # domain 步只喂命名/主线/基石/层级四键；courses 步全量；path 步仅顶峰提示；
+    # tutorials（课程教材探索，2026-08-26 单 prompt 重设计）仅教材偏好。
     "domain": ("naming_convention", "tracks_hint", "anchor_courses", "level_default"),
     "courses": (
         "naming_convention", "tracks_hint", "anchor_courses", "level_default",
         "textbook_preference", "capstone_hint",
     ),
     "path": ("capstone_hint",),
+    "tutorials": ("textbook_preference",),
 }
 
 

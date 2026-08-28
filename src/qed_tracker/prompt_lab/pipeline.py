@@ -1,6 +1,8 @@
-"""prompt_lab 管线（QED-043 · v3 三步管线）：领域知识探索编排器。
+"""prompt_lab 管线（QED-043）：领域与课程知识探索编排器。
 
-步骤：domain（领域校验与探索）→ courses（核心课程+简述）→ path（学习顺序+层级）。
+领域管线（v3 三步）：domain（领域校验与探索）→ courses（核心课程+简述）→ path（学习顺序+层级）。
+课程管线（v1 单步，2026-08-26 用户裁决：砍 tree，一个 prompt）：
+tutorials（围绕课程介绍，推荐「教材+配套习题集」成套方案）。
 每步独立模板（templates.py 注册表）+ ExploreAdvisorBase 结构化调用骨架
 （严格 JSON + 坏 JSON 一次修复重试 + 预算 + 审计）；领域先验知识经 priors.py 注入；
 跨步一致性校验在管线内完成；graph TD 由服务端按 tier 分组 + prerequisites 推导渲染。
@@ -9,6 +11,7 @@
 
 from __future__ import annotations
 
+import secrets
 import time
 from typing import Any
 
@@ -171,6 +174,68 @@ class DomainPipeline(ExploreAdvisorBase):
             if isinstance(exc, PipelineError):
                 raise
             raise PipelineError(f"领域探索步骤 {template.step} 失败：{exc}") from exc
+        self.step_calls.append({
+            "step": template.step,
+            "template_id": template.template_id,
+            "duration_ms": int((time.monotonic() - started) * 1000),
+        })
+        return value
+
+
+class CoursePipeline(ExploreAdvisorBase):
+    """课程教材探索：单步 tutorials（2026-08-26 用户裁决：砍 tree，一个 prompt）。"""
+
+    contract_version = "prompt-optimize-v3"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.step_calls: list[dict[str, Any]] = []
+        """单步调用明细（step/template_id/duration_ms，含修复重试耗时）。"""
+
+    def explore(
+        self,
+        course: dict[str, Any],
+        *,
+        domain_name: str = "",
+        mode: str = "direct",
+        ref_text: str = "",
+        ref_doc_path: str = "",
+    ) -> dict[str, Any]:
+        """为已知课程探索「教材+习题集」成套方案。
+
+        course 逐字透传（含 course_id/name/aliases/stage/prerequisites/note 等，note 为课程介绍）；
+        domain_name 用于 priors 注入（教材偏好）；mode/ref_* 与领域管线同语义。
+        """
+        tutorials_template = templates_mod.get_template("course-explore", "tutorials")
+        reference = _read_reference(mode, ref_text, ref_doc_path)
+        value = self._run(
+            tutorials_template,
+            {
+                "course": course,
+                "book_preference": get_prior_for_step(domain_name, "tutorials"),
+                "reference": reference,
+            },
+        )
+        enriched = []
+        for item in value["tutorials"]:
+            entry = dict(item)
+            entry["proposal_id"] = f"pp_{secrets.token_hex(6)}"
+            enriched.append(entry)
+        return {"course": course, "tutorials": enriched}
+
+    def _run(self, template, payload):
+        """单步执行：模板组装 → _structured（校验 + 修复重试）；耗时入 step_calls。"""
+        started = time.monotonic()
+        try:
+            value = self._structured(
+                template.messages(payload),
+                template.validate,
+                template_id=template.template_id,
+            )
+        except Exception as exc:  # noqa: BLE001 - 管线统一包装
+            if isinstance(exc, PipelineError):
+                raise
+            raise PipelineError(f"课程探索步骤 {template.step} 失败：{exc}") from exc
         self.step_calls.append({
             "step": template.step,
             "template_id": template.template_id,
