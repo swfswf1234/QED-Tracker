@@ -1,7 +1,8 @@
 # prompt 优化模块设计（领域/课程知识探索工作台）
 
-状态：Accepted（2026-08-24 用户裁决：①独立并行模块，不动 QED-040/041 冻结契约；②分步管线，每步独立模板；③调用记录全部进共享表 `qed_llm_calls`，表改造通知 QED-Engine（REQ-060）；④run 聚合私有表 `qt_prompt_runs`（用户审核通过）；⑤模板代码注册不建表（`prompt_lab/templates.py` 即审核入口）；⑥报告人工审核后手动应用入库；⑦方向分组 + 四档层级（基础/进阶/核心/冲刺）；⑧课程侧知识树→教程两步；⑨验收路径：模板审核后以「高等数学」真实冒烟，产出与 `tmp/高等数学探索.txt` 对比近似度）
+状态：Accepted（2026-08-24 用户裁决：①独立并行模块，不动 QED-040/041 冻结契约；②分步管线，每步独立模板；③调用记录全部进共享表 `qed_llm_calls`，表改造通知 QED-Engine（REQ-060）；④~~run 聚合私有表 `qt_prompt_runs`~~（已废弃：2026-08-27 共享表重构，探索状态追踪移至 qed_domain/qed_course.exploration_stage）；⑤模板代码注册不建表（`prompt_lab/templates.py` 即审核入口）；⑥报告人工审核后手动应用入库；⑦方向分组 + 四档层级（基础/进阶/核心/冲刺）；⑧课程侧知识树→教程两步；⑨验收路径：模板审核后以「高等数学」真实冒烟，产出与 `tmp/高等数学探索.txt` 对比近似度）
 最后更新：2026-08-26
+进度追踪：[2026-08-prompt-optimization-progress.md](2026-08-prompt-optimization-progress.md)
 关联任务：todo [QED-043（长期任务）](../trackers/todo.md)；需求方：QED-Engine 根仓库 REQ-060（qed_llm_calls 改造通知）；上游：根仓库 `docs/design/llm-gateway-and-model-management.md`（qed_llm_calls 契约）
 
 ## 背景与目标
@@ -10,7 +11,7 @@ QED-Tracker 现有 5 个 LLM 调用点（论文 plan/assess、教材评估、主
 prompt 全部硬编码于各 advisor、`qed_llm_calls.prompt_template` 恒空、无版本化、无人工审核入口。
 本模块为「探索领域知识（确定领域内课程）」与「探索课程知识（探索教程）」建立独立的
 prompt 工作台：分步管线的每个 prompt 模板集中注册、版本化；每次调用的**模板编号、完整问句、原始回答**
-全部落共享表 `qed_llm_calls`；探索聚合报告落私有表 `qt_prompt_runs`；前端可查看并人工审核
+全部落共享表 `qed_llm_calls`；前端可查看并人工审核
 （good/bad + 备注），合格后人工确认、手动应用领域/课程入库。后续新增 LLM 调用点按同一机制扩展。
 
 与 QED-040/041 的关系：**独立并行**。040/041 按根仓库冻结契约（课程层探索 5 端点 + 新建领域 3 端点 +
@@ -25,18 +26,18 @@ prompt 工作台：分步管线的每个 prompt 模板集中注册、版本化�
 | P2 | 领域探索调用形态 | 分步管线：scope→courses→path→describe 四步，每步独立模板 |
 | P3 | 调用记录载体 | 共享表 `qed_llm_calls`（prompt_template=模板编号、prompt=完整问句、response=原始回答） |
 | P4 | 表改造归属 | 不自行改表；起草 REQ-060 通知 QED-Engine（扩展列+审核端点+检索过滤+控制台+文档） |
-| P5 | run 聚合存储 | 私有表 `qt_prompt_runs`（用户审核通过；模板注册不建表） |
+| P5 | ~~run 聚合存储~~ | **已废弃**（2026-08-27）：探索状态追踪移至 qed_domain/qed_course.exploration_stage；LLM 调用审计走 qed_llm_calls |
 | P6 | 领域报告结构 | 方向分组（2~4）+ 四档层级（基础/进阶/核心/冲刺）+ 课程介绍；graph TD 由 edges 服务端渲染 |
-| P7 | 课程侧形态 | 知识树（tree）→ 教程方案（tutorials）两步 |
+| P7 | 课程侧形态 | 知识树（tree）→ 教程方案（tutorials）两步；**2026-08-26 修订：砍 tree，单步 tutorials**（用户裁决：课程已有介绍（note/summary），「一个 prompt 即可」——围绕课程介绍直接推荐「教材+习题集」成套方案） |
 | P8 | 报告用途 | 人工审核后手动应用入库（qed_domain + qed_course） |
 | P9 | 模板审核入口 | `src/qed_tracker/prompt_lab/templates.py` 全部集中；既有 5 advisor prompt 不迁移，只补编号 |
 | P10 | 模板学科中立（2026-08-24 用户裁决） | 模板通用化：领域完全由输入决定，不得假设/套用特定学科划分（守护测试扫描学科绑定词）；领域专属知识（如高等数学的分析/代数/概率分线）一律经参考输入 text/doc 传入，探索物理/计算机等领域不得混入 |
-| P11 | 评估模式先行（2026-08-24 用户裁决） | `POST /api/v1/prompt-explores/dry-run` 同步执行、只记录 LLM 日志（qed_llm_calls）、不写 qt_prompt_runs/不入队/不 apply；用户先评估 LLM 效果与模板质量，再走正式流程（Phase B） |
+| P11 | 评估模式先行（2026-08-24 用户裁决） | `POST /api/v1/prompt-explores/dry-run` 同步执行、只记录 LLM 日志（qed_llm_calls）、不入队/不 apply；用户先评估 LLM 效果与模板质量，再走正式流程（Phase B） |
 | P12 | v3 三步管线 + 名称确认流（2026-08-24 用户裁决）：scope/describe 删除 → **domain@v1**（名称校验/规范化 final_name + 描述 ≤200 字 + classic_tracks 可空 + entry_requirements）/ **courses@v3**（清华命名基准、禁拆学期名、不过于抽象、aliases 别名、track∈主线、summary 60~200 字）/ **path@v3**（assignments: tier 四档 + prerequisites，服务端无环校验）；名称不一致时提前结束并返回 name_check 标记，人工确认后带 confirm_name_override 重发（正式流程 Phase B 做 run 待确认态 + 前端弹窗）；graph TD 由 prerequisites 服务端推导渲染 |
 | P13 | 领域先验知识注册表（2026-08-24 用户裁决）：`prompt_lab/priors.py` 精确域名匹配（未命中不影响其它领域），首批高等数学（中文翻译的美版经典教材偏好/分析代数概率三主线提示/国内命名惯例/三门基石课锚点/QE 冲刺顶峰）；templates.py 保持学科中立（守护测试强制），后续课程侧管线复用同一份先验 |
 | P14 | 调用审阅载体收口（2026-08-26 用户裁决）：REQ-060 已落地（qed_llm_calls 扩展列 task/step/review_status/review_note + GET 过滤增强 + PATCH review 端点 + web-ui 控制台审核页），取消 `tmp/prompt-eval/` 人工导出实践并删除该目录；调用审阅一律走共享表 + 根仓库前端，prompt 优化循环只以 qed_llm_calls call_id 为准 |
 | P15 | 探索管线模型选型（2026-08-26 用户裁决）：采纳 QED-Engine 侧诊断——courses@v3 长结构化 JSON 生成在 qwen3.8 思考型大参数模型上推理延迟极端（>600s/>1200s 均未完成），prompt 本身无罪（qwen-plus 历史基线 42~56s 稳定）；**探索类管线步骤用 qwen-plus 级非思考型模型**；坚持推理型需单独放宽 `QED_LLM_TIMEOUT` 并接受分钟级等待。QED-Tracker 侧参照跑复核（calls 91~93，domain@v1 单步）：qwen3.8-max 39.8s / qwen3.7-plus 35.0s / qwen3.8-27b 28.3s 全部 name_check.valid=true **通过**——领域小步骤三模型均可用；课程检索优化后置（课程管线未重新规划前不做 courses 步模型对照）。配套落地：REQ-061 的 `QED_LLM_TIMEOUT` 键映射同步进本仓（默认 300s，原 60s 硬顶即基线 §7 超时预算开放问题的裁决落点=调大 timeout）；per-step 模型覆盖治理占位 todo QED-045 |
-| P15a | 探索管线模型修订（2026-08-26 用户裁决）：qwen-plus 免费额度耗尽（call 96，AllocationQuota.FreeTierOnly），探索管线切换 **qwen3.7-plus**——高等数学批全链验证可用（calls 97~99：domain 39.9s / courses 95.5s / path 47.3s 全 success；**courses@v3 95.5s 在旧默认 60s 下必死，REQ-061 同步必要性实证**）。P15 对 qwen3.8 思考型的禁用结论不变；性能代价：三步耗时约为 qwen-plus 的 2~5 倍 |
+| P15a | 探索管线模型修订（2026-08-26 用户裁决）：探索管线切换 **qwen3.7-plus**——高等数学批全链验证可用（calls 97~99：domain 39.9s / courses 95.5s / path 47.3s 全 success；**courses@v3 95.5s 在旧默认 60s 下必死，REQ-061 同步必要性实证**）。P15 对 qwen3.8 思考型的禁用结论不变；性能代价：三步耗时约为 qwen-plus 的 2~5 倍 |
 
 ## 共享表改造通知（REQ-060，由 QED-Engine 实现）
 
@@ -139,12 +140,30 @@ class PromptTemplate:
 
 聚合 `report = {scope, courses(合并 tier/direction/intro), path({stages,edges,graph_td}), university_basis 汇总}`。
 
-## 课程管线（2 步，输入：course 行 + 可选参考文本）
+## 课程管线（1 步，输入：course 行 + 领域名（先验注入）+ 可选参考文本）
 
-1. **tree 知识树**：`{chapters:[{title, topics[]}] 3~10 章}`；validate 非空与数量。
-2. **tutorials 教程方案**：`{tutorials:[{set_name, textbook{title,authors,version,intro}, exercise|null, reason}] 2~3 套}`；
-   validate 同 QED-040 L1/L7 规则（引用知识树章节来源可见于 intro/reason，不强耦合）。
-聚合 `report = {course, tree, tutorials}`。
+**2026-08-26 用户裁决重新设计**：砍 tree，单 prompt（P7 修订）。
+
+1. **tutorials 教程方案**（`course-explore/tutorials@v1`）：
+   输入 payload：`{course（含 note 课程介绍）, book_preference（priors 教材偏好注入）, reference}`；
+   输出 `{tutorials:[{set_no, set_name, textbook, exercise|null, reason}] 2~4 套}`。
+   契约细目（2026-08-26 用户裁决）：
+   - `set_name` = 中文教程名+作者（如「教程1：课程名（作者）」）；`set_no` 本批唯一；
+   - `textbook.title` 必须**中文书名**（真实中文译名/原名）；外文原版名进 `original_title`（禁全外文主标题）；
+   - `authors` 非空（谁的书）；`version{edition, publisher, year}` 附注（可空）；
+   - `roles` 对齐 qt_books：教材 `["textbook"]`；教材自带习题集 `["textbook","exercises"]`；
+     纯习题集条目 `["exercises"]`；textbook 条目必须含 textbook、exercise 条目必须含 exercises；
+   - `position ∈ {beginner, comprehensive, advanced}`（新手入门/全面系统/深度研究；英文枚举防变体污染）；
+   - `intro` 100~300 字，六要素：作者与学派背景 / 经典地位依据（顶尖大学指定、社区公认）/
+     风格与学理特点 / 版本与语言（中译本对应原版） / 适合人群与用法 / 教材-习题集配套关系；
+   - `exercise`：教材自带习题集（roles 含 exercises）时可 null（同源）；否则必须给出独立习题集；
+     至少一套方案须含习题集；
+   - 各套不得重复同一主教材，风格互补（一套初学者向 + 一套深入向为佳）；`reason` ≤50 字。
+   聚合 `report = {course, tutorials}`（enrich：proposal_id=pp_*）。
+
+落库映射（Phase C 预备，沿 2026-08-25 约定）：set_name+authors → knowledge.name；
+textbook → textbook_ref{title, authors, version}+textbook_intro；exercise → exercise_ref+exercise_intro；
+roles 含 exercises → qt_books roles=[textbook, exercises]（同陈纪修现存行）。
 
 ## API 端点组（8901，/api/v1/prompt-*）
 
@@ -194,8 +213,14 @@ CLI：`qed-tracker promptlab domain "高等数学"`（`--scope`/`--ref-doc`）�
   数学/应用数学/概率论与数理统计"三主线而非 golden 四主线），需后续优化 priors tracks_hint 文案。
   知识文档 `docs/plans/domain-math-advanced.json`（12 门 + 17 扩展 + DAG）已定稿并迁入
   `docs/guides/`。
-- **Phase B 正式流程**：课程 2 步管线（tree/tutorials）+ `/api/v1/prompt-explores`（202 入队）
+- **Phase B 正式流程**：`/api/v1/prompt-explores`（202 入队）
   + runs 列表/详情/review/apply 端点组 + CLI（依据 B0 评估结论启动）。
+- **Phase B0' 课程管线单步落地（2026-08-26，本轮）**：`course-explore/tutorials@v1` 模板注册
+  （中文书名优先/original_title 承载原版/roles 角色/position 三档/六要素 intro/同源可空）+ priors
+  tutorials 步键集（textbook_preference 注入）+ `CoursePipeline`（单步调用 + enrich proposal_id；
+  contract=prompt-optimize-v3）；守护测试 20 条全过（模板全边界 + payload 注入断言 + 坏 JSON 修复 +
+  预算耗尽）；全量 378 passed + 3 skipped + ruff clean。**真实评估待执行**：评估脚本
+  `tmp/run_course_tutorials.py` 待执行。
 - **Phase C**：apply 落库（领域报告 → qed_domain/qed_course）+ 模板按审核反馈迭代
   （version+1）+ 全量门禁全绿 + QED-043 台账更新 + 回执 REQ-060。
 

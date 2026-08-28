@@ -67,7 +67,7 @@
   `QED_LLM_GATEWAY_URL` / `QED_DB_PORT` / `QED_DB_NAME` / `QED_DB_USER` 从自身 `.env` 删除
   （根兜底与内置默认两条路径行为均不变）；`API_KEY` / `QED_DB_PASSWORD` 为**独立运行底线键**
   留守本文件（单独 clone 无父级根 `.env` 时保证 LLM 与 DB 能力完整）；`QED_MODEL` 为 P15
-  探索纪律有意覆盖（2026-08-26 起取值 `qwen3.7-plus`——qwen-plus 免费额度耗尽，calls 97~99
+  探索纪律有意覆盖（2026-08-26 起取值 `qwen3.7-plus`，calls 97~99
   全链验证可用；回执注明偏差）；`QED_API_SELECT=local` 为语义钉不可删（两仓 local
   语义不同：本仓=直连 dashscope，根仓=LM Studio 本地模型）。
 

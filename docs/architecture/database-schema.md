@@ -49,55 +49,74 @@ qed_domain（领域，共享 qed_*）
 | `qt_knowledge` | 知识行表 | 私有 | QED-Tracker | kind=tutorial：一套教程；kind=other_material：课程延展资料归类 | 本轮新增 |
 | `qt_books` | 书行表 | 私有 | QED-Tracker | 一个文件单元（书的一册/一篇论文/一个博客快照） | 本轮新增 |
 | `qt_sources` | 渠道表 | 私有 | QED-Tracker | 一次渠道尝试 | 迁移重建（外键改挂 book_id） |
-| `qt_explore_runs` | 探索运行表 | 私有 | QED-Tracker | 一次课程层/新建领域层 LLM 探索运行 | 迁移 0008+0009（含 skipped 列） |
-| `qt_prompt_runs` | prompt 优化探索运行表 | 私有 | QED-Tracker | 一次领域/课程知识探索运行（prompt 优化模块 QED-043） | 迁移 0010 新增 |
 | `qt_sources_legacy` | 渠道备份表 | 私有 | — | 0006 迁移改名保留的旧版渠道表快照 | 确认后由 `migrate --drop-legacy` 删除 |
 | `qt_selections` / `qt_downloads` | 旧选择/下载表 | 私有 | — | — | 存量迁移后退役（drop） |
 
 > 表/列中文注释：0007 迁移（`0007_table_comments`）从 `migrations/data/table_comments.json`
 > （UTF-8，唯一事实源）应用到真实库；ORM 模型 `comment=` 与新建库 `create_all` 保持一致。
 > 各表 SQL 中的 `COMMENT='...'` 即该表的中文表介绍（下表结构体已同步）。
+> 列级中文注释的事实源为 `src/qed_tracker/migrations/data/table_comments.json`，
+> 经 `scripts/apply_table_comments.py` 幂等应用到真实库（迁移加列不会自动应用注释，
+> 加列后须跑一次；2026-08-28 已全量对齐 qed_domain/qed_course）。
 
 ## qed_domain 表结构（表1，共享）
 
 ```sql
 CREATE TABLE qed_domain (
-  domain_id     VARCHAR(32)   NOT NULL,           -- PK：math（学科标识，扩展预留）
-  name          VARCHAR(100)  NOT NULL,           -- 显示名（数学）
-  description   TEXT          NOT NULL,           -- 体系说明（迁自 courses/math.json）
-  stages        JSON          NOT NULL,           -- 学习阶段顺序 ["本科基础","本科进阶","研究生基础","QE冲刺"]
-  created_by    VARCHAR(16)   NOT NULL DEFAULT '',
-  updated_by    VARCHAR(16)   NOT NULL DEFAULT '',
-  created_at    DATETIME      NOT NULL,
-  updated_at    DATETIME      NOT NULL,
+  domain_id          VARCHAR(32)   NOT NULL,           -- PK：math（学科标识，扩展预留）
+  name               VARCHAR(100)  NOT NULL,           -- 显示名（数学）
+  description        TEXT          NOT NULL,           -- 学科介绍
+  level              VARCHAR(50)   NOT NULL DEFAULT '',-- 探索范围（本科-硕士）
+  scope              TEXT          NOT NULL,           -- 学科知识（管线暂不输出，置空）
+  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态（未开始/已生成/探索中/已完成）
+  classic_tracks     JSON          NOT NULL,           -- 课程方向 [{name,summary}] 0~4 项
+  stages             JSON          NOT NULL,           -- 学习阶段顺序（无默认值，后续可变更）
+  path_results       JSON                              -- 学习流程（notes/edges/graph_td）
+  created_by         VARCHAR(16)   NOT NULL DEFAULT '',
+  updated_by         VARCHAR(16)   NOT NULL DEFAULT '',
+  created_at         DATETIME      NOT NULL,
+  updated_at         DATETIME      NOT NULL,
   PRIMARY KEY (domain_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='领域表：按学科组织课程体系，一行一个学科，记录学科介绍与学习阶段划分';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='领域表：按学科组织课程体系，一行一个学科，记录学科介绍、探索范围与学习阶段划分';
 ```
 
 - 共享表：三项目可读；QED-Tracker 唯一写权限（Alembic 建表维护）。
-- `stages` 为领域级阶段顺序（原 math.json 顶层 `stages`）。
+- `level`：探索范围（管线 domain@v2 输出），描述该领域的默认学习阶段范围。
+- `scope`：学科知识（领域边界描述），当前管线不输出，先置空。
+- `exploration_stage`：流程状态枚举（未开始→已生成→探索中→已完成）。
+- `classic_tracks`：课程方向（管线 domain@v2 输出），JSON 数组 [{name,summary}]，0~4 项。
+- `stages`：学习阶段顺序，无默认值，后续根据 LLM 生成结果确定。
+- `path_results`：学习流程（管线 path@v4 输出），可空，包含 notes/edges/graph_td。
 
 ## qed_course 表结构（表2，共享）
 
 ```sql
 CREATE TABLE qed_course (
-  course_id       VARCHAR(64)   NOT NULL,         -- PK：01_math_analysis（与 catalogs 对齐）
-  domain_id       VARCHAR(32)   NOT NULL,         -- FK → qed_domain.domain_id；索引
-  sort_order      INT           NOT NULL,         -- 学习顺序（原 courses[] 数组序，DAG 拓扑序）
-  name            VARCHAR(200)  NOT NULL,         -- 规范名（数学分析）
-  aliases         JSON          NOT NULL,         -- list[str]：别名（高等数学（工科称呼））
-  stage           VARCHAR(32)   NOT NULL,         -- 所属阶段（qed_domain.stages 之一）
-  prerequisites   JSON          NOT NULL,         -- list[str]：先修 course_id 数组（主知识链路 DAG）
-  related_targets JSON          NOT NULL,         -- list[str]：已通过验收的关联 catalog 目标（现为空，随验收回填）
-  note            VARCHAR(1000) NOT NULL DEFAULT '',
-  created_by      VARCHAR(16)   NOT NULL DEFAULT '',
-  updated_by      VARCHAR(16)   NOT NULL DEFAULT '',
-  created_at      DATETIME      NOT NULL,
-  updated_at      DATETIME      NOT NULL,
+  course_id          VARCHAR(64)   NOT NULL,         -- PK：01_math_analysis（与 catalogs 对齐）
+  domain_id          VARCHAR(32)   NOT NULL,         -- FK → qed_domain.domain_id；索引
+  sort_order         INT           NOT NULL,         -- 学习顺序（原 courses[] 数组序，DAG 拓扑序）
+  name               VARCHAR(200)  NOT NULL,         -- 规范名（数学分析）
+  aliases            JSON          NOT NULL,         -- list[str]：别名（高等数学（工科称呼））
+  track              VARCHAR(50)   NOT NULL DEFAULT '',-- 课程所属学术方向（管线 courses@v4 输出）
+  stage              VARCHAR(32)   NOT NULL,         -- 所属阶段（qed_domain.stages 之一）
+  prerequisites      JSON          NOT NULL,         -- list[str]：先修 course_id 数组（主知识链路 DAG）
+  related_targets    JSON          NOT NULL,         -- list[str]：已通过验收的关联 catalog 目标（现为空，随验收回填）
+  description        VARCHAR(1000) NOT NULL DEFAULT '',-- 课程介绍
+  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态（未开始/已生成/探索中/已完成）
+  created_by         VARCHAR(16)   NOT NULL DEFAULT '',
+  updated_by         VARCHAR(16)   NOT NULL DEFAULT '',
+  created_at         DATETIME      NOT NULL,
+  updated_at         DATETIME      NOT NULL,
   PRIMARY KEY (course_id),
   KEY ix_qed_course_domain (domain_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='课程表：登记一门课程，记录课程名称、所属阶段、先修关系与学习顺序';
 ```
+
+- 共享表：三项目可读；QED-Tracker 唯一写权限（Alembic 建表维护）。
+- `track`：课程所属学术方向（管线 courses@v4 输出），如 "分析学"/"代数学"。
+- `stage`：所属学习阶段（纵向），来自 qed_domain.stages。
+- `description`：课程介绍（原 note 字段，2026-08-27 重命名与 qed_domain 同步）。
+- `exploration_stage`：流程状态枚举（未开始→已生成→探索中→已完成）。
 
 - **`courses/math.json` 退役**（2026-08-16 用户裁决）：表为课程体系唯一事实源；CLI/8903 改读表；
   `subject`/`stages` 迁入 qed_domain，`courses[]` 迁入本表（sort_order=数组序）。
@@ -248,72 +267,6 @@ CREATE TABLE qt_sources (
   数学分析原理（鲁丁）×2），另 3 册经 archive.org 自动获取；**当前阶段以固定当前课程（定稿
   固化）为主，渠道优化流程从下一门课程开始**；表结构不变，记录即优化依据。人工获取书的
   自动渠道保留 ok=0 失败留痕（note 标注"自动下载失败，转人工"），成功渠道归因以 manual 为准。
-
-## qt_explore_runs 表结构（表6，私有，迁移 0008+0009）
-
-一行 = 一次课程层/新建领域层 LLM 探索运行（单表 JSON 方案，QED-040/041）。
-
-```sql
-CREATE TABLE qt_explore_runs (
-  run_id        VARCHAR(32)   NOT NULL,            -- PK，exp_ 前缀
-  scope         VARCHAR(16)   NOT NULL,            -- course / curriculum
-  course_id     VARCHAR(64)   NULL,                -- scope=course 必填；curriculum 为 NULL
-  domain_name   VARCHAR(100)  NULL,                -- scope=curriculum 必填；course 为 NULL
-  status        VARCHAR(24)   NOT NULL DEFAULT 'running',
-  params        JSON          NOT NULL,            -- {mode, ref_text?, ref_doc_path?}
-  proposals     JSON          NULL,                -- ready 后非空：Proposal[] 或 Change[]
-  adopted_ids   JSON          NOT NULL DEFAULT ('[]'),
-  conflicts     JSON          NULL,                -- apply 后：[{change_id, reason}]
-  skipped       JSON          NULL,                -- 重探跳过：[{change_id, reason}]（0009 新增）
-  error         JSON          NULL,                -- {code, message}
-  task_id       VARCHAR(32)   NULL,                -- 8901 内部任务 ID
-  meta          JSON          NULL,                -- LLM 审计快照
-  created_by    VARCHAR(16)   NOT NULL DEFAULT '',
-  created_at    DATETIME      NOT NULL,
-  updated_at    DATETIME      NOT NULL,
-  PRIMARY KEY (run_id),
-  KEY ix_qt_explore_runs_course (course_id),
-  KEY ix_qt_explore_runs_domain (domain_name),
-  KEY ix_qt_explore_runs_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-```
-
-**状态机：** running → ready → adopted / discarded / applied / partially_applied；running → failed。
-
-## qt_prompt_runs 表结构（表7，私有，迁移 0010）
-
-一行 = 一次领域/课程知识探索运行（prompt 优化模块 QED-043）。调用明细（模板编号/问句/回答）
-在共享表 `qed_llm_calls`（按 `prompt_template` = `{task}/{step}@v{n}` 编号关联）；本表只存
-参数快照、状态机、聚合报告与 run 级审核态。
-
-```sql
-CREATE TABLE qt_prompt_runs (
-  run_id        VARCHAR(32)   NOT NULL,            -- PK，prd_ 前缀
-  task          VARCHAR(16)   NOT NULL,            -- domain_explore=领域知识探索 / course_explore=课程知识探索
-  subject       VARCHAR(100)  NOT NULL,            -- 探索对象（领域名或课程 id）
-  scope_hint    VARCHAR(500)  NOT NULL DEFAULT '', -- 默认范围说明（如 本科-硕士）
-  params        JSON          NOT NULL,            -- 参数快照 {mode, ref_text?, ref_doc_path?}
-  status        VARCHAR(16)   NOT NULL DEFAULT 'running', -- running/ready/applied/failed
-  report        JSON          NULL,                -- ready 后非空：领域/课程探索聚合报告
-  review_status VARCHAR(16)   NOT NULL DEFAULT 'unreviewed', -- run 级审核态 unreviewed/approved/rejected
-  calls_review  JSON          NOT NULL DEFAULT ('[]'), -- REQ-060 落地前的调用级审核过渡存储
-  error         JSON          NULL,                -- {code, message}
-  task_id       VARCHAR(32)   NULL,                -- 关联 8901 内部任务 ID
-  created_at    DATETIME      NOT NULL,
-  updated_at    DATETIME      NOT NULL,
-  PRIMARY KEY (run_id),
-  KEY ix_qt_prompt_runs_task (task),
-  KEY ix_qt_prompt_runs_status (status),
-  KEY ix_qt_prompt_runs_subject (subject)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='prompt优化探索运行表：一次领域/课程知识探索运行的参数快照、状态机与聚合报告';
-```
-
-**状态机：** running → ready → applied；running → failed；同对象 `running` 行幂等查重。
-评估模式（`POST /api/v1/prompt-explores/dry-run`）不写本表——唯一痕迹是 `qed_llm_calls` 调用日志。
-
-> **calls_review 过渡说明（P14，2026-08-26）**：REQ-060 已落地（qed_llm_calls 扩展列
-> task/step/review_status/review_note + 审核端点 + 根仓库前端），调用级审核一律落共享表列；
-> 本列仅作历史过渡保留兼容，Phase B 正式流程不再写入。
 
 ## 状态机汇总与迁移合法性
 

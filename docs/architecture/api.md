@@ -297,57 +297,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 **返回：** `Candidate[]`。
 
-## ⑤ 探索域端点
-
-### 课程层探索
-
-#### `POST /api/v1/courses/{course_id}/explore`
-
-发起课程层探索（202Accepted）。mode=direct/text/doc；text 需 ref_text ≤10000 字符。
-
-**校验序列：** 400 INVALID_PARAMS → 404 COURSE_NOT_FOUND → 409 CAPACITY_REACHED（active≥4）→ 409 COURSE_LOCKED（completed≥2）→ 幂等查重（running → 返回既有 run + deduplicated:true）→ 入队 202。
-
-**返回：** `{"run_id", "task_id", "status": "running"}` 或 deduplicated 分支。
-
-#### `GET /api/v1/explore-runs/{run_id}`
-
-探索运行详情（孤儿兜底 TASK_LOST/TASK_FAILED）。
-
-#### `POST /api/v1/explore-runs/{run_id}/adopt`
-
-采纳推荐（selected proposal_id 数组）。**单事务**：知识行插入与 run 迁移同 session，任一失败全回滚。
-
-**返回：** `{"adopted": [...], "remaining_slots", "run": {...}}`
-
-#### `POST /api/v1/explore-runs/{run_id}/discard`
-
-放弃探索（ready → discarded）。
-
-#### `GET /api/v1/courses/{course_id}/explore-runs`
-
-课程历史探索列表（limit+offset 分页）。
-
-### 新建领域层探索
-
-#### `POST /api/v1/curriculum-explore`
-
-发起新建领域探索（202 Accepted）。必填 domain_name + mode。
-
-**幂等：** running 命中 → deduplicated:true。
-
-#### `GET /api/v1/curriculum-runs/{run_id}`
-
-新建领域探索运行详情。
-
-#### `POST /api/v1/curriculum-runs/{run_id}/apply`
-
-应用课程体系变更（selected change_id 数组）。
-
-**重探语义（R3）：** domain_name 命中既有领域 → create_domain 记 skipped（非 conflicts），create_course 挂靠已有领域。
-
-**返回：** `{"applied", "conflicts", "skipped", "run": {...}}`
-
-### 手工维护
+## ⑤ 手工维护端点
 
 #### `GET /api/v1/domains`
 
@@ -383,8 +333,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 #### `POST /api/v1/prompt-explores/dry-run`
 
-领域知识探索**评估模式**（同步执行，非 202）：不走正式流程——不写 `qt_prompt_runs`、
-不入任务队列；唯一痕迹是 `qed_llm_calls` 的 LLM 日志（`prompt_template=domain-explore/<step>@v1`）。
+领域知识探索**评估模式**（同步执行，非 202）：不入任务队列；唯一痕迹是 `qed_llm_calls` 的 LLM 日志（`prompt_template=domain-explore/<step>@v1`）。
 
 **body：** `{domain_name 必填, scope_hint?（默认本科-硕士）, mode? direct/text/doc 默认 direct, ref_text?, ref_doc_path?}`
 

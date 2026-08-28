@@ -38,7 +38,10 @@
 
 ## 数据设计
 
-- [数据库设计](../architecture/database-schema.md)（Accepted，2026-08-16 用户裁决知识层次重构）：qed 库
+- [共享表设计](shared-tables.md)（Accepted/Implemented，需求方 QED-Engine）：qed 库三张共享表
+  `qed_domain`（领域）、`qed_course`（课程）、`qed_llm_calls`（LLM 调用审计）的完整设计——
+  DDL、列语义、状态机、写权限模型与跨项目契约。
+- [数据库架构](../architecture/database-schema.md)（Accepted，2026-08-16 用户裁决知识层次重构）：qed 库
   `qed_*`（共享）与 `qt_*`（QED-Tracker 私有）表族**唯一事实源文档**——领域/课程/知识行/
   书行/渠道五层模型（qed_domain → qed_course → qt_knowledge → qt_books → qt_sources）、
   状态机、文件命名（物理名/展示名）、存量迁移与共享表所有权。
