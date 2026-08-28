@@ -219,7 +219,7 @@ def test_knowledge_rejected_hidden_in_list(client, repo):
 
 # ---------------- QED-033：课程体系只读端点（GET /courses，透出 qed_domain/qed_course） ----------------
 
-_COURSE_FIELDS = {"course_id", "name", "aliases", "stage", "prerequisites", "related_targets", "note"}
+_COURSE_FIELDS = {"course_id", "name", "aliases", "track", "stage", "prerequisites", "related_targets", "description", "exploration_stage"}
 
 
 def test_courses_list_returns_domain_grouped_curricula(client):
@@ -258,3 +258,216 @@ def test_courses_detail_unknown_domain_404(client):
 def test_courses_requires_db_config_409(client_no_db):
     assert client_no_db.get("/api/v1/courses").status_code == 409
     assert client_no_db.get("/api/v1/courses/math").status_code == 409
+
+
+# ---------------- QED-026 B2：领域/课程管理端点探索字段补齐 ----------------
+
+
+def test_create_domain_accepts_exploration_fields(client):
+    resp = client.post("/api/v1/domains", json={
+        "name": "Physics",
+        "description": "物理学科",
+        "stages": ["基础", "进阶"],
+        "level": "本科-硕士",
+        "scope": "边界说明",
+        "classic_tracks": [{"name": "理论物理", "summary": "s"}],
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["level"] == "本科-硕士"
+    assert body["scope"] == "边界说明"
+    assert body["classic_tracks"] == [{"name": "理论物理", "summary": "s"}]
+
+
+def test_patch_domain_updates_level_scope_and_tracks(client):
+    resp = client.patch("/api/v1/domains/math", json={
+        "level": "本科",
+        "scope": "更新边界",
+        "classic_tracks": [{"name": "分析学", "summary": "s1"}],
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["level"] == "本科"
+    assert body["scope"] == "更新边界"
+    assert body["classic_tracks"] == [{"name": "分析学", "summary": "s1"}]
+
+
+def test_create_course_accepts_exploration_fields(client):
+    resp = client.post("/api/v1/domains/math/courses", json={
+        "name": "概率论与数理统计",
+        "stage": "基础",
+        "sort_order": 3,
+        "description": "课程介绍",
+        "aliases": ["概率统计"],
+        "track": "概率与统计",
+        "prerequisites": ["01_math_analysis"],
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["description"] == "课程介绍"
+    assert body["aliases"] == ["概率统计"]
+    assert body["track"] == "概率与统计"
+    assert body["prerequisites"] == ["01_math_analysis"]
+
+
+def test_patch_course_updates_track_prereqs_aliases(client):
+    resp = client.patch("/api/v1/courses/02_linear_algebra", json={
+        "track": "代数学",
+        "prerequisites": [],
+        "aliases": ["线性代数", "高等代数"],
+        "description": "更新介绍",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["track"] == "代数学"
+    assert body["prerequisites"] == []
+    assert body["aliases"] == ["线性代数", "高等代数"]
+    assert body["description"] == "更新介绍"
+
+
+def test_create_domain_accepts_optional_domain_id(client):
+    resp = client.post("/api/v1/domains", json={
+        "name": "Physics",
+        "domain_id": "phys",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["domain_id"] == "phys"
+    # 重复指定同一 id → 409（幂等插入语义在此端点收敛为显式冲突）
+    resp_dup = client.post("/api/v1/domains", json={"name": "Physics II", "domain_id": "phys"})
+    assert resp_dup.status_code == 409
+
+
+def test_courses_view_exposes_level_and_tracks(client):
+    """GET /courses 领域视图透出 level/classic_tracks（学习中心消费）。"""
+    client.patch("/api/v1/domains/math", json={
+        "level": "本科-硕士",
+        "classic_tracks": [{"name": "分析学", "summary": "s"}],
+    })
+    body = client.get("/api/v1/courses").json()[0]
+    assert body["level"] == "本科-硕士"
+    assert body["classic_tracks"] == [{"name": "分析学", "summary": "s"}]
+
+
+def test_patch_domain_updates_path_results_and_stage(client):
+    """A3（QED-048）：探索产物 path_results 与 exploration_stage 经本仓库端点落库。"""
+    resp = client.patch("/api/v1/domains/math", json={
+        "path_results": {
+            "notes": "先修在前",
+            "edges": [{"from": "01_math_analysis", "to": "09_abstract_algebra"}],
+            "graph_td": "graph TD\n",
+        },
+        "exploration_stage": "已生成",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["path_results"]["notes"] == "先修在前"
+    assert body["path_results"]["edges"][0]["to"] == "09_abstract_algebra"
+    assert body["exploration_stage"] == "已生成"
+
+
+def test_courses_view_exposes_exploration_stage_and_path_results(client):
+    """事项四（QED-048）：领域行补 exploration_stage/path_results（前端探索状态机与路径图）。"""
+    client.patch("/api/v1/domains/math", json={
+        "path_results": {"notes": "n", "edges": [], "graph_td": "graph TD"},
+        "exploration_stage": "已完成",
+    })
+    body = client.get("/api/v1/courses").json()[0]
+    assert body["exploration_stage"] == "已完成"
+    assert body["path_results"] == {"notes": "n", "edges": [], "graph_td": "graph TD"}
+
+
+# ---------------- QED-026（A2）：课程知识采纳端点 ----------------
+
+
+def _tutorial(set_no: str = "1",
+              set_name: str = "菲赫金哥尔茨《微积分学教程》+ 吉米多维奇习题集",
+              exercise: bool = True,
+              textbook_title: str = "微积分学教程") -> dict:
+    item = {
+        "set_no": set_no,
+        "set_name": set_name,
+        "textbook": {"title": textbook_title, "original_title": "Курс дифференциального исчисления",
+                     "roles": ["textbook"], "position": "comprehensive",
+                     "intro": "苏版经典三卷本，中文翻译成熟，适合系统学习分析学地基，" * 5},
+        "reason": "苏版经典，与国内大纲最接近",
+    }
+    if exercise:
+        item["exercise"] = {"title": "吉米多维奇数学分析习题集", "original_title": "",
+                            "roles": ["exercises"], "position": "comprehensive",
+                            "intro": "题量巨大的经典习题集，配套解答齐全，训练强度高，" * 5}
+    else:
+        item["textbook"]["roles"] = ["textbook", "exercises"]
+    return item
+
+
+def test_adopt_knowledge_creates_prefilled_drafts(client):
+    resp = client.post("/api/v1/courses/01_math_analysis/knowledge", json={
+        "tutorials": [_tutorial("1"),
+                      _tutorial("2", "Rudin《数学分析原理》+ 配套习题集",
+                                textbook_title="数学分析原理")],
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert len(body["created"]) == 2
+    assert all(item["status"] == "draft" for item in body["created"])
+    rows = client.get("/api/v1/knowledge", params={"course_id": "01_math_analysis"}).json()
+    by_set = {r["set_no"]: r for r in rows}
+    assert by_set["1"]["name"].startswith("菲赫金哥尔茨")
+    assert by_set["1"]["textbook_ref"]["title"] == "微积分学教程"
+    assert by_set["1"]["exercise_ref"]["title"] == "吉米多维奇数学分析习题集"
+    assert by_set["1"]["textbook_intro"].startswith("苏版经典")
+    assert by_set["2"]["textbook_ref"]["title"] == "数学分析原理"
+
+
+def test_adopt_knowledge_idempotent_same_set(client):
+    payload = {"tutorials": [_tutorial("1")]}
+    first = client.post("/api/v1/courses/01_math_analysis/knowledge", json=payload).json()
+    second = client.post("/api/v1/courses/01_math_analysis/knowledge", json=payload).json()
+    assert second["created"][0]["existing"] is True
+    assert second["created"][0]["knowledge_id"] == first["created"][0]["knowledge_id"]
+
+
+def test_adopt_knowledge_set_no_conflict_409(client):
+    client.post("/api/v1/courses/01_math_analysis/knowledge", json={"tutorials": [_tutorial("1")]})
+    resp = client.post("/api/v1/courses/01_math_analysis/knowledge",
+                       json={"tutorials": [_tutorial("1", "另一套不同名教材")]})
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "SET_NO_CONFLICT"
+
+
+def test_adopt_knowledge_same_source_exercise_optional(client):
+    resp = client.post("/api/v1/courses/01_math_analysis/knowledge",
+                       json={"tutorials": [_tutorial("1", exercise=False)]})
+    assert resp.status_code == 201
+    row = client.get("/api/v1/knowledge", params={"course_id": "01_math_analysis"}).json()[0]
+    assert row["exercise_ref"] is None
+    assert row["textbook_ref"]["roles"] == ["textbook", "exercises"]
+
+
+def test_adopt_knowledge_validations(client):
+    base = "/api/v1/courses/01_math_analysis/knowledge"
+    assert client.post(base, json={"tutorials": []}).status_code == 422
+    assert client.post(base, json={"tutorials": [_tutorial("")]}).status_code == 422
+    bad = _tutorial("1")
+    bad["textbook"] = {"roles": ["textbook"]}
+    assert client.post(base, json={"tutorials": [bad]}).status_code == 422
+    assert client.post("/api/v1/courses/nope/knowledge",
+                       json={"tutorials": [_tutorial()]}).status_code == 404
+
+
+def test_create_domain_rejects_invalid_domain_id(client):
+    resp = client.post("/api/v1/domains", json={"name": "Chemistry", "domain_id": "invalid id!"})
+    assert resp.status_code == 422
+
+
+def test_create_course_accepts_optional_course_id(client):
+    resp = client.post("/api/v1/domains/math/courses", json={
+        "name": "微分几何",
+        "course_id": "14_differential_geometry",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["course_id"] == "14_differential_geometry"
+    resp_dup = client.post("/api/v1/domains/math/courses", json={
+        "name": "微分几何二", "course_id": "14_differential_geometry",
+    })
+    assert resp_dup.status_code == 409
