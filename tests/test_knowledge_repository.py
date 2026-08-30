@@ -260,3 +260,28 @@ def test_list_sources_ok_only(repo):
     repo.add_source(book.book_id, channel="internet_archive", ok=False, download_url="http://b")
     assert len(repo.list_sources(book.book_id)) == 2
     assert len(repo.list_sources(book.book_id, ok_only=True)) == 1
+
+
+# --- 领域探索状态（REQ-067 B8，2026-08-30） ---
+
+
+def test_update_domain_supports_name(repo):
+    """name 仅探索名确认路径可写：update_domain(name=...) 生效。"""
+    row = repo.update_domain("math", name="数学（高等数学）")
+    assert row.name == "数学（高等数学）"
+    assert repo.get_domain("math").name == "数学（高等数学）"
+
+
+def test_update_domain_supports_explore_pending(repo):
+    """explore_pending 写入/清空（None=无挂起）。"""
+    row = repo.update_domain("math", exploration_stage="已生成",
+                             explore_pending={"kind": "name_confirm",
+                                              "name_check": {"suggested_name": "高等数学"}})
+    assert row.explore_pending["kind"] == "name_confirm"
+    row = repo.update_domain("math", exploration_stage="已完成", explore_pending=None)
+    assert row.explore_pending is None
+
+
+def test_update_domain_unknown_raises(repo):
+    with pytest.raises(KeyError):
+        repo.update_domain("nope", name="x")

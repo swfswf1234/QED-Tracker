@@ -25,6 +25,7 @@ from qed_tracker import __version__
 from qed_tracker.api.tasks import TaskManager, TaskStore
 from qed_tracker.application import BookService, ResourceService
 from qed_tracker.application.book_fetch import BookFetchService, build_book_service
+from qed_tracker.application.domain_explore import run_domain_explore
 from qed_tracker.application.knowledge_import import KnowledgeImportError, validate_domain
 from qed_tracker.application.papers import PaperService
 from qed_tracker.catalog import list_catalogs, load_catalog
@@ -180,7 +181,27 @@ def create_app(
         )
         return fetcher.fetch(book_id, progress=progress)
 
-    all_handlers = {**(extra_handlers or {}), "book_download": _book_download_handler}
+    def _domain_explore_handler(params: dict[str, Any], progress) -> dict[str, Any]:
+        """领域探索后台任务：管线执行 → 状态机终态 + 全量自动落库（REQ-067 B8）。"""
+        repo = _kn(app)
+        pipeline = DomainPipeline(**{**_advisor_kwargs()})
+        try:
+            return run_domain_explore(
+                repo, pipeline,
+                domain_id=str(params["domain_id"]),
+                scope_hint=str(params.get("scope_hint", "")),
+                mode=str(params.get("mode", "direct")),
+                ref_text=str(params.get("ref_text", "")),
+                ref_doc_path=str(params.get("ref_doc_path", "")),
+                confirm_name_override=str(params.get("confirm_name_override", "")),
+            )
+        finally:
+            pipeline.close()
+
+    all_handlers = {"book_download": _book_download_handler,
+                    "domain_explore": _domain_explore_handler}
+    # 测试注入优先：extra_handlers 覆盖默认 handler（book_download/domain_explore 同约）。
+    all_handlers.update(extra_handlers or {})
     manager = TaskManager(TaskStore(settings.state_dir / "tasks"), all_handlers)
 
     @asynccontextmanager
@@ -268,6 +289,7 @@ def create_app(
             "classic_tracks": domain.classic_tracks or [],
             "exploration_stage": domain.exploration_stage,
             "path_results": domain.path_results,
+            "explore_pending": domain.explore_pending,
             "stages": list(domain.stages),
             "courses": [
                 {
@@ -315,6 +337,7 @@ def create_app(
             "classic_tracks": domain.classic_tracks or [],
             "path_results": domain.path_results,
             "exploration_stage": domain.exploration_stage,
+            "explore_pending": domain.explore_pending,
         }
 
     @fastapi_app.get("/api/v1/domains")
@@ -353,6 +376,62 @@ def create_app(
         return f"c_{_hl.md5(f'{domain_id}:{name}'.encode()).hexdigest()[:10]}"
 
     _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}$")
+
+    def _require_explore_mode(mode: str) -> str:
+        if mode not in ("direct", "text", "doc"):
+            raise api_error(400, "INVALID_PARAMS", "mode 必须为 direct/text/doc")
+        return mode
+
+    @fastapi_app.post("/api/v1/domains/{domain_id}/explore", status_code=202)
+    def explore_domain(domain_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, str]:
+        """启动领域探索（REQ-067 B2/B8）：同步置「探索中」→ 提交 domain_explore 后台任务。"""
+        repo = _kn(app)
+        domain = repo.get_domain(domain_id)
+        if domain is None:
+            raise api_error(404, "DOMAIN_NOT_FOUND", f"领域不存在：{domain_id}")
+        mode = _require_explore_mode(str(payload.get("mode", "direct") or "direct"))
+        if domain.exploration_stage == "探索中":
+            raise api_error(409, "DOMAIN_EXPLORING", f"领域正在探索中：{domain_id}")
+        repo.update_domain(domain_id, exploration_stage="探索中", explore_pending=None)
+        record = manager.submit("domain_explore", {
+            "domain_id": domain_id, "mode": mode,
+            "scope_hint": str(payload.get("scope_hint", "")),
+            "ref_text": str(payload.get("ref_text", "")),
+            "ref_doc_path": str(payload.get("ref_doc_path", "")),
+        })
+        return {"task_id": record.task_id}
+
+    @fastapi_app.post("/api/v1/domains/{domain_id}/confirm-name", status_code=202)
+    def confirm_domain_name(domain_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, str]:
+        """确认领域名称（REQ-067 B7）：仅「已生成」态放行 → 重跑管线 → 已完成。"""
+        repo = _kn(app)
+        domain = repo.get_domain(domain_id)
+        if domain is None:
+            raise api_error(404, "DOMAIN_NOT_FOUND", f"领域不存在：{domain_id}")
+        if domain.exploration_stage != "已生成":
+            raise api_error(409, "INVALID_TRANSITION", f"仅「已生成」态可确认名称：{domain.exploration_stage}")
+        decision = str(payload.get("decision", "")).strip()
+        if decision not in ("accept", "custom", "retain"):
+            raise api_error(422, "INVALID_PARAMS", "decision 必须为 accept/custom/retain")
+        name = str(payload.get("name", "")).strip()
+        pending = (domain.explore_pending or {}).get("name_check", {}) if domain.explore_pending else {}
+        suggested = str(pending.get("suggested_name", "")).strip()
+        if decision == "accept":
+            final_name = name or suggested or domain.name
+            if not final_name or len(final_name) > 100:
+                raise api_error(422, "INVALID_PARAMS", "最终名称非空且 ≤100")
+        elif decision == "custom":
+            if not name or len(name) > 100:
+                raise api_error(422, "INVALID_PARAMS", "custom 必须提供 name（非空且 ≤100）")
+            final_name = name
+        else:  # retain
+            final_name = domain.name
+        repo.update_domain(domain_id, exploration_stage="探索中", explore_pending=None)
+        record = manager.submit("domain_explore", {
+            "domain_id": domain_id, "mode": "direct",
+            "confirm_name_override": final_name,
+        })
+        return {"task_id": record.task_id}
 
     @fastapi_app.post("/api/v1/domains", status_code=201)
     def create_domain(payload: dict[str, Any]) -> dict[str, Any]:

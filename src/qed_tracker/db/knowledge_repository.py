@@ -48,6 +48,9 @@ class AdoptionConflict(RuntimeError):
 _HIDDEN_KNOWLEDGE_STATUSES = {KnowledgeStatus.REJECTED.value, KnowledgeStatus.SUPERSEDED.value}
 _HIDDEN_BOOK_STATUSES = {BookStatus.REJECTED.value, BookStatus.SUPERSEDED.value}
 
+_UNSET = object()
+"""哨兵：区分「未传」与「显式置 None」（explore_pending 清空语义，REQ-067 B8）。"""
+
 _KNOWLEDGE_TRANSITIONS: dict[KnowledgeStatus, set[KnowledgeStatus]] = {
     KnowledgeStatus.DRAFT: {KnowledgeStatus.CONFIRMED, KnowledgeStatus.REJECTED},
     KnowledgeStatus.CONFIRMED: {KnowledgeStatus.COMPLETED, KnowledgeStatus.REJECTED, KnowledgeStatus.SUPERSEDED},
@@ -204,17 +207,22 @@ class KnowledgeRepository:
             session.commit()
             return row
 
-    def update_domain(self, domain_id: str, *, description: str | None = None,
-                      stages: list[str] | None = None, level: str | None = None,
-                      scope: str | None = None,
+    def update_domain(self, domain_id: str, *, name: str | None = None,
+                      description: str | None = None, stages: list[str] | None = None,
+                      level: str | None = None, scope: str | None = None,
                       classic_tracks: list[dict[str, Any]] | None = None,
                       path_results: dict[str, Any] | None = None,
-                      exploration_stage: str | None = None) -> QedDomain:
-        """更新领域（name 不可变；path_results/exploration_stage 属探索产物，本仓库写方）。"""
+                      exploration_stage: str | None = None,
+                      explore_pending: dict[str, Any] | None | object = _UNSET) -> QedDomain:
+        """更新领域（name 仅探索名确认路径可写——REQ-067 B8；path_results/
+        exploration_stage/explore_pending 属探索产物，本仓库写方；explore_pending
+        显式传 None 即清空，未传保持现状）。"""
         with self._session_factory() as session:
             row = session.get(QedDomain, domain_id)
             if row is None:
                 raise KeyError(f"领域不存在：{domain_id}")
+            if name is not None:
+                row.name = name
             if description is not None:
                 row.description = description
             if stages is not None:
@@ -229,6 +237,8 @@ class KnowledgeRepository:
                 row.path_results = path_results
             if exploration_stage is not None:
                 row.exploration_stage = exploration_stage
+            if explore_pending is not _UNSET:
+                row.explore_pending = explore_pending
             row.updated_at = utc_now()
             session.commit()
             session.refresh(row)

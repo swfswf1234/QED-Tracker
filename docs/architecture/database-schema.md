@@ -72,6 +72,7 @@ CREATE TABLE qed_domain (
   classic_tracks     JSON          NOT NULL,           -- 课程方向 [{name,summary}] 0~4 项
   stages             JSON          NOT NULL,           -- 学习阶段顺序（无默认值，后续可变更）
   path_results       JSON                              -- 学习流程（notes/edges/graph_td）
+  explore_pending    JSON                              -- 探索挂起信息（名称确认 name_check / 失败 error，REQ-067 B8）
   created_by         VARCHAR(16)   NOT NULL DEFAULT '',
   updated_by         VARCHAR(16)   NOT NULL DEFAULT '',
   created_at         DATETIME      NOT NULL,
@@ -83,10 +84,13 @@ CREATE TABLE qed_domain (
 - 共享表：三项目可读；QED-Tracker 唯一写权限（Alembic 建表维护）。
 - `level`：探索范围（管线 domain@v2 输出），描述该领域的默认学习阶段范围。
 - `scope`：学科知识（领域边界描述），当前管线不输出，先置空。
-- `exploration_stage`：流程状态枚举（未开始→已生成→探索中→已完成）。
+- `exploration_stage`：流程状态枚举（未开始→探索中→已完成；探索中→已生成→探索中重跑；探索中→失败）。
+  写主体=QED-Tracker（领域侧重 8901 驱动，REQ-067 B8 修订）。
 - `classic_tracks`：课程方向（管线 domain@v2 输出），JSON 数组 [{name,summary}]，0~4 项。
 - `stages`：学习阶段顺序，无默认值，后续根据 LLM 生成结果确定。
 - `path_results`：学习流程（管线 path@v4 输出），可空，包含 notes/edges/graph_td。
+- `explore_pending`：探索挂起信息（名称确认/失败诊断），终态为 null；结构
+  `{kind: name_confirm, name_check}` 或 `{kind: failed, error}`（迁移 0015，2026-08-30）。
 
 ## qed_course 表结构（表2，共享）
 

@@ -11,6 +11,7 @@
       "classic_tracks": "课程方向",
       "stages": "学习阶段顺序",
       "path_results": "学习流程",
+      "explore_pending": "探索挂起信息（名称确认/失败诊断）",
       "created_by": "创建人",
       "updated_by": "最后更新人",
       "created_at": "创建时间",

@@ -61,6 +61,7 @@ class QedDomain(Base):
     classic_tracks: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="课程方向")
     stages: Mapped[list[str]] = mapped_column(JSON, nullable=False, comment="学习阶段顺序")
     path_results: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="学习流程")
+    explore_pending: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="探索挂起信息（名称确认/失败诊断）")
     created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="创建人")
     updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="最后更新人")
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")

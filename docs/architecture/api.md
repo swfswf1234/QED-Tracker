@@ -368,6 +368,35 @@ domain.exploration_stage=已完成（人工探索定稿）；courses 保持既�
 **契约：** `src/qed_tracker/application/knowledge_import.py`（manual@v1 校验器，守护测试
 tests/test_knowledge_import.py）。
 
+#### `POST /api/v1/domains/{domain_id}/explore`
+
+领域探索启动（REQ-067 B2/B8，2026-08-30）：同步置 `exploration_stage=探索中`（explore_pending 清空）
+→ 提交 `domain_explore` 后台任务（202）。
+
+**请求体：** `{"mode": "direct"|"text"|"doc"(默认 direct), "ref_text"?, "ref_doc_path"?, "scope_hint"?}`
+
+**返回：** `{"task_id": "..."}`（202）
+
+**错误：** 404 DOMAIN_NOT_FOUND；400 INVALID_PARAMS（mode 非法）；409 DOMAIN_EXPLORING（探索中）。
+
+**任务终态：** 成功后管线 apply 全量落库（领域字段 + 课程 upsert）置「已完成」；名称需确认置「已生成」
+（explore_pending=name_confirm）；管线异常置「失败」（explore_pending=failed）。任务结果经 GET /tasks/{id} 查看。
+
+#### `POST /api/v1/domains/{domain_id}/confirm-name`
+
+领域名称确认（REQ-067 B7，2026-08-30）：仅「已生成」态放行 → 置「探索中」→ 提交
+`domain_explore` 任务重跑（`confirm_name_override=最终名`，202）。
+
+**请求体：** `{"decision": "accept"|"custom"|"retain", "name"?: "..."}`
+（accept 可省略 name，缺省采用 explore_pending 建议名；custom 必须提供 name；retain 忽略 name。）
+
+**返回：** `{"task_id": "..."}`（202）
+
+**错误：** 404 DOMAIN_NOT_FOUND；409 INVALID_TRANSITION（非「已生成」态）；422 INVALID_PARAMS（decision 非法/custom 缺 name）。
+
+**契约：** `src/qed_tracker/application/domain_explore.py`（状态机，守护测试
+tests/test_explore_ownership.py）。
+
 #### `POST /api/v1/domains/{domain_id}/courses`
 
 创建课程（服务端生成 course_id）。body: `{name, stage?, sort_order?, note?}`。

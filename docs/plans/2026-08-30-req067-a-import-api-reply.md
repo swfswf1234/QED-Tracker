@@ -4,7 +4,7 @@
 最后更新：2026-08-30
 关联 Tracker：根仓库 docs/trackers/todo.md（REQ-067-A）；本仓库 QED-050（manual@v1 契约）
 结论：**A 档可即日起开工**（导入端点已上线）；本回执含 4 项评审修正，供根仓库更新其
-[2026-08-30-req067-import-api.md](../../../docs/plans/2026-08-30-req067-import-api.md)（注：该文件位于根仓库）。
+`根仓库 docs/plans/2026-08-30-req067-import-api.md`（注：该文件位于根仓库 QED-Engine，不在本仓库）。
 
 ---
 

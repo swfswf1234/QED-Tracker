@@ -5,8 +5,8 @@
 最后更新：2026-08-30
 关联 Tracker：[todo.md](../trackers/todo.md)（QED-051）
 关联设计/计划：
-- 根仓库 [2026-08-29-req067-downloads-optimization.md](../../../docs/plans/2026-08-29-req067-downloads-optimization.md)（REQ-067 §B2/B6/B7/B8）
-- 根仓库 [2026-08-30-req067-import-api.md](../../../docs/plans/2026-08-30-req067-import-api.md)（REQ-067-A ③④）
+- 根仓库 `docs/plans/2026-08-29-req067-downloads-optimization.md`（REQ-067 §B2/B6/B7/B8）
+- 根仓库 `docs/plans/2026-08-30-req067-import-api.md`（REQ-067-A ③④）
 - 本仓库回执 [2026-08-30-req067-a-import-api-reply.md](2026-08-30-req067-a-import-api-reply.md)
 - 本仓库 [2026-08-prompt-optimization.md](2026-08-prompt-optimization.md)（QED-043：prompt_lab v3 三步管线，本稿即其「Phase B 正式流程」领域侧落地）
 - 本仓库 [2026-08-engine-exploration-alignment.md](2026-08-engine-exploration-alignment.md)（QED-047/048：REQ-064 写主体口径，本稿修订其领域侧）

@@ -76,15 +76,23 @@ CREATE TABLE qed_domain (
 ### exploration_stage 状态机
 
 ```
-未开始 → 已生成 → 探索中 → 已完成
+未开始 → 探索中 → 已完成
+                 ↘ 已生成 → 探索中（名称确认重跑，REQ-067 B7）
+探索中 → 失败（管线异常，可重新 POST explore）
 ```
 
 | 值 | 触发时机 | 写主体 | 说明 |
 |---|---|---|---|
 | 未开始 | 手动创建 | 创建方（8900 直建或本仓库 API） | 初始状态 |
-| 已生成 | dry-run 报告返回、待用户确认 | **8900**（写权限例外，见下） | 管线已跑，产出待审核；本仓库 dry-run 端点自身不写任何表 |
-| 探索中 | 探索会话启动 | **8900**（同上） | 管线执行中 |
-| 已完成 | apply 变更落库完成 | **8900** | 课程已写入 qed_course |
+| 探索中 | POST /domains/{id}/explore 或 confirm-name | **8901**（本仓库端点同步置位） | 管线执行中；explore_pending 同时清空 |
+| 已生成 | 管线完成但名称需确认 | **8901** | explore_pending={kind:name_confirm, name_check} |
+| 已完成 | 探索应用落库完成 | **8901** | 课程已写入 qed_course；explore_pending=NULL |
+| 失败 | 管线异常 | **8901** | explore_pending={kind:failed, error}；可重新触发 |
+
+> 写主体口径修订（2026-08-30，REQ-067 B8 用户裁决）：**领域探索过程状态
+> （探索中/已生成/已完成/失败）写主体由 8900 移交 8901**；qed_course 侧维持 REQ-064
+> 口径（8900 负责课程探索过程状态，本仓库负责验收终态）。8900 不再直写
+> qed_domain.exploration_stage，领域探索由 8901 `POST /domains/{id}/explore` 任务链驱动。
 
 ### 字段语义补充
 
@@ -304,13 +312,14 @@ QED-Tracker 的 prompt_lab 管线（DomainPipeline / CoursePipeline）在执行�
 | qed_course | QED-Tracker | 其他项目只读，**例外见下** |
 | qed_llm_calls | 三项目均可写 | 通过 service 字段区分调用方 |
 
-**8900 离线降级直写例外（2026-08-27 根仓库用户裁决 D2，REQ-064④；2026-08-28 修订留痕）**：
-根仓库「服务独立性铁律」要求 8901 离线时 8903 下载管理仍可维护领域/课程并推进探索流程，
+**8900 离线降级直写例外（2026-08-27 根仓库用户裁决 D2，REQ-064④；2026-08-28 修订留痕；
+2026-08-30 REQ-067 B8 修订：删除 qed_domain 行）**：
+根仓库「服务独立性铁律」要求 8901 离线时 8903 下载管理仍可维护课程并推进课程探索流程，
 故允许 8900 在降级场景直写下列白名单列：
 
 | 表 | 8900 离线直写允许列 | 仍然禁止列（探索产物，只归本仓库写） |
 |---|---|---|
-| qed_domain | description、stages、exploration_stage | level、scope、classic_tracks、path_results |
+| qed_domain | （无——领域探索由 8901 驱动，8900 离线时领域探索不可执行） | level、scope、classic_tracks、path_results、exploration_stage |
 | qed_course | stage、sort_order、description、aliases、exploration_stage | track、related_targets |
 
 ### Schema 变更流程
