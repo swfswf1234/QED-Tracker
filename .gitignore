@@ -52,3 +52,6 @@ dataset/qed-tracker/meta/*.log
 
 # export artifacts
 /exports/
+
+# git worktrees (isolated workspaces, 2026-08-30)
+/.worktrees/
