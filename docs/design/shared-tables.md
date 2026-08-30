@@ -47,8 +47,8 @@ CREATE TABLE qed_domain (
   level              VARCHAR(50)   NOT NULL DEFAULT '',-- 探索范围（本科-硕士）
   scope              TEXT          NOT NULL,           -- 学科知识（管线暂不输出，置空）
   exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态
-  classic_tracks     JSON          NOT NULL,           -- 课程方向 [{name,summary}] 0~4 项
-  stages             JSON          NOT NULL,           -- 学习阶段顺序（无默认值）
+  classic_tracks     JSON          NOT NULL,           -- 课程方向 [{name,summary,kind}] 0~4 项
+  stages             JSON          NOT NULL,           -- 学习阶段顺序（无默认值，四档）
   path_results       JSON,                            -- 学习流程（notes/edges/graph_td）
   created_by         VARCHAR(16)   NOT NULL DEFAULT '',
   updated_by         VARCHAR(16)   NOT NULL DEFAULT '',
@@ -68,8 +68,8 @@ CREATE TABLE qed_domain (
 | 4 | `level` | VARCHAR(50) | `""` | 探索范围标签，如 "本科-硕士"。管线 domain@v2 输出 |
 | 5 | `scope` | TEXT | `""` | 学科知识（领域边界描述）。当前管线不输出，先置空 |
 | 6 | `exploration_stage` | VARCHAR(20) | `"未开始"` | 流程状态枚举（见下文） |
-| 7 | `classic_tracks` | JSON | `[]` | 课程方向，JSON 数组 [{name, summary}]，0~4 项。管线 domain@v2 输出 |
-| 8 | `stages` | JSON | —（无默认值） | 学习阶段顺序列表，如 ["本科基础","本科进阶","研究生基础","QE冲刺"]。后续可变更 |
+| 7 | `classic_tracks` | JSON | `[]` | 课程方向，JSON 数组 [{name, summary, kind}]，0~4 项。`kind`：`main`=主干方向 / `branch`=分支方向（2026-08-29 语义升级）。管线 domain@v3 输出 |
+| 8 | `stages` | JSON | —（无默认值） | 学习阶段顺序列表，值为四档 `["基础","主干","分支","前沿"]`（2026-08-29 用户裁定；基础=入门基石；主干=方向主干；分支=方向细分/拓展；前沿=研究前沿/论文驱动）。之后可变更 |
 | 9 | `path_results` | JSON | `null` | 学习流程，可空。管线 path@v4 输出，包含 notes/edges[{from,to}]/graph_td |
 | 10-13 | audit | — | — | created_by/updated_by/created_at/updated_at |
 
@@ -89,9 +89,9 @@ CREATE TABLE qed_domain (
 ### 字段语义补充
 
 - **level vs stages**：level 是概括性标签（"本科-硕士"），stages 是具体阶段列表
-  （["本科基础","本科进阶",...]）。两者独立，level 由管线输出，stages 由人工或 LLM 确定。
-- **classic_tracks vs stages**：classic_tracks 横向维度（分析学/代数学/…），stages 纵向维度
-  （本科基础→研究生基础）。两个维度正交。
+  （["基础","主干","分支","前沿"]）。两者独立，level 由管线输出，stages 由人工或 LLM 确定。
+- **classic_tracks vs stages**：classic_tracks 横向维度（分析学/代数学/…，kind=main 主干），
+  stages 纵向维度（基础→主干→分支→前沿）。两个维度正交。
 - **path_results**：包含 notes（文字说明）、edges（先修关系边列表）、graph_td（Mermaid 图
   语法）。可空——未探索时为 null。
 
@@ -149,10 +149,11 @@ CREATE TABLE qed_course (
 
 ### stage 字段说明
 
-`stage` 的值域来自 `qed_domain.stages`（如 "本科基础"/"本科进阶"/"研究生基础"/"QE冲刺"）。
+`stage` 的值域来自 `qed_domain.stages`（四档：`基础/主干/分支/前沿`，2026-08-29 用户裁定）。
 
-pipeline path@v4 输出的 `tier`（基础/进阶/核心/冲刺）是不同的分类维度，值域与 stage 不重叠
-（"核心"/"冲刺"不对应任何 stage）。tier 不落 qed_course 表，其结果已存 qed_domain.path_results。
+pipeline path@v5 输出的 `tier` 与 `stage` 已**统一为同一概念**（值域同为四档，
+2026-08-29 取代旧值域 基础/进阶/核心/冲刺）；tier 不落 qed_course 表，其结果已存
+qed_domain.path_results（Graph 分组用）。
 
 ### exploration_stage 状态机
 

@@ -56,6 +56,14 @@ def build_parser() -> argparse.ArgumentParser:
     books_url.add_argument("--author", action="append", default=[])
     books_url.add_argument("--language", default="")
     books_url.add_argument("--kind", choices=["book", "exercise"], default="book")
+    books_import = books_commands.add_parser(
+        "import", help="手动导入本地 PDF（外部路径 → 校验 → 拷入数据根 → 登记 downloaded）"
+    )
+    books_import.add_argument("book_id", help="书行标识（qt_books.book_id）")
+    books_import.add_argument("file_path", type=Path, help="本地 PDF 路径（可在数据根外）")
+    books_import.add_argument("--target", dest="target_path", default="",
+                              help="期望落盘相对路径（raw/<domain>/<course>/<书名>.pdf，自动补 _<sha8>）")
+    books_import.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
 
     papers = commands.add_parser("papers", help="arXiv 论文")
     paper_commands = papers.add_subparsers(dest="papers_command", required=True)
@@ -125,6 +133,20 @@ def build_parser() -> argparse.ArgumentParser:
     courses_commands.add_parser("list", help="列出学科课程体系")
     courses_show = courses_commands.add_parser("show", help="查看单门课（含前置/关联目标）")
     courses_show.add_argument("course_id")
+
+    domains = commands.add_parser("domains", help="领域知识手动导入")
+    domains_commands = domains.add_subparsers(dest="domains_command", required=True)
+    domains_import = domains_commands.add_parser("import", help="导入领域标准答案 JSON（docs/knowledge/<domain>.json）")
+    domains_import.add_argument("path", type=Path, help="领域 JSON 文件路径")
+    domains_import.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+
+    knowledge = commands.add_parser("knowledge", help="课程知识手动导入")
+    knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
+    knowledge_import = knowledge_commands.add_parser(
+        "import", help="导入课程标准答案 JSON（docs/knowledge/<domain>/<course>.json）→ A2 draft"
+    )
+    knowledge_import.add_argument("path", type=Path, help="课程 JSON 文件路径")
+    knowledge_import.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
 
     mainline = commands.add_parser("mainline", help="主链路教材条目（课程梳理→下载→验收）")
     mainline_commands = mainline.add_subparsers(dest="mainline_command", required=True)
@@ -216,6 +238,29 @@ def _book_service(settings: Settings, names: tuple[str, ...] | None = None) -> B
     return BookService(providers, ResourceService(Inventory(settings.data_root), downloader))
 
 
+def _books_import(args, settings: Settings) -> int:
+    """手动下载导入：外部 PDF → 经 8901 POST /books/{id}/import 登记（D3/D4；无离线直连）。"""
+    import httpx
+
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+    payload: dict = {"file_path": str(args.file_path)}
+    if getattr(args, "target_path", ""):
+        payload["target_path"] = args.target_path
+    try:
+        response = httpx.post(f"{base_url}/api/v1/books/{args.book_id}/import", json=payload, timeout=120.0)
+    except httpx.HTTPError as exc:
+        _print({"error": f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve"}, True) if args.json else print(
+            f"ERROR: 8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve", file=sys.stderr
+        )
+        return 6
+    if response.status_code >= 400:
+        detail = response.json().get("detail", response.text)
+        _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
+        return 2
+    _print(response.json(), args.json)
+    return 0
+
+
 def _paper_service(settings: Settings, *, with_advisor: bool = False) -> PaperService:
     provider = ArxivProvider(retries=settings.retries)
     manager = DownloadManager(
@@ -253,6 +298,8 @@ def _display_selection(report: dict) -> None:
 
 def _books(args, settings: Settings) -> int:
     inventory = Inventory(settings.data_root)
+    if args.books_command == "import":
+        return _books_import(args, settings)
     if args.books_command == "fetch-url":
         manager = DownloadManager(
             proxy=settings.proxy,
@@ -569,6 +616,105 @@ def _load_curriculum(subject_or_course_id: str) -> Curriculum:
             if any(course.course_id == subject_or_course_id for course in curriculum.courses):
                 return curriculum
         raise ValueError(f"未知学科课程体系：{subject_or_course_id}") from None
+
+
+def _domains(args, settings: Settings) -> int:
+    """手动领域知识导入：本地校验 → 经 8901 API 写入共享表（D4，D10：无离线直连）。"""
+    import httpx
+
+    from qed_tracker.application.knowledge_import import KnowledgeImportError, validate_domain
+
+    try:
+        with open(args.path, encoding="utf-8") as stream:
+            data = json.load(stream)
+    except OSError as exc:
+        _print({"error": f"文件不可读：{args.path}（{exc}）"}, True) if args.json else print(
+            f"ERROR: 文件不可读：{args.path}（{exc}）", file=sys.stderr
+        )
+        return 2
+    except json.JSONDecodeError as exc:
+        _print({"error": f"JSON 解析失败：{exc}"}, True) if args.json else print(
+            f"ERROR: JSON 解析失败：{exc}", file=sys.stderr
+        )
+        return 2
+    try:
+        validate_domain(data)
+    except KnowledgeImportError as exc:
+        _print({"error": f"校验失败：{exc}"}, True) if args.json else print(
+            f"ERROR: 校验失败：{exc}", file=sys.stderr
+        )
+        return 2
+
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+    try:
+        response = httpx.post(
+            f"{base_url}/api/v1/domains/import",
+            json={"domain": data},
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        _print({"error": f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve"}, True) if args.json else print(
+            f"ERROR: 8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve", file=sys.stderr
+        )
+        return 6
+    if response.status_code >= 400:
+        detail = response.json().get("detail", response.text)
+        _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
+        return 2
+    _print(response.json(), args.json)
+    return 0
+
+
+def _knowledge_import(args, settings: Settings) -> int:
+    """课程标准答案导入：本地校验 → 经 8901 A2（POST /courses/{id}/knowledge，source=manual）。
+
+    tutorial 套逐条透传（textbook/exercise 全量 dict 进 ref，含 target_path）；course 文件
+    在导入前需无目标课程（领域导入先行），或课程已存在（幂等 upsert 语义由 A2 覆盖）。
+    """
+    import httpx
+
+    from qed_tracker.application.knowledge_import import KnowledgeImportError, validate_course
+
+    try:
+        with open(args.path, encoding="utf-8") as stream:
+            data = json.load(stream)
+    except OSError as exc:
+        _print({"error": f"文件不可读：{args.path}（{exc}）"}, True) if args.json else print(
+            f"ERROR: 文件不可读：{args.path}（{exc}）", file=sys.stderr
+        )
+        return 2
+    except json.JSONDecodeError as exc:
+        _print({"error": f"JSON 解析失败：{exc}"}, True) if args.json else print(
+            f"ERROR: JSON 解析失败：{exc}", file=sys.stderr
+        )
+        return 2
+    try:
+        validate_course(data)
+    except KnowledgeImportError as exc:
+        _print({"error": f"校验失败：{exc}"}, True) if args.json else print(
+            f"ERROR: 校验失败：{exc}", file=sys.stderr
+        )
+        return 2
+
+    course_id = data["course"]["course_id"]
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+    try:
+        response = httpx.post(
+            f"{base_url}/api/v1/courses/{course_id}/knowledge",
+            json={"tutorials": data["tutorials"], "source": "manual"},
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        _print({"error": f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve"}, True) if args.json else print(
+            f"ERROR: 8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve", file=sys.stderr
+        )
+        return 6
+    if response.status_code >= 400:
+        detail = response.json().get("detail", response.text)
+        _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
+        return 2
+    _print(response.json(), args.json)
+    return 0
 
 
 def _llm_call_engine(settings: Settings):
@@ -1103,6 +1249,8 @@ def main(argv: list[str] | None = None) -> int:
             "axiom": _axiom,
             "config": _config,
             "courses": _courses,
+            "domains": _domains,
+            "knowledge": _knowledge_import,
             "mainline": _mainline,
             "migrate": _migrate,
             "serve": _serve,

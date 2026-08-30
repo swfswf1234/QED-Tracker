@@ -10,9 +10,12 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Query
@@ -21,6 +24,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from qed_tracker import __version__
 from qed_tracker.api.tasks import TaskManager, TaskStore
 from qed_tracker.application import BookService, ResourceService
+from qed_tracker.application.book_fetch import BookFetchService, build_book_service
+from qed_tracker.application.knowledge_import import KnowledgeImportError, validate_domain
 from qed_tracker.application.papers import PaperService
 from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key
@@ -46,6 +51,8 @@ from qed_tracker.providers import ArxivProvider, create_book_providers
 from qed_tracker.providers.book_advisor import BailianBookAdvisor
 
 FRONTEND_ORIGINS = ("http://127.0.0.1:8903", "http://localhost:8903")
+
+logger = logging.getLogger("qed_tracker.api")
 
 # B008：函数调用不得出现在参数默认值中，FastAPI 允许模块级单例。
 _EMPTY_BODY: dict[str, Any] = Body(default_factory=dict)
@@ -133,6 +140,7 @@ def create_app(
     extra_handlers: dict[str, Any] | None = None,
     advisor=None,
     knowledge_repository: KnowledgeRepository | None = None,
+    book_service_factory=None,
 ) -> FastAPI:
     app = Application(
         settings,
@@ -156,7 +164,23 @@ def create_app(
             engine=app._db_engine,
         )
 
-    all_handlers = {**(extra_handlers or {})}
+    # 测试注入假工厂（不得访问公网）；默认每次任务经 build_book_service 新建独立服务。
+    service_factory = book_service_factory or (lambda: build_book_service(settings))
+
+    def _book_download_handler(params: dict[str, Any], progress) -> dict[str, Any]:
+        """book_download 后台任务：自动搜索 → 逐候选限时下载 → 状态转移与渠道留痕。"""
+        book_id = str(params.get("book_id", "")).strip()
+        if not book_id:
+            raise ValueError("book_id 必填")
+        fetcher = BookFetchService(
+            _kn(app),
+            service_factory,
+            data_root=settings.data_root,
+            attempt_timeout=settings.fetch_attempt_timeout,
+        )
+        return fetcher.fetch(book_id, progress=progress)
+
+    all_handlers = {**(extra_handlers or {}), "book_download": _book_download_handler}
     manager = TaskManager(TaskStore(settings.state_dir / "tasks"), all_handlers)
 
     @asynccontextmanager
@@ -430,6 +454,70 @@ def create_app(
             raise api_error(409, "DOMAIN_NOT_EMPTY", str(exc)) from None
         return {"ok": "true"}
 
+    @fastapi_app.post("/api/v1/domains/import")
+    def import_domain(payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        """手动领域 JSON 导入（QED-050，D2/D8）：校验 manual@v1 契约 → 写共享表。
+
+        body：`{"domain": {...}}`（内联 JSON）或 `{"file_path": "..."}`（本机可读文件路径）。
+        落库语义：domain/courses 幂等 upsert（维护字段）；domain.exploration_stage=已完成
+        （人工探索定稿），courses 保持既有 exploration_stage（默认未开始）。
+        """
+        repo = _kn(app)
+        file_path = str(payload.get("file_path", "")).strip()
+        if file_path:
+            try:
+                with open(file_path, encoding="utf-8") as stream:
+                    data = json.load(stream)
+            except OSError as exc:
+                raise api_error(400, "INVALID_PARAMS", f"文件不可读：{file_path}") from exc
+            except json.JSONDecodeError as exc:
+                raise api_error(400, "INVALID_PARAMS", f"JSON 解析失败：{exc}") from exc
+        else:
+            data = payload.get("domain")
+        if data is None:
+            raise api_error(422, "INVALID_PARAMS", "必须提供 domain 对象或 file_path")
+        try:
+            data = validate_domain(data)
+        except KnowledgeImportError as exc:
+            raise api_error(400, "INVALID_PARAMS", str(exc)) from exc
+
+        domain_id = str(data["domain"])
+        if repo.get_domain(domain_id) is None:
+            repo.create_domain(
+                domain_id=domain_id, name=data["name"], description=data["description"],
+                stages=data["stages"], level=data["level"], scope=data["scope"],
+                classic_tracks=data["classic_tracks"],
+            )
+        else:
+            repo.update_domain(
+                domain_id, description=data["description"], stages=data["stages"],
+                level=data["level"], scope=data["scope"], classic_tracks=data["classic_tracks"],
+            )
+        repo.update_domain(domain_id, exploration_stage="已完成")
+
+        created = 0
+        updated = 0
+        for index, course in enumerate(data["courses"]):
+            slug = str(course["slug"])
+            if repo.get_course(slug) is None:
+                repo.create_course(
+                    course_id=slug, domain_id=domain_id, name=course["name"],
+                    stage=course["stage"], sort_order=index,
+                    prerequisites=course.get("prerequisites", []),
+                    aliases=course.get("aliases", []),
+                    description=course["summary"], track=course.get("track", ""),
+                )
+                created += 1
+            else:
+                repo.update_course(
+                    slug, stage=course["stage"], description=course["summary"],
+                    aliases=course.get("aliases", []), track=course.get("track", ""),
+                    prerequisites=course.get("prerequisites", []),
+                )
+                updated += 1
+        return {"domain_id": domain_id, "courses_created": created,
+                "courses_updated": updated, "exploration_stage": "已完成"}
+
     def _book_transition(book_id: str, op) -> dict[str, Any]:
         repo = _kn(app)
         try:
@@ -595,6 +683,91 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return final.to_dict()
 
+    @fastapi_app.post("/api/v1/books/{book_id}/import")
+    def book_import(book_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        """手动下载导入（QED-050，D3）：本地 PDF（可在数据根外）→ 校验 → 拷入数据根 → 登记 downloaded。
+
+        body：`{"file_path": "...", "target_path": "..."?}`
+        - 目标位置：target_path（期望路径，基础名不合 sha；落盘按命名规则补 `_<sha8>`）或
+          默认 `raw/<domain>/<course>/<safe_name>_<sha8>.pdf`；一律强制在数据根内；
+        - sha256 去重复用：complete_download 同哈希命中既有书行 → 复用（不重复落文件）；
+        - 登记直转 candidate→downloaded；渠道留痕 channel=local_import。
+        """
+        repo = _kn(app)
+        row = repo.get_book(book_id, include_hidden=True)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"书行不存在：{book_id}")
+        file_path = str(payload.get("file_path", "")).strip()
+        if not file_path:
+            raise HTTPException(status_code=422, detail="必须提供本地文件路径（file_path）")
+        source = Path(file_path).expanduser()
+        if not source.is_file():
+            raise HTTPException(status_code=404, detail=f"文件不存在：{file_path}")
+
+        from qed_tracker.downloader import inspect_pdf, safe_filename
+
+        try:
+            digest, size, pages = inspect_pdf(source)
+        except Exception as exc:  # noqa: BLE001 - PDF 校验失败统一 400
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        data_root = app.resources.inventory.data_root
+        raw_target = str(payload.get("target_path", "")).strip()
+        if raw_target:
+            target = (data_root / raw_target).resolve()
+            try:
+                target.relative_to(data_root)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=f"target_path 必须在数据根目录内：{raw_target}") from exc
+        else:
+            knowledge = repo.get_knowledge(row.knowledge_id)
+            if knowledge is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="书行无知识行归属，无法推导默认路径（请显式提供 target_path）",
+                )
+            course = repo.get_course(knowledge.course_id)
+            domain_id = (course.domain_id if course is not None else "_general")
+            course_dir = data_root / "raw" / domain_id / knowledge.course_id
+            base = safe_filename(row.display_title or row.title).removesuffix(".pdf")
+            target = course_dir / f"{base}_{digest[:8]}.pdf"
+        # target_path 语义：基础名不含 sha（D9）→ 落盘按命名规则补 _<sha8>
+        if target.suffix.lower() == ".pdf" and not target.stem.endswith(f"_{digest[:8]}"):
+            target = target.with_name(f"{target.stem}_{digest[:8]}.pdf")
+
+        try:
+            target.relative_to(data_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"目标路径必须在数据根目录内：{target}") from exc
+
+        if target.resolve() != source.resolve():
+            from qed_tracker.inventory import downloads_tmp_dir
+
+            target.parent.mkdir(parents=True, exist_ok=True)
+            staging = downloads_tmp_dir(data_root) / f"{target.stem}.download"
+            staging.parent.mkdir(parents=True, exist_ok=True)
+            import shutil
+
+            shutil.copy2(source, staging)
+            if staging.stat().st_size != size:
+                staging.unlink(missing_ok=True)
+                raise HTTPException(status_code=400, detail="导入文件大小与校验不符（拷贝失败）")
+            import os
+
+            os.replace(staging, target)
+
+        relative = target.resolve().relative_to(data_root).as_posix()
+        try:
+            final = repo.complete_download(
+                book_id, sha256=digest, relative_path=relative, page_count=pages,
+                absolute_path=str(target.resolve()), file_name=target.name,
+            )
+        except InvalidTransition as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        repo.add_source(book_id, channel="local_import", ok=True,
+                        download_url=str(source), note=f"手工导入（{size} bytes）")
+        return final.to_dict()
+
     @fastapi_app.post("/api/v1/books/{book_id}/decide")
     def book_decide(book_id: str) -> dict[str, Any]:
         return _book_transition(book_id, lambda repo, bid: repo.decide_book(bid))
@@ -671,6 +844,39 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return row.to_dict()
 
+    @fastapi_app.post("/api/v1/books/{book_id}/fetch", status_code=202)
+    def book_fetch(book_id: str) -> dict[str, str]:
+        """自动取书（方案 A 2026-08-28）：提交 book_download 后台任务。
+
+        每候选限时 settings.fetch_attempt_timeout（默认 600s），全部失败书行置 failed，
+        任务 error 附人工下载指引（metadata_only 候选链接清单）。
+        """
+        repo = _kn(app)
+        row = repo.get_book(book_id, include_hidden=True)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"书行不存在：{book_id}")
+        if row.status not in ("candidate", "decided", "failed"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"书行状态 {row.status} 不可自动取书（仅 candidate/decided/failed）",
+            )
+        record = manager.submit("book_download", {"book_id": book_id})
+        return {"task_id": record.task_id, "book_id": book_id}
+
+    @fastapi_app.post("/api/v1/books/{book_id}/cancel")
+    def book_cancel(book_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        """downloading 卡住复位 → decided（失联下载/进程重启遗留；fetch 前清理）。"""
+        repo = _kn(app)
+        try:
+            row = repo.cancel_download(
+                book_id, note=str(payload.get("note", "cancel")).strip(), by=str(payload.get("by", "web"))
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except InvalidTransition as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return row.to_dict()
+
     @fastapi_app.get("/api/v1/tasks")
     def tasks() -> list[dict[str, Any]]:
         return [record.to_dict() for record in manager.list()]
@@ -690,7 +896,8 @@ def create_app(
             raise api_error(409, "LLM_UNAVAILABLE", "未配置 API_KEY：dry-run 需要 LLM（可在 .env 提供）")
         scope_hint = str(payload.get("scope_hint", "")).strip() or DEFAULT_SCOPE
         try:
-            pipeline = DomainPipeline(**_advisor_kwargs())
+            # dry-run 不写任何表：engine 置 None，避免在同步 handler 中复用共享 DB 引擎（联调 2026-08-28）
+            pipeline = DomainPipeline(**{**_advisor_kwargs(), "engine": None})
         except Exception as exc:  # noqa: BLE001 - 初始化失败统一映射
             raise api_error(409, "LLM_UNAVAILABLE", f"管线初始化失败：{exc}") from exc
         try:
@@ -706,6 +913,7 @@ def create_app(
             # P12 阶段一：评估期直接返回标记，人工确认后以规范名重新发起
             return {"dry_run": True, "confirmation_required": True, "name_check": exc.name_check}
         except PipelineError as exc:
+            logger.warning("prompt-explore dry-run 失败：%s：%s", exc.code, exc)
             status_code = 400 if exc.code == "INVALID_PARAMS" else 502
             raise api_error(status_code, exc.code, str(exc)) from exc
         finally:
@@ -727,7 +935,8 @@ def create_app(
         if course_row is None:
             raise api_error(404, "COURSE_NOT_FOUND", f"课程不存在：{course_id}")
         try:
-            pipeline = CoursePipeline(**_advisor_kwargs())
+            # dry-run 不写任何表：engine 置 None，避免在同步 handler 中复用共享 DB 引擎（联调 2026-08-28）
+            pipeline = CoursePipeline(**{**_advisor_kwargs(), "engine": None})
         except Exception as exc:  # noqa: BLE001 - 初始化失败统一映射
             raise api_error(409, "LLM_UNAVAILABLE", f"管线初始化失败：{exc}") from exc
         try:
@@ -738,6 +947,7 @@ def create_app(
                 ref_doc_path=str(payload.get("ref_doc_path", "")),
             )
         except PipelineError as exc:
+            logger.warning("course prompt-explore dry-run 失败：%s：%s", exc.code, exc)
             status_code = 400 if exc.code == "INVALID_PARAMS" else 502
             raise api_error(status_code, exc.code, str(exc)) from exc
         finally:
@@ -745,7 +955,12 @@ def create_app(
         return {"dry_run": True, "report": report, "calls": list(pipeline.step_calls)}
 
     def _validate_adopt_tutorials(payload: dict[str, Any]) -> list[dict[str, Any]]:
-        """A2 轻校验：1~4 套；每套 set_no(≤4)/set_name(≤200)/textbook.title 非空，exercise 可空。"""
+        """A2 轻校验：1~4 套；每套 set_no(≤4)/set_name(≤200)/textbook.title 非空、
+        textbook.roles 含 textbook、exercise 可空（null 同源或含 title/roles）。
+        source（QED-050）：explore（默认）/ manual，非 `_validate_adopt_tutorials` 落库，仅来源标记。"""
+        source = str(payload.get("source", "explore")).strip() or "explore"
+        if source not in ("explore", "manual"):
+            raise api_error(422, "INVALID_PARAMS", "source 必须为 explore（默认）或 manual")
         tutorials = payload.get("tutorials")
         if not isinstance(tutorials, list) or not 1 <= len(tutorials) <= 4:
             raise api_error(422, "INVALID_PARAMS", "tutorials 必须为 1~4 套")
@@ -761,11 +976,18 @@ def create_app(
             textbook = item.get("textbook")
             if not isinstance(textbook, dict) or not str(textbook.get("title", "")).strip():
                 raise api_error(422, "INVALID_PARAMS", f"tutorials[{i}].textbook.title 非空")
+            roles = textbook.get("roles")
+            if not isinstance(roles, list) or "textbook" not in roles:
+                raise api_error(422, "INVALID_PARAMS",
+                                f"tutorials[{i}].textbook.roles 必须为数组且含 textbook")
             exercise = item.get("exercise")
-            if exercise is not None and (
-                not isinstance(exercise, dict) or not str(exercise.get("title", "")).strip()
-            ):
-                raise api_error(422, "INVALID_PARAMS", f"tutorials[{i}].exercise.title 非空（或 null 同源）")
+            if exercise is not None:
+                if not isinstance(exercise, dict) or not str(exercise.get("title", "")).strip():
+                    raise api_error(422, "INVALID_PARAMS", f"tutorials[{i}].exercise.title 非空（或 null 同源）")
+                ex_roles = exercise.get("roles")
+                if not isinstance(ex_roles, list) or "exercises" not in ex_roles:
+                    raise api_error(422, "INVALID_PARAMS",
+                                    f"tutorials[{i}].exercise.roles 必须为数组且含 exercises")
         return tutorials
 
     @fastapi_app.post("/api/v1/courses/{course_id}/knowledge", status_code=201)

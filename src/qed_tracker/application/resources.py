@@ -26,6 +26,7 @@ class ResourceService:
         kind: ResourceKind,
         destination_dir: Path,
         catalog_target: CatalogTarget | None = None,
+        staging_tag: str = "",
     ) -> ResourceRecord:
         if not isinstance(kind, ResourceKind):
             kind = ResourceKind(kind)
@@ -40,6 +41,10 @@ class ResourceService:
             # staging/final 名加 catalog_target.id 前缀，避免并发下载同名互斥（WinError 32）。
             if catalog_target:
                 slug = f"{catalog_target.id}_{slug}"
+        # 2026-08-28（BookFetchService）：staging_tag 使每次尝试的中间文件名唯一，
+        # 超时放弃的孤儿下载线程不会与后续候选写同名 .download/.part 文件。
+        if staging_tag:
+            slug = f"{slug}_{staging_tag}"
         # ARCH-019：staging 中间态统一放共享下载临时区（tmp 先写后原子落盘 raw）。
         staging_dir = downloads_tmp_dir(self.inventory.data_root)
         staging = staging_dir / f"{slug}.download"

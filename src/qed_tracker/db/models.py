@@ -67,7 +67,13 @@ class QedDomain(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
 
     def to_dict(self) -> dict[str, Any]:
-        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            if isinstance(value, datetime):
+                value = value.isoformat()
+            result[column.name] = value
+        return result
 
 
 class QedCourse(Base):
@@ -95,7 +101,13 @@ class QedCourse(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
 
     def to_dict(self) -> dict[str, Any]:
-        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            if isinstance(value, datetime):
+                value = value.isoformat()
+            result[column.name] = value
+        return result
 
 
 class QtKnowledge(Base):
@@ -138,7 +150,13 @@ class QtKnowledge(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
 
     def to_dict(self) -> dict[str, Any]:
-        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            if isinstance(value, datetime):
+                value = value.isoformat()
+            result[column.name] = value
+        return result
 
 
 class QtBook(Base):
@@ -201,7 +219,13 @@ class QtBook(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
 
     def to_dict(self) -> dict[str, Any]:
-        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            if isinstance(value, datetime):
+                value = value.isoformat()
+            result[column.name] = value
+        return result
 
 
 class QtSource(Base):
@@ -232,4 +256,10 @@ class QtSource(Base):
     attempted_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="尝试时间")
 
     def to_dict(self) -> dict[str, Any]:
-        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            if isinstance(value, datetime):
+                value = value.isoformat()
+            result[column.name] = value
+        return result

@@ -2,9 +2,9 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-24
+最后更新：2026-08-29
 关联代码：`src/qed_tracker/api/main.py`、`src/qed_tracker/api/tasks.py`
-关联测试：`tests/test_api.py`、`tests/test_knowledge_api.py`
+关联测试：`tests/test_api.py`、`tests/test_knowledge_api.py`、`tests/test_knowledge_import.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
 
 ## 概述
@@ -205,6 +205,43 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 重试下载（failed → downloading）。
 
+#### `POST /api/v1/books/{book_id}/cancel`
+
+取消复位（downloading → decided，方案 A 2026-08-28）。仅 downloading 可取消：失联下载/
+进程重启遗留的书行回到待执行；其余状态 409（candidate 用 decide，failed 用 retry）。
+
+**请求体（可选）：** `{"note": "失联复位", "by": "web"}`
+
+#### `POST /api/v1/books/{book_id}/fetch`
+
+自动取书（方案 A 2026-08-28）：提交 `book_download` 后台任务（202 返回 `{task_id, book_id}`）。
+
+执行链：状态校验（仅 candidate/decided/failed，否则 409；candidate 自动 decide）→ start
+（downloading）→ 以书行 title+authors 构造检索词搜索（limit=8）→ 按序逐候选下载 →
+成功：`add_source(ok=true)` + `complete_download`（→ downloaded）；单候选失败/超时留痕
+后换下一候选；全部失败：书行 → failed，任务 error 附逐候选摘要与人工下载指引
+（metadata_only 候选链接清单）。
+
+超时语义：每候选总预算 `QED_FETCH_ATTEMPT_TIMEOUT`（默认 600s），预算内无响应/未完成即
+切换下一候选；每次尝试的 staging 文件名带唯一 tag，孤儿线程不污染后续候选。
+
+#### `POST /api/v1/books/{book_id}/import`
+
+手动下载导入（QED-050，2026-08-29）：本地 PDF（可在数据根外）→ PDF 校验 → 拷入数据根 →
+登记 downloaded（candidate/decided → downloaded 直转）+ 渠道留痕 `channel=local_import`。
+
+**请求体：**
+```json
+{"file_path": "C:/downloads/textbook.pdf", "target_path": "raw/math-advanced/01_math_analysis/斯图尔特微积分.pdf"}
+```
+
+- `target_path` 为期望落盘相对路径（基础名不含 sha，落盘自动补 `_<sha8>`）；缺省按
+  `raw/<domain>/<course_id>/<safe_name>_<sha8>.pdf` 规则推导；文件必须 resolve 在数据根内；
+- 文件在数据根外 → 经 tmp 暂存区原子落盘；数据根内且为目标位置 → 原地登记（不移动）；
+- 同 sha256 已有书行 → 复用既有行（complete_download 语义），不重复落文件。
+
+**错误：** 400 target_path 越界/非 PDF、404 文件/书行不存在、422 缺 file_path、409 非法状态迁移。
+
 #### `POST /api/v1/books/{book_id}/complete`
 
 完成下载（downloading → downloaded）。需提供 sha256 与 relative_path。
@@ -312,6 +349,24 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 创建领域（服务端生成 domain_id）。body: `{name, description?, stages?}`。
 
 **错误：** 409 DOMAIN_NAME_CONFLICT。
+
+#### `POST /api/v1/domains/import`
+
+手动领域 JSON 导入（QED-050，2026-08-29）：校验 manual@v1 契约 → 写 qed_domain + qed_course
+（幂等 upsert）。body：`{"domain": {...}}`（内联）或 `{"file_path": "..."}`（本机可读文件）。
+domain.exploration_stage=已完成（人工探索定稿）；courses 保持既有 stage（默认未开始）。
+
+**请求体：**
+```json
+{"domain": {"domain": "math-advanced", "name": "数学（高等数学）", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}], "stages": ["基础", "主干", "分支", "前沿"], "courses": [{"slug": "mathematical_analysis", "name": "数学分析", "track": "分析学", "stage": "基础", "summary": "..."}]}}
+```
+
+**返回：** `{"domain_id": "math-advanced", "courses_created": N, "courses_updated": N, "exploration_stage": "已完成"}`
+
+**错误：** 400 INVALID_PARAMS（校验失败/文件不可读）、422 缺 domain/file_path。
+
+**契约：** `src/qed_tracker/application/knowledge_import.py`（manual@v1 校验器，守护测试
+tests/test_knowledge_import.py）。
 
 #### `POST /api/v1/domains/{domain_id}/courses`
 

@@ -133,6 +133,59 @@ def test_http_status_error_message() -> None:
     client.close()
 
 
+# ---------------- 错误透明化（QED-049 附带修复：dashscope 错误必须可确诊） ----------------
+
+
+def test_http_400_surfaces_dashscope_error_body() -> None:
+    """dashscope 4xx 错误体（code/message）必须透出，不再只剩状态码（REQ-066 误判教训）。"""
+    client = _direct_client(
+        lambda r: httpx.Response(
+            400, json={"code": "InvalidParameter", "message": "url error, please check url！"}
+        )
+    )
+    with pytest.raises(LlmClientError, match="HTTP 400.*InvalidParameter.*url error"):
+        client.complete([{"role": "user", "content": "x"}])
+    client.close()
+
+
+def test_error_shaped_200_body_surfaces_snippet() -> None:
+    """HTTP 200 但响应体是错误形状（无 choices）时，异常带出错误体片段。"""
+    client = _direct_client(
+        lambda r: httpx.Response(
+            200, json={"code": "InvalidParameter", "message": "url error, please check url！"}
+        )
+    )
+    with pytest.raises(LlmClientError, match="格式无效.*url error"):
+        client.complete([{"role": "user", "content": "x"}])
+    client.close()
+
+
+def test_length_finish_reason_surfaces() -> None:
+    """finish_reason != stop 时带出实际值（截断诊断，如思考型模型 max_tokens 挤占）。"""
+    client = _direct_client(
+        lambda r: httpx.Response(
+            200,
+            json={
+                "model": "qwen-plus",
+                "choices": [{"finish_reason": "length", "message": {"content": '{"a": 1'}}],
+            },
+        )
+    )
+    with pytest.raises(LlmClientError, match="finish_reason=length"):
+        client.complete([{"role": "user", "content": "x"}])
+    client.close()
+
+
+def test_direct_failure_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """direct 失败必须留应用日志（dry-run engine=None 不落库时的唯一痕迹）。"""
+    client = _direct_client(lambda r: httpx.Response(500))
+    with caplog.at_level("WARNING", logger="qed_tracker.llm_client"):
+        with pytest.raises(LlmClientError):
+            client.complete([{"role": "user", "content": "x"}])
+    assert any("模型调用失败" in rec.getMessage() for rec in caplog.records)
+    client.close()
+
+
 def test_call_budget_exhaustion() -> None:
     client = _direct_client(lambda r: _dash_response("ok"), call_budget=1)
     assert client.complete([{"role": "user", "content": "x"}]) == "ok"

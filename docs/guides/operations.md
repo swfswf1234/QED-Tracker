@@ -33,7 +33,8 @@ QED_DATA_ROOT=D:\coding\QED-Engine\dataset
 ```
 
 既有非密钥私有配置（`QED_AXIOM_URL`、`QED_TRACKER_URL`、`QED_PROXY`、`QED_TIMEOUT_SECONDS`、
-`QED_RETRIES`、`QED_TLS_VERIFY`、`QED_SOURCES` 等）继续由自身 `.env` 承载。无任何 `.env` 时使用
+`QED_RETRIES`、`QED_FETCH_ATTEMPT_TIMEOUT`（书籍 fetch 每候选总预算，默认 600s，2026-08-28）、
+`QED_TLS_VERIFY`、`QED_SOURCES` 等）继续由自身 `.env` 承载。无任何 `.env` 时使用
 内置最小默认值，启动时输出尾注提醒。数据根默认 `dataset/qed-tracker/`，可用全局 `--data-root`
 覆盖。
 

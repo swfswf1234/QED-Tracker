@@ -1,0 +1,78 @@
+{
+  "meta": {
+    "contract": "course-knowledge/manual@v1",
+    "name": "数学分析课程知识（标准答案）",
+    "confirmed_at": "2026-08-29",
+    "purpose": "数学分析（01_math_analysis）课程教材层标准答案：tutorials 套决定引用 + 期望落盘路径（target_path 基础名不含 sha，导入时按命名规则补 _<sha8>）",
+    "source": "docs/guides/course-tutorials-math-golden.json（2026-08-28 定稿范本）拆分；套号 1~3 独立编号，与 catalog 套一/套二/套三语义脱钩",
+    "notes": [
+      "套1/套2 教材自带习题（roles=[textbook,exercises]），exercise=null；套3 配独立习题集（吉米多维奇）",
+      "target_path 为期望落盘相对路径（QED_DATA_ROOT 相对），不含 sha 后缀"
+    ]
+  },
+  "domain": "math-advanced",
+  "course": {
+    "course_id": "01_math_analysis",
+    "name": "数学分析",
+    "aliases": ["微积分", "Analysis"]
+  },
+  "tutorials": [
+    {
+      "set_no": "1",
+      "set_name": "教程1：斯图尔特微积分（Stewart）",
+      "textbook": {
+        "title": "斯图尔特微积分",
+        "original_title": "Calculus: Early Transcendentals",
+        "authors": ["Stewart"],
+        "version": {"edition": "第九版（图灵数学经典，上下册）", "publisher": "人民邮电出版社", "year": 2025},
+        "roles": ["textbook", "exercises"],
+        "position": "beginner",
+        "intro": "詹姆斯·斯图尔特（James Stewart），加拿大数学家、麦克马斯特大学荣誉教授，深受波利亚解题思想影响。本书长销四十年、影响全球超八百万学生，哈佛、加州伯克利等顶尖学府指定教材，被誉为「微积分教材的圣经」。风格以直观与理解优先：先直观认识后严格定义，用图形、数值、代数多种方式呈现概念，重视实际应用与跨学科案例，全彩印刷还原英文原书。中译第九版（图灵数学经典，2025，上下册），对应 Calculus: Early Transcendentals。新手入门首选：建立微积分直觉、扫除概念障碍。习题量巨大且分级清晰，多数附答案，书末答案与社区题解完善，附加题供进阶——习题同源，无需独立习题集。",
+        "target_path": "raw/math-advanced/01_math_analysis/斯图尔特微积分.pdf"
+      },
+      "exercise": null,
+      "reason": "新手入门首选：直观清晰、习题分级完善，扫除概念障碍"
+    },
+    {
+      "set_no": "2",
+      "set_name": "教程2：微积分（Apostol）",
+      "textbook": {
+        "title": "微积分",
+        "original_title": "Calculus, Vol. 1 & 2",
+        "authors": ["Apostol"],
+        "version": {"edition": "第2版（华章数学译丛，卷1/卷2）", "publisher": "机械工业出版社", "year": null},
+        "roles": ["textbook", "exercises"],
+        "position": "advanced",
+        "intro": "汤姆·M·阿波斯托尔（Tom M. Apostol），加州理工学院教授，本书被誉为「数学家的微积分」。与 Stewart 的计算与应用风格不同：一上来给出实数公理体系，以黎曼和的积分先于微分展开，并将线性代数内容有机融入微积分；理论严谨、证明完整、公理化风格，是与 Rudin 并称的严格微积分经典。中译第2版两卷由机械工业出版社（华章数学译丛）出版，对应 Calculus, Vol. 1 & 2。适合数学专业，或希望真正理解微积分背后「为什么」而非「怎么算」的学习者，在入门教材之后用来深化理解、提升理论严谨性。习题经典且具挑战性，多为证明题；教材自带、量大偏理论，有官方/社区题解——习题同源。",
+        "target_path": "raw/math-advanced/01_math_analysis/微积分_Apostol.pdf"
+      },
+      "exercise": null,
+      "reason": "数学家的微积分：公理化严谨，深挖「为什么」，理论进阶"
+    },
+    {
+      "set_no": "3",
+      "set_name": "教程3：数学分析原理（Rudin）",
+      "textbook": {
+        "title": "数学分析原理",
+        "original_title": "Principles of Mathematical Analysis",
+        "authors": ["Rudin"],
+        "version": {"edition": "第3版", "publisher": "机械工业出版社", "year": null},
+        "roles": ["textbook"],
+        "position": "advanced",
+        "intro": "沃尔特·鲁丁（Walter Rudin），威斯康星大学麦迪逊分校教授，「Rudin 三部曲」之首（Baby Rudin）。以简洁、精炼、抽象著称：从实数的拓扑与完备性出发，建立极限、连续、微分、多元函数与级数的严格理论，是全球数学系高年级与研究生阶段的标准教材。中译第3版（机械工业出版社），对应 Principles of Mathematical Analysis。适合已有一定微积分与证明基础、追求严格性的学习者；与直观型教材（如菲赫金哥尔茨）互补使用。与吉米多维奇《数学分析习题集》（及费定晖等题解）搭配，构成「理论+训练」完整闭环。",
+        "target_path": "raw/math-advanced/01_math_analysis/数学分析原理.pdf"
+      },
+      "exercise": {
+        "title": "吉米多维奇数学分析习题集",
+        "original_title": "",
+        "authors": ["吉米多维奇"],
+        "version": {"edition": "", "publisher": "", "year": null},
+        "roles": ["exercises"],
+        "position": "advanced",
+        "intro": "吉米多维奇（Б. П. Демидович）编苏联经典题集，四千余题覆盖数学分析全部主题，由易到难、计算与证明并重，是国内数学系传统的标准配套练习，历经数十年教学检验。与 Rudin《数学分析原理》搭配使用：理论以 Rudin 为纲，训练以吉米多维奇为量。费定晖等《吉米多维奇数学分析习题集题解》提供逐题详解（catalog 已登记配套目标），建议配套使用以校验思路。",
+        "target_path": "raw/math-advanced/01_math_analysis/吉米多维奇数学分析习题集.pdf"
+      },
+      "reason": "严格性标杆 Baby Rudin，配吉米多维奇+题解构成完整训练闭环"
+    }
+  ]
+}

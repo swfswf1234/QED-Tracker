@@ -98,6 +98,7 @@ class BookService:
         kind: ResourceKind = ResourceKind.BOOK,
         catalog_target: CatalogTarget | None = None,
         catalog_id: str = "",
+        staging_tag: str = "",
     ) -> ResourceRecord:
         resolved = self.resolve(candidate)
         root = self.resources.inventory.data_root
@@ -109,7 +110,7 @@ class BookService:
         else:
             destination = raw_general_dir(root)
         record = self.resources.download_candidate(
-            resolved, kind=kind, destination_dir=destination, catalog_target=catalog_target
+            resolved, kind=kind, destination_dir=destination, catalog_target=catalog_target, staging_tag=staging_tag
         )
         return record
 

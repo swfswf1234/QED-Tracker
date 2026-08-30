@@ -54,6 +54,13 @@ qed-tracker mainline review <knowledge_id>
 qed-tracker mainline download <knowledge_id>
 # 验收通过 → 复制移交根仓库 dataset/qed-tracker/
 qed-tracker mainline approve <knowledge_id>
+
+# 手动知识导入（标准答案 → 系统；需要 8901 服务在线）
+qed-tracker domains import docs/knowledge/math-advanced.json
+qed-tracker knowledge import docs/knowledge/math-advanced/01_math_analysis.json
+# 手动下载导入（外部 PDF → 校验 → 拷入数据根 → 登记 downloaded）
+qed-tracker books import <book_id> "C:/downloads/textbook.pdf" --target "raw/math-advanced/01_math_analysis/斯图尔特微积分.pdf"
+
 # 一次性存量迁移（math.json + 旧三表 → 五表；幂等可重放，--drop-legacy 才删旧表）
 qed-tracker migrate
 

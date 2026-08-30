@@ -39,9 +39,9 @@ def test_registry_contains_three_steps_with_ids() -> None:
         ("domain-explore", "courses"),
         ("domain-explore", "path"),
     }
-    assert steps[("domain-explore", "domain")] == "domain-explore/domain@v2"
-    assert steps[("domain-explore", "courses")] == "domain-explore/courses@v4"
-    assert steps[("domain-explore", "path")] == "domain-explore/path@v4"
+    assert steps[("domain-explore", "domain")] == "domain-explore/domain@v3"
+    assert steps[("domain-explore", "courses")] == "domain-explore/courses@v6"
+    assert steps[("domain-explore", "path")] == "domain-explore/path@v5"
 
 
 def test_unknown_template_raises() -> None:
@@ -69,6 +69,16 @@ def test_prior_matches_exact_domain_only() -> None:
     assert list(get_prior("高等数学 ").keys()) == list(prior.keys())  # 去空白后命中
     assert get_prior("物理学") == {}
     assert get_prior("不存在的领域") == {}
+
+
+def test_prior_computer_science_registered() -> None:
+    """QED-050：计算机领域先验注册（计算机基础 + LLM 前沿语境）。"""
+    prior = get_prior("计算机科学与技术")
+    assert prior.get("naming_convention")
+    assert prior.get("anchor_courses")
+    for track_name in ("程序设计与算法", "计算机系统", "人工智能与机器学习"):
+        assert track_name in prior["tracks_hint"]
+    assert "大语言模型" in prior.get("capstone_hint", "")
 
 
 def test_priors_tracks_hint_aligns_four_tracks() -> None:
@@ -110,8 +120,8 @@ def test_domain_validate_rules() -> None:
         "final_name": "高等数学",
         "description": "大学阶段的数学核心课程体系，覆盖分析、代数等主干直至硕士主课。",
         "level": "本科-硕士",
-        "classic_tracks": [{"name": "分析", "summary": "极限与分析方向"}, {"name": "代数", "summary": "代数结构方向"}],
-        "entry_requirements": ["微积分基础"],
+        "classic_tracks": [{"name": "分析", "summary": "极限与分析方向", "kind": "main"}, {"name": "代数", "summary": "代数结构方向", "kind": "main"}],
+        "entry_requirements": "微积分基础",
     }
     assert domain_t.validate(ok) == ok
     # 描述超长（>200）
@@ -123,6 +133,12 @@ def test_domain_validate_rules() -> None:
     # 主线名重复
     with pytest.raises(ValueError):
         domain_t.validate({**ok, "classic_tracks": [{"name": "t", "summary": "s"}, {"name": "t", "summary": "x"}]})
+    # kind 非法
+    with pytest.raises(ValueError):
+        domain_t.validate({**ok, "classic_tracks": [{"name": "t", "summary": "s", "kind": "invalid"}]})
+    # entry_requirements 须为字符串（原数组契约已退役）
+    with pytest.raises(ValueError):
+        domain_t.validate({**ok, "entry_requirements": ["微积分基础"]})
     # 缺 name_check
     with pytest.raises(ValueError):
         domain_t.validate({k: v for k, v in ok.items() if k != "name_check"})
@@ -164,9 +180,12 @@ def test_courses_validate_rules() -> None:
     ok = {"courses": [_course("math_analysis", "数学分析"), _course("algebra", "高等代数"),
                       _course("real_analysis", "实分析"), _course("topology", "点集拓扑")]}
     assert courses_t.validate(ok) == ok
-    # 数量越界
+    # 精炼探索下限放宽：3 门合法（courses@v6，dry-run count_range 3~5 支撑）
+    refined = courses_t.validate({"courses": ok["courses"][:3]})
+    assert len(refined["courses"]) == 3
+    # 数量越界（<3）
     with pytest.raises(ValueError):
-        courses_t.validate({"courses": ok["courses"][:3]})
+        courses_t.validate({"courses": ok["courses"][:2]})
     # 拆学期命名（数字结尾）
     with pytest.raises(ValueError):
         courses_t.validate({"courses": [_course("a", "数学分析1"), *_ok_rest()]})
@@ -202,7 +221,7 @@ def test_path_assignments_rules() -> None:
     path_t = get_template("domain-explore", "path")
     ok = {"assignments": [
         {"slug": "math_analysis", "tier": "基础", "prerequisites": []},
-        {"slug": "real_analysis", "tier": "核心", "prerequisites": ["math_analysis"]},
+        {"slug": "real_analysis", "tier": "主干", "prerequisites": ["math_analysis"]},
     ], "notes": ""}
     assert path_t.validate(ok) == ok
     # tier 越界
@@ -214,14 +233,14 @@ def test_path_assignments_rules() -> None:
     # 前置成环（a↔b）
     cyclic = {"assignments": [
         {"slug": "a", "tier": "基础", "prerequisites": ["b"]},
-        {"slug": "b", "tier": "进阶", "prerequisites": ["a"]},
+        {"slug": "b", "tier": "分支", "prerequisites": ["a"]},
     ], "notes": ""}
     with pytest.raises(ValueError):
         path_t.validate(cyclic)
 
 
 def test_path_stage_tiers_follow_ordered_enum() -> None:
-    assert TIERS == ("基础", "进阶", "核心", "冲刺")
+    assert TIERS == ("基础", "主干", "分支", "前沿")
 
 
 # ---------------- graph TD 渲染 ----------------
@@ -231,12 +250,12 @@ def test_render_graph_td_groups_by_tier_with_edges() -> None:
     courses = [
         {"slug": "math_analysis", "name": "数学分析", "tier": "基础"},
         {"slug": "algebra", "name": "高等代数", "tier": "基础"},
-        {"slug": "real_analysis", "name": "实分析", "tier": "核心"},
+        {"slug": "real_analysis", "name": "实分析", "tier": "主干"},
     ]
     text_out = render_graph_td(courses, [{"from": "math_analysis", "to": "real_analysis"}])
     assert text_out.startswith("graph TD")
     assert "math_analysis[数学分析]" in text_out
-    assert "%% 基础" in text_out and "%% 核心" in text_out
+    assert "%% 基础" in text_out and "%% 主干" in text_out
     assert "math_analysis --> real_analysis" in text_out
 
 
@@ -248,8 +267,8 @@ _DOMAIN_RESP = {
     "final_name": "高等数学",
     "description": "大学阶段的数学核心课程体系。",
     "level": "本科-硕士",
-    "classic_tracks": [{"name": "分析", "summary": "极限与分析"}, {"name": "代数", "summary": "代数结构"}],
-    "entry_requirements": ["微积分基础"],
+    "classic_tracks": [{"name": "分析", "summary": "极限与分析", "kind": "main"}, {"name": "代数", "summary": "代数结构", "kind": "main"}],
+    "entry_requirements": "微积分基础",
 }
 _COURSES_RESP = {"courses": [
     _course("math_analysis", "数学分析", aliases=["微积分"], track="分析"),
@@ -260,8 +279,8 @@ _COURSES_RESP = {"courses": [
 _PATH_RESP = {"assignments": [
     {"slug": "math_analysis", "tier": "基础", "prerequisites": []},
     {"slug": "algebra", "tier": "基础", "prerequisites": []},
-    {"slug": "topology", "tier": "进阶", "prerequisites": ["math_analysis"]},
-    {"slug": "real_analysis", "tier": "核心", "prerequisites": ["math_analysis", "topology"]},
+    {"slug": "topology", "tier": "分支", "prerequisites": ["math_analysis"]},
+    {"slug": "real_analysis", "tier": "主干", "prerequisites": ["math_analysis", "topology"]},
 ], "notes": ""}
 
 
@@ -295,7 +314,7 @@ def test_domain_pipeline_runs_three_steps_and_aggregates_report() -> None:
     assert pipeline.calls == 3
     assert [c["step"] for c in pipeline.step_calls] == ["domain", "courses", "path"]
     assert [c["template_id"] for c in pipeline.step_calls] == [
-        "domain-explore/domain@v2", "domain-explore/courses@v4", "domain-explore/path@v4",
+        "domain-explore/domain@v3", "domain-explore/courses@v6", "domain-explore/path@v5",
     ]
 
 
@@ -319,10 +338,9 @@ def test_pipeline_payload_carries_prior_and_slugs() -> None:
     assert "naming_convention" in domain_user
     assert "textbook_preference" not in domain_user
     assert _SCOPE_HINT in domain_user
-    # step2 携带权威范围、主线全量对象（含 summary）与数量区间入参
+    # step2 携带权威范围、主线全量对象（含 summary）
     assert '"scope_hint"' in courses_user
     assert '"summary"' in courses_user
-    assert '"count_range"' in courses_user
     # step3 注入课程清单（slug+name+track+summary，作为前置判断依据）
     assert '"slug": "math_analysis"' in path_user
     assert '"summary"' in path_user
@@ -405,5 +423,5 @@ def test_pipeline_writes_per_step_template_ids_to_call_log() -> None:
     with engine.connect() as conn:
         rows = conn.execute(text("SELECT prompt_template FROM qed_llm_calls ORDER BY id")).fetchall()
     assert [r[0] for r in rows] == [
-        "domain-explore/domain@v2", "domain-explore/courses@v4", "domain-explore/path@v4",
+        "domain-explore/domain@v3", "domain-explore/courses@v6", "domain-explore/path@v5",
     ]

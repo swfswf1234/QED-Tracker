@@ -40,6 +40,25 @@ class LlmClientError(RuntimeError):
     """模型调用失败（缺密钥 / 网络 / HTTP / 格式 / 预算），消息面向用户可读。"""
 
 
+def _response_detail(response: httpx.Response, limit: int = 200) -> str:
+    """提取 dashscope 错误体摘要（code/message），非 JSON 退化为截断原文。
+
+    QED-049 附带修复：此前 HTTP 4xx 与错误形状响应体被吞成「HTTP 400 / 格式无效」，
+    联调无法确诊（REQ-066 误判教训）；密钥不经过响应体，摘要有泄漏风险。
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return (response.text or "")[:limit]
+    if isinstance(body, dict):
+        code = str(body.get("code") or "")
+        message = str(body.get("message") or "")
+        if code or message:
+            return f"{code}：{message}".strip("：")[:limit]
+        return json.dumps(body, ensure_ascii=False)[:limit]
+    return str(body)[:limit]
+
+
 class LlmClient:
     """统一文字模型调用入口；`api_select` 决定 direct / gateway 路由。"""
 
@@ -100,6 +119,7 @@ class LlmClient:
         prompt = json.dumps(messages, ensure_ascii=False)
         content = ""
         status, error = "success", ""
+        response: httpx.Response | None = None
         try:
             response = self.client.post(
                 f"{self.base_url}/chat/completions",
@@ -116,7 +136,9 @@ class LlmClient:
             choice = body["choices"][0]
             content = choice["message"]["content"]
             if choice.get("finish_reason") != "stop" or not isinstance(content, str):
-                raise LlmClientError("模型响应未完整结束")
+                raise LlmClientError(
+                    f"模型响应未完整结束（finish_reason={choice.get('finish_reason')}）"
+                )
             self.last_usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
         except LlmClientError as exc:
             status, error = "error", str(exc)
@@ -128,12 +150,17 @@ class LlmClient:
             status, error = "error", "模型网络请求失败"
             raise LlmClientError(error) from exc
         except httpx.HTTPStatusError as exc:
-            status, error = "error", f"模型返回 HTTP {exc.response.status_code}"
+            detail = _response_detail(exc.response)
+            base = f"模型返回 HTTP {exc.response.status_code}"
+            status, error = "error", (f"{base}：{detail}" if detail else base)
             raise LlmClientError(error) from exc
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            status, error = "error", "模型响应格式无效"
+            detail = _response_detail(response) if response is not None else ""
+            status, error = "error", (f"模型响应格式无效：{detail}" if detail else "模型响应格式无效")
             raise LlmClientError(error) from exc
         finally:
+            if status == "error":
+                logger.warning("direct 模型调用失败：%s", error)
             self._record_call(prompt, content, started, status=status, error=error, prompt_template=prompt_template)
         return content
 

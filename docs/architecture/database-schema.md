@@ -241,7 +241,10 @@ CREATE TABLE qt_books (
 
 ## qt_sources 表结构（表5，私有）
 
-现状延续，仅外键更名挂书行。
+现状延续，仅外键更名挂书行。**0014 迁移（2026-08-28）**：alembic 链此前遗留旧三表结构
+（download_id），致 add_source/list_sources 报 Unknown column 'book_id'；0014 将旧表改名
+qt_sources_legacy 留档后按本节 DDL 重建（download_id → book_id 的行级映射仍由
+migrate_knowledge.py 在真实存量库上完成）。
 
 ```sql
 CREATE TABLE qt_sources (
@@ -273,7 +276,7 @@ CREATE TABLE qt_sources (
 | 层 | 状态机 | 终态 | 非法迁移（API 409） |
 | --- | --- | --- | --- |
 | qt_knowledge | draft → confirmed → completed；draft/confirmed → rejected；confirmed/completed → superseded | rejected、superseded | completed 之后除 superseded 外任何迁移；终态任何迁移 |
-| qt_books | candidate → decided → downloading → downloaded → verified；candidate/decided/downloaded → rejected；downloading → failed（→downloading 重试）；candidate → downloaded（register 直转，需 sha256+path）；candidate/decided/downloaded → superseded | verified、rejected、superseded | 终态任何迁移；downloaded 前须已登记 sha256+path；candidate → failed 不允许 |
+| qt_books | candidate → decided → downloading → downloaded → verified；candidate/decided/downloaded → rejected；downloading → failed（→downloading 重试）；downloading → decided（cancel 取消复位，仅 downloading，2026-08-28）；candidate → downloaded（register 直转，需 sha256+path）；candidate/decided/downloaded → superseded | verified、rejected、superseded | 终态任何迁移；downloaded 前须已登记 sha256+path；candidate → failed 不允许 |
 | qt_sources | 无（仅 ok 标记） | — | — |
 
 ## 一次性存量迁移（迁移 0006 之后执行，服务端脚本）

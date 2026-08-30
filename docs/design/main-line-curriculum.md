@@ -17,6 +17,10 @@
 
 ### schema
 
+> 2026-08-29 用户裁定：`stages`/`stage` 值域统一为四档 **【基础、主干、分支、前沿】**
+> （见 [shared-tables.md](shared-tables.md)）。本示例的「本科基础/研究生基础/QE冲刺」为
+> 历史数据留档，实际落库值域以四档为准（QED-050 领域导入/课程梳理时迁移）。
+
 ```json
 {
   "schema_version": 1,

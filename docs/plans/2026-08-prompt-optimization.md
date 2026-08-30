@@ -211,8 +211,8 @@ CLI：`qed-tracker promptlab domain "高等数学"`（`--scope`/`--ref-doc`）�
   tracks 全量含 summary + count_range + university_basis 可空；输出 13 门（10 slug 直接命中 + 2
   slug 漂移 + 1 extra 高等概率论）；DAG 5/10 完全一致；classic_tracks 漂移（LLM 输出"基础
   数学/应用数学/概率论与数理统计"三主线而非 golden 四主线），需后续优化 priors tracks_hint 文案。
-  知识文档 `docs/plans/domain-math-advanced.json`（12 门 + 17 扩展 + DAG）已定稿并迁入
-  `docs/guides/`。
+  知识文档 `docs/knowledge/math-advanced.json`（12 门 + 17 扩展 + DAG）已定稿并迁入
+  `docs/knowledge/`（2026-08-29 正本位置；旧副本 plans/guides 已删除）。
 - **Phase B 正式流程**：`/api/v1/prompt-explores`（202 入队）
   + runs 列表/详情/review/apply 端点组 + CLI（依据 B0 评估结论启动）。
 - **Phase B0' 课程管线单步落地（2026-08-26，本轮）**：`course-explore/tutorials@v1` 模板注册

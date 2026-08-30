@@ -1,0 +1,171 @@
+{
+  "meta": {
+    "name": "课程教材层标准答案范本（数学·三门基石课）",
+    "contract": "course-explore/tutorials@v1",
+    "confirmed_at": "2026-08-28",
+    "purpose": "课程教材探索（course-explore/tutorials）prompt 优化的标准答案，兼作 A2 课程知识采纳（POST /courses/{course_id}/knowledge）的范本输入；与领域层范本 docs/knowledge/math-advanced.json 配套",
+    "coverage": {
+      "domain": "数学（高等数学）",
+      "courses": [
+        {"course_id": "01_math_analysis", "name": "数学分析"},
+        {"course_id": "02_linear_algebra", "name": "高等代数", "aliases": ["线性代数"]},
+        {"course_id": "11_probability", "name": "概率论与数理统计"}
+      ]
+    },
+    "sources": "tmp/数学分析探索.txt、tmp/高等代数探索.txt、tmp/概率论探索.txt（用户探索笔记，2026-08）+ catalog math-qe.json 已定稿目标",
+    "book_evidence": "书目中文名/出版社经豆瓣核查（2026-08-28）：斯图尔特微积分（第九版，图灵数学经典，ISBN 9787115667250）、斯特朗线性代数（图灵数学经典，ISBN 9787115676849，原作 Linear Algebra and Its Applications）、概率导论（第2版·修订版，图灵数学经典）；苏联《线性代数习题集》沿用 catalog 登记名（编者待核实）",
+    "boundaries": [
+      "en 英文对照套与纯英文题解（Axler solutions/Grimmett 1000/Casella solutions 等）无法在 tutorials 契约表达（书名强制中文），留 catalog 侧承载",
+      "陈纪修《数学分析》（catalog 套三，人工定稿）留 catalog 侧，不进本范本",
+      "菲赫金哥尔茨《微积分学教程》+谢惠民（catalog 套二）留 catalog 侧，不进本范本",
+      "catalog 11 目标（Durrett/Billingsley/严士健系，测度论概率）属研究生级，留待未来「高等概率论」扩展课归属"
+    ],
+    "contract_notes": [
+      "11 号课两套均教材自带习题（各自官方题解 Student Solutions Manual 均为英文书，tutorials 契约书名强制中文，不可作独立 exercise 条目），exercise_count=0——tutorials@v2 需放宽「至少一套须含独立习题集」全局强制（保留单套规则：exercise=null 仅当教材 roles 含 exercises）；A2 采纳端点轻校验不受影响",
+      "roles 约定：exercise=null 的自带习题套，textbook.roles=[\"textbook\",\"exercises\"]；配独立习题集的套，textbook.roles=[\"textbook\"]、exercise.roles=[\"exercises\"]",
+      "01 号课套号语义：本范本套号 1~3 独立编号（Stewart/Apostol/Rudin 套），与 catalog 套一（Rudin）/套二（菲赫金哥尔茨）/套三（陈纪修）语义脱钩，映射由 QED-024 定套工作统一裁决"
+    ]
+  },
+  "courses": [
+    {
+      "course_id": "01_math_analysis",
+      "name": "数学分析",
+      "tutorials": [
+        {
+          "set_no": "1",
+          "set_name": "教程1：斯图尔特微积分（Stewart）",
+          "textbook": {
+            "title": "斯图尔特微积分",
+            "original_title": "Calculus: Early Transcendentals",
+            "authors": ["Stewart"],
+            "version": {"edition": "第九版（图灵数学经典，上下册）", "publisher": "人民邮电出版社", "year": 2025},
+            "roles": ["textbook", "exercises"],
+            "position": "beginner",
+            "intro": "詹姆斯·斯图尔特（James Stewart），加拿大数学家、麦克马斯特大学荣誉教授，深受波利亚解题思想影响。本书长销四十年、影响全球超八百万学生，哈佛、加州伯克利等顶尖学府指定教材，被誉为「微积分教材的圣经」。风格以直观与理解优先：先直观认识后严格定义，用图形、数值、代数多种方式呈现概念，重视实际应用与跨学科案例，全彩印刷还原英文原书。中译第九版（图灵数学经典，2025，上下册），对应 Calculus: Early Transcendentals。新手入门首选：建立微积分直觉、扫除概念障碍。习题量巨大且分级清晰，多数附答案，书末答案与社区题解完善，附加题供进阶——习题同源，无需独立习题集。"
+          },
+          "exercise": null,
+          "reason": "新手入门首选：直观清晰、习题分级完善，扫除概念障碍"
+        },
+        {
+          "set_no": "2",
+          "set_name": "教程2：微积分（Apostol）",
+          "textbook": {
+            "title": "微积分",
+            "original_title": "Calculus, Vol. 1 & 2",
+            "authors": ["Apostol"],
+            "version": {"edition": "第2版（华章数学译丛，卷1/卷2）", "publisher": "机械工业出版社", "year": null},
+            "roles": ["textbook", "exercises"],
+            "position": "advanced",
+            "intro": "汤姆·M·阿波斯托尔（Tom M. Apostol），加州理工学院教授，本书被誉为「数学家的微积分」。与 Stewart 的计算与应用风格不同：一上来给出实数公理体系，以黎曼和的积分先于微分展开，并将线性代数内容有机融入微积分；理论严谨、证明完整、公理化风格，是与 Rudin 并称的严格微积分经典。中译第2版两卷由机械工业出版社（华章数学译丛）出版，对应 Calculus, Vol. 1 & 2。适合数学专业，或希望真正理解微积分背后「为什么」而非「怎么算」的学习者，在入门教材之后用来深化理解、提升理论严谨性。习题经典且具挑战性，多为证明题；教材自带、量大偏理论，有官方/社区题解——习题同源。"
+          },
+          "exercise": null,
+          "reason": "数学家的微积分：公理化严谨，深挖「为什么」，理论进阶"
+        },
+        {
+          "set_no": "3",
+          "set_name": "教程3：数学分析原理（Rudin）",
+          "textbook": {
+            "title": "数学分析原理",
+            "original_title": "Principles of Mathematical Analysis",
+            "authors": ["Rudin"],
+            "version": {"edition": "第3版", "publisher": "机械工业出版社", "year": null},
+            "roles": ["textbook"],
+            "position": "advanced",
+            "intro": "沃尔特·鲁丁（Walter Rudin），威斯康星大学麦迪逊分校教授，「Rudin 三部曲」之首（Baby Rudin）。以简洁、精炼、抽象著称：从实数的拓扑与完备性出发，建立极限、连续、微分、多元函数与级数的严格理论，是全球数学系高年级与研究生阶段的标准教材。中译第3版（机械工业出版社），对应 Principles of Mathematical Analysis。适合已有一定微积分与证明基础、追求严格性的学习者；与直观型教材（如菲赫金哥尔茨）互补使用。与吉米多维奇《数学分析习题集》（及费定晖等题解）搭配，构成「理论+训练」完整闭环。"
+          },
+          "exercise": {
+            "title": "吉米多维奇数学分析习题集",
+            "original_title": "",
+            "authors": ["吉米多维奇"],
+            "version": {"edition": "", "publisher": "", "year": null},
+            "roles": ["exercises"],
+            "position": "advanced",
+            "intro": "吉米多维奇（Б. П. Демидович）编苏联经典题集，四千余题覆盖数学分析全部主题，由易到难、计算与证明并重，是国内数学系传统的标准配套练习，历经数十年教学检验。与 Rudin《数学分析原理》搭配使用：理论以 Rudin 为纲，训练以吉米多维奇为量。费定晖等《吉米多维奇数学分析习题集题解》提供逐题详解（catalog 已登记配套目标），建议配套使用以校验思路。"
+          },
+          "reason": "严格性标杆 Baby Rudin，配吉米多维奇+题解构成完整训练闭环"
+        }
+      ]
+    },
+    {
+      "course_id": "02_linear_algebra",
+      "name": "高等代数",
+      "aliases": ["线性代数"],
+      "tutorials": [
+        {
+          "set_no": "1",
+          "set_name": "教程1：斯特朗线性代数（Strang）",
+          "textbook": {
+            "title": "斯特朗线性代数",
+            "original_title": "Linear Algebra and Its Applications",
+            "authors": ["Strang"],
+            "version": {"edition": "图灵数学经典", "publisher": "人民邮电出版社", "year": 2025},
+            "roles": ["textbook", "exercises"],
+            "position": "beginner",
+            "intro": "吉尔伯特·斯特朗（Gilbert Strang），MIT 数学系教授，18.06 线性代数数十年主讲人，全球最具影响力的线性代数教育者之一。本书从「列空间」与「四个基本子空间」的几何视角组织全书，极度强调矩阵分解（LU、QR、SVD）的力量与实际应用（图像处理、搜索算法等），写作直观通俗、深入浅出。中译《斯特朗线性代数》（图灵数学经典，2025），对应 Linear Algebra and Its Applications。最佳入门教材：把线性代数从「算行列式和逆矩阵」升华为「几何与数据科学的语言」。每章大量习题并附部分解答，与 MIT OCW 作业试题配套——习题同源。"
+          },
+          "exercise": null,
+          "reason": "几何直观+矩阵分解视角，MIT OCW 配套最佳入门"
+        },
+        {
+          "set_no": "2",
+          "set_name": "教程2：线性代数应该这样学（Axler）",
+          "textbook": {
+            "title": "线性代数应该这样学",
+            "original_title": "Linear Algebra Done Right",
+            "authors": ["Axler"],
+            "version": {"edition": "第4版", "publisher": "人民邮电出版社", "year": null},
+            "roles": ["textbook"],
+            "position": "advanced",
+            "intro": "谢尔登·阿克斯勒（Sheldon Axler），旧金山州立大学教授。本书完全避开行列式，从线性变换（算子）与特征值的角度构建整个理论体系，强调结构、本质与逻辑的纯粹性，叙述清晰简洁，被誉为「线性代数的文学经典」。它让你摆脱行列式的束缚，真正理解线性代数的「灵魂」是线性变换而非矩阵计算。中译第4版由人民邮电出版社（图灵数学经典）出版，对应 Linear Algebra Done Right。适合在计算与几何基础（如 Strang）之上深刻理解理论的学习者，是数学专业进阶的最佳读物。习题精炼、多为概念考题，不涉复杂计算但直击定义与定理间的关系，务必亲手完成。"
+          },
+          "exercise": {
+            "title": "线性代数习题集",
+            "original_title": "",
+            "authors": ["苏联"],
+            "version": {"edition": "", "publisher": "", "year": null},
+            "roles": ["exercises"],
+            "position": "advanced",
+            "intro": "苏联学派经典线性代数习题集（catalog 已登记下载目标），覆盖线性方程组、矩阵运算、特征值、二次型等核心题型，题量扎实、计算与理论并重，历经苏联及国内数学系教学检验。与 Axler《线性代数应该这样学》搭配使用：Axler 提供算子视角的理论骨架，本习题集提供扎实的独立训练量，理论理解与计算能力互补，构成该套完整学习闭环。"
+          },
+          "reason": "摆脱行列式直击算子本质，配苏联习题集扎实训练"
+        }
+      ]
+    },
+    {
+      "course_id": "11_probability",
+      "name": "概率论与数理统计",
+      "tutorials": [
+        {
+          "set_no": "1",
+          "set_name": "教程1：概率导论（Blitzstein）",
+          "textbook": {
+            "title": "概率导论",
+            "original_title": "Introduction to Probability",
+            "authors": ["Blitzstein", "Hwang"],
+            "version": {"edition": "第2版·修订版", "publisher": "人民邮电出版社", "year": null},
+            "roles": ["textbook", "exercises"],
+            "position": "beginner",
+            "intro": "约瑟夫·布里茨斯坦（哈佛统计系教授）与杰西卡·黄合著，哈佛 STAT 110 课程教材。侧重概率思维、直觉与模拟：不追求数学上的极端严谨，而是通过大量生动有趣的例子与故事，让你真正理解条件概率、贝叶斯公式等概念背后的意义，文笔风趣、引人入胜。配套 STAT 110 公开课由 Blitzstein 亲自讲授，被视为概率启蒙的「神作」。中译《概率导论》第2版修订版（图灵数学经典），对应 Introduction to Probability。概率论的最佳启蒙读物，适合建立概率直觉的初学者。习题是全书亮点：大量故事题与模拟题，鼓励用 R/Python 模拟验证理论，附官方解答——习题同源。"
+          },
+          "exercise": null,
+          "reason": "概率思维启蒙首选：故事题+模拟题建立直觉"
+        },
+        {
+          "set_no": "2",
+          "set_name": "教程2：概率论基础教程（Ross）",
+          "textbook": {
+            "title": "概率论基础教程",
+            "original_title": "A First Course in Probability",
+            "authors": ["Ross"],
+            "version": {"edition": "原书第9版", "publisher": "机械工业出版社", "year": null},
+            "roles": ["textbook", "exercises"],
+            "position": "comprehensive",
+            "intro": "谢尔登·罗斯（Sheldon Ross），南加州大学教授，应用概率与仿真领域权威。本书是美国概率论课程最常用的教材之一：例题丰富、计算训练扎实，系统覆盖组合分析、公理化概率、条件概率、离散与连续随机变量、期望、极限定理等主干内容，叙述严谨清晰，与国内课程大纲最接近。中译《概率论基础教程》（原书第9版）由机械工业出版社出版，对应 A First Course in Probability。适合作为本科概率论的主教材进行全面系统的学习，也是应考与研究生的可靠基础。各章习题量大且难度分层，配套官方题解（Student Solutions Manual，精选习题详解）——习题同源。"
+          },
+          "exercise": null,
+          "reason": "美国最常用教材：例题丰富计算扎实，贴国内大纲"
+        }
+      ]
+    }
+  ]
+}

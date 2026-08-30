@@ -61,7 +61,10 @@ _BOOK_TRANSITIONS: dict[BookStatus, set[BookStatus]] = {
         BookStatus.DECIDED, BookStatus.DOWNLOADED, BookStatus.REJECTED, BookStatus.SUPERSEDED
     },
     BookStatus.DECIDED: {BookStatus.DOWNLOADING, BookStatus.REJECTED, BookStatus.SUPERSEDED},
-    BookStatus.DOWNLOADING: {BookStatus.DOWNLOADED, BookStatus.FAILED, BookStatus.REJECTED},
+    # DOWNLOADING → DECIDED：取消失联下载复位（2026-08-28 联调：start 后无执行器/进程重启遗留）。
+    BookStatus.DOWNLOADING: {
+        BookStatus.DECIDED, BookStatus.DOWNLOADED, BookStatus.FAILED, BookStatus.REJECTED
+    },
     BookStatus.DOWNLOADED: {BookStatus.VERIFIED, BookStatus.REJECTED, BookStatus.SUPERSEDED},
     BookStatus.FAILED: {BookStatus.DOWNLOADING, BookStatus.REJECTED},
     BookStatus.VERIFIED: set(),
@@ -484,6 +487,19 @@ class KnowledgeRepository:
             row.status = KnowledgeStatus.COMPLETED.value
             row.completed_at = utc_now()
             row.updated_at = utc_now()
+            # G2 修复（QED-050）：课程下全部非隐藏知识行 completed 时回写课程探索终态。
+            remaining = session.scalar(
+                select(func.count())
+                .select_from(QtKnowledge)
+                .where(QtKnowledge.course_id == row.course_id)
+                .where(QtKnowledge.status != KnowledgeStatus.COMPLETED.value)
+                .where(QtKnowledge.status.not_in(_HIDDEN_KNOWLEDGE_STATUSES))
+            )
+            if not remaining:
+                course = session.get(QedCourse, row.course_id)
+                if course is not None:
+                    course.exploration_stage = "已完成"
+                    course.updated_at = utc_now()
             session.commit()
             return row
 
@@ -603,6 +619,21 @@ class KnowledgeRepository:
     def retry_download(self, book_id: str) -> QtBook:
         """failed → downloading（重试）。"""
         return self._transition_book(book_id, BookStatus.DOWNLOADING)
+
+    def cancel_download(self, book_id: str, *, note: str = "", by: str = "web") -> QtBook:
+        """downloading → decided（取消复位：失联下载/进程重启遗留，回到待执行）。
+
+        仅 downloading 可取消：其余状态走各自语义（candidate 用 decide_book 等），
+        避免 cancel 被当作通用 decide 入口。
+        """
+        current = self.get_book(book_id, include_hidden=True)
+        if current is None:
+            raise KeyError(f"书行不存在：{book_id}")
+        if current.status != BookStatus.DOWNLOADING:
+            raise InvalidTransition(
+                f"书行状态迁移非法：{current.status} → {BookStatus.DECIDED.value}（仅 downloading 可取消）"
+            )
+        return self._transition_book(book_id, BookStatus.DECIDED, review_note=note.strip(), updated_by=by)
 
     def complete_download(
         self,

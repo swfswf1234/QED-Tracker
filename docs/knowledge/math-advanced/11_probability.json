@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "contract": "course-knowledge/manual@v1",
+    "name": "概率论与数理统计课程知识（标准答案）",
+    "confirmed_at": "2026-08-29",
+    "purpose": "概率论与数理统计（11_probability）课程教材层标准答案：tutorials 套决定引用 + 期望落盘路径（target_path 基础名不含 sha，导入时按命名规则补 _<sha8>）",
+    "source": "docs/guides/course-tutorials-math-golden.json（2026-08-28 定稿范本）拆分",
+    "notes": [
+      "两套教材均自带习题（各自官方题解 Student Solutions Manual 均为英文书，tutorials 契约书名强制中文，不作独立 exercise 条目），exercise=null，exercise_count=0",
+      "target_path 为期望落盘相对路径（QED_DATA_ROOT 相对），不含 sha 后缀"
+    ]
+  },
+  "domain": "math-advanced",
+  "course": {
+    "course_id": "11_probability",
+    "name": "概率论与数理统计",
+    "aliases": ["概率统计", "Probability and Statistics"]
+  },
+  "tutorials": [
+    {
+      "set_no": "1",
+      "set_name": "教程1：概率导论（Blitzstein）",
+      "textbook": {
+        "title": "概率导论",
+        "original_title": "Introduction to Probability",
+        "authors": ["Blitzstein", "Hwang"],
+        "version": {"edition": "第2版·修订版", "publisher": "人民邮电出版社", "year": null},
+        "roles": ["textbook", "exercises"],
+        "position": "beginner",
+        "intro": "约瑟夫·布里茨斯坦（哈佛统计系教授）与杰西卡·黄合著，哈佛 STAT 110 课程教材。侧重概率思维、直觉与模拟：不追求数学上的极端严谨，而是通过大量生动有趣的例子与故事，让你真正理解条件概率、贝叶斯公式等概念背后的意义，文笔风趣、引人入胜。配套 STAT 110 公开课由 Blitzstein 亲自讲授，被视为概率启蒙的「神作」。中译《概率导论》第2版修订版（图灵数学经典），对应 Introduction to Probability。概率论的最佳启蒙读物，适合建立概率直觉的初学者。习题是全书亮点：大量故事题与模拟题，鼓励用 R/Python 模拟验证理论，附官方解答——习题同源。",
+        "target_path": "raw/math-advanced/11_probability/概率导论.pdf"
+      },
+      "exercise": null,
+      "reason": "概率思维启蒙首选：故事题+模拟题建立直觉"
+    },
+    {
+      "set_no": "2",
+      "set_name": "教程2：概率论基础教程（Ross）",
+      "textbook": {
+        "title": "概率论基础教程",
+        "original_title": "A First Course in Probability",
+        "authors": ["Ross"],
+        "version": {"edition": "原书第9版", "publisher": "机械工业出版社", "year": null},
+        "roles": ["textbook", "exercises"],
+        "position": "comprehensive",
+        "intro": "谢尔登·罗斯（Sheldon Ross），南加州大学教授，应用概率与仿真领域权威。本书是美国概率论课程最常用的教材之一：例题丰富、计算训练扎实，系统覆盖组合分析、公理化概率、条件概率、离散与连续随机变量、期望、极限定理等主干内容，叙述严谨清晰，与国内课程大纲最接近。中译《概率论基础教程》（原书第9版）由机械工业出版社出版，对应 A First Course in Probability。适合作为本科概率论的主教材进行全面系统的学习，也是应考与研究生的可靠基础。各章习题量大且难度分层，配套官方题解（Student Solutions Manual，精选习题详解）——习题同源。",
+        "target_path": "raw/math-advanced/11_probability/概率论基础教程.pdf"
+      },
+      "exercise": null,
+      "reason": "美国最常用教材：例题丰富计算扎实，贴国内大纲"
+    }
+  ]
+}

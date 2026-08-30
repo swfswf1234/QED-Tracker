@@ -471,3 +471,116 @@ def test_create_course_accepts_optional_course_id(client):
         "name": "微分几何二", "course_id": "14_differential_geometry",
     })
     assert resp_dup.status_code == 409
+
+
+# ---------------- 自动取书（方案 A 2026-08-28）：fetch / cancel ----------------
+
+
+class _FetchFakeProvider:
+    def __init__(self, candidate):
+        self.name = "fake"
+        self.candidate = candidate
+
+    def search(self, query, limit=10):
+        return [self.candidate]
+
+    def resolve(self, candidate):
+        return candidate
+
+    def close(self):
+        return None
+
+
+def _fetch_client(tmp_path, repo, candidate, pdf: bytes):
+    """带假 book_service_factory 的 client：fetch 任务全程离线。"""
+    import httpx as _httpx
+
+    from qed_tracker.application.books import BookService
+    from qed_tracker.application.resources import ResourceService
+    from qed_tracker.downloader import DownloadManager
+    from qed_tracker.inventory import Inventory
+
+    def factory():
+        manager = DownloadManager(retries=1)
+        manager.client.close()
+
+        def handler(request):
+            return _httpx.Response(200, content=pdf, request=request)
+
+        manager.client = _httpx.Client(transport=_httpx.MockTransport(handler))
+        return BookService([_FetchFakeProvider(candidate)], ResourceService(Inventory(tmp_path), manager))
+
+    from dataclasses import replace as _replace
+
+    settings = _replace(load_settings(data_root=tmp_path), db_password="")
+    app = create_app(settings, knowledge_repository=repo, book_service_factory=factory)
+    return TestClient(app)
+
+
+def _make_candidate():
+    from qed_tracker.models import Availability, Candidate
+
+    return Candidate(
+        "fake", "fake-1", "微积分学教程", ("作者",), "zh", year="2024",
+        download_url="https://example.com/fake.pdf",
+        availability=Availability.DOWNLOADABLE,
+    )
+
+
+def _wait(client, task_id, timeout=5.0):
+    import time as _time
+
+    deadline = _time.time() + timeout
+    while _time.time() < deadline:
+        record = client.get(f"/api/v1/tasks/{task_id}").json()
+        if record["status"] in ("succeeded", "failed"):
+            return record
+        _time.sleep(0.05)
+    raise AssertionError("任务未在超时内结束")
+
+
+def test_book_fetch_submits_task_and_downloads(client, repo, tmp_path, pdf_bytes):
+    knowledge = _seed_knowledge(repo)
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程",
+                            authors=["作者"])
+    with _fetch_client(tmp_path, repo, _make_candidate(), pdf_bytes) as fetch_client:
+        resp = fetch_client.post(f"/api/v1/books/{book.book_id}/fetch")
+        assert resp.status_code == 202
+        record = _wait(fetch_client, resp.json()["task_id"])
+        assert record["status"] == "succeeded", record
+        assert record["result"]["ok"] is True
+    detail = client.get(f"/api/v1/knowledge/{knowledge.knowledge_id}").json()
+    target = next(b for b in detail["books"] if b["book_id"] == book.book_id)
+    assert target["status"] == BookStatus.DOWNLOADED.value
+    sources = client.get(f"/api/v1/books/{book.book_id}/sources")
+    assert sources.status_code == 200
+    assert sources.json()[0]["ok"] is True
+
+
+def test_book_fetch_rejects_non_fetchable_status(client, repo, tmp_path, pdf_bytes):
+    knowledge = _seed_knowledge(repo)
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
+    client.post(f"/api/v1/books/{book.book_id}/decide")
+    client.post(f"/api/v1/books/{book.book_id}/start")
+    with _fetch_client(tmp_path, repo, _make_candidate(), pdf_bytes) as fetch_client:
+        resp = fetch_client.post(f"/api/v1/books/{book.book_id}/fetch")
+        assert resp.status_code == 409
+
+
+def test_book_cancel_resets_stuck_downloading(client, repo):
+    knowledge = _seed_knowledge(repo)
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
+    client.post(f"/api/v1/books/{book.book_id}/decide")
+    client.post(f"/api/v1/books/{book.book_id}/start")
+    resp = client.post(f"/api/v1/books/{book.book_id}/cancel", json={"note": "失联复位"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == BookStatus.DECIDED.value
+    # 复位后可重新 start
+    assert client.post(f"/api/v1/books/{book.book_id}/start").status_code == 200
+
+
+def test_book_cancel_rejects_candidate(client, repo):
+    knowledge = _seed_knowledge(repo)
+    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
+    resp = client.post(f"/api/v1/books/{book.book_id}/cancel", json={"note": "x"})
+    assert resp.status_code == 409

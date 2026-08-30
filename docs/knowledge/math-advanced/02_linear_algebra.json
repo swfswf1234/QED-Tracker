@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "contract": "course-knowledge/manual@v1",
+    "name": "高等代数课程知识（标准答案）",
+    "confirmed_at": "2026-08-29",
+    "purpose": "高等代数（02_linear_algebra）课程教材层标准答案：tutorials 套决定引用 + 期望落盘路径（target_path 基础名不含 sha，导入时按命名规则补 _<sha8>）",
+    "source": "docs/guides/course-tutorials-math-golden.json（2026-08-28 定稿范本）拆分",
+    "notes": [
+      "套1 教材自带习题（roles=[textbook,exercises]），exercise=null；套2 配独立习题集（苏联《线性代数习题集》沿用 catalog 登记名，编者待核实）",
+      "target_path 为期望落盘相对路径（QED_DATA_ROOT 相对），不含 sha 后缀"
+    ]
+  },
+  "domain": "math-advanced",
+  "course": {
+    "course_id": "02_linear_algebra",
+    "name": "高等代数",
+    "aliases": ["线性代数"]
+  },
+  "tutorials": [
+    {
+      "set_no": "1",
+      "set_name": "教程1：斯特朗线性代数（Strang）",
+      "textbook": {
+        "title": "斯特朗线性代数",
+        "original_title": "Linear Algebra and Its Applications",
+        "authors": ["Strang"],
+        "version": {"edition": "图灵数学经典", "publisher": "人民邮电出版社", "year": 2025},
+        "roles": ["textbook", "exercises"],
+        "position": "beginner",
+        "intro": "吉尔伯特·斯特朗（Gilbert Strang），MIT 数学系教授，18.06 线性代数数十年主讲人，全球最具影响力的线性代数教育者之一。本书从「列空间」与「四个基本子空间」的几何视角组织全书，极度强调矩阵分解（LU、QR、SVD）的力量与实际应用（图像处理、搜索算法等），写作直观通俗、深入浅出。中译《斯特朗线性代数》（图灵数学经典，2025），对应 Linear Algebra and Its Applications。最佳入门教材：把线性代数从「算行列式和逆矩阵」升华为「几何与数据科学的语言」。每章大量习题并附部分解答，与 MIT OCW 作业试题配套——习题同源。",
+        "target_path": "raw/math-advanced/02_linear_algebra/斯特朗线性代数.pdf"
+      },
+      "exercise": null,
+      "reason": "几何直观+矩阵分解视角，MIT OCW 配套最佳入门"
+    },
+    {
+      "set_no": "2",
+      "set_name": "教程2：线性代数应该这样学（Axler）",
+      "textbook": {
+        "title": "线性代数应该这样学",
+        "original_title": "Linear Algebra Done Right",
+        "authors": ["Axler"],
+        "version": {"edition": "第4版", "publisher": "人民邮电出版社", "year": null},
+        "roles": ["textbook"],
+        "position": "advanced",
+        "intro": "谢尔登·阿克斯勒（Sheldon Axler），旧金山州立大学教授。本书完全避开行列式，从线性变换（算子）与特征值的角度构建整个理论体系，强调结构、本质与逻辑的纯粹性，叙述清晰简洁，被誉为「线性代数的文学经典」。它让你摆脱行列式的束缚，真正理解线性代数的「灵魂」是线性变换而非矩阵计算。中译第4版由人民邮电出版社（图灵数学经典）出版，对应 Linear Algebra Done Right。适合在计算与几何基础（如 Strang）之上深刻理解理论的学习者，是数学专业进阶的最佳读物。习题精炼、多为概念考题，不涉复杂计算但直击定义与定理间的关系，务必亲手完成。",
+        "target_path": "raw/math-advanced/02_linear_algebra/线性代数应该这样学.pdf"
+      },
+      "exercise": {
+        "title": "线性代数习题集",
+        "original_title": "",
+        "authors": ["苏联"],
+        "version": {"edition": "", "publisher": "", "year": null},
+        "roles": ["exercises"],
+        "position": "advanced",
+        "intro": "苏联学派经典线性代数习题集（catalog 已登记下载目标），覆盖线性方程组、矩阵运算、特征值、二次型等核心题型，题量扎实、计算与理论并重，历经苏联及国内数学系教学检验。与 Axler《线性代数应该这样学》搭配使用：Axler 提供算子视角的理论骨架，本习题集提供扎实的独立训练量，理论理解与计算能力互补，构成该套完整学习闭环。",
+        "target_path": "raw/math-advanced/02_linear_algebra/线性代数习题集.pdf"
+      },
+      "reason": "摆脱行列式直击算子本质，配苏联习题集扎实训练"
+    }
+  ]
+}

@@ -80,13 +80,8 @@ class DomainPipeline(ExploreAdvisorBase):
         ref_text: str = "",
         ref_doc_path: str = "",
         confirm_name_override: str = "",
-        count_min: int = 10,
-        count_max: int = 14,
     ) -> dict[str, Any]:
-        """confirm_name_override 非空 = 人工已确认领域名（P12 弹窗流），跳过确认检查并以该名贯穿后续。
-
-        count_min/count_max 为核心课程数量区间（探索轮裁决入参化，默认 10~14），仅约束 step2 文案。
-        """
+        """confirm_name_override 非空 = 人工已确认领域名（P12 弹窗流），跳过确认检查并以该名贯穿后续。"""
         domain_template = templates_mod.get_template("domain-explore", "domain")
         courses_template = templates_mod.get_template("domain-explore", "courses")
         path_template = templates_mod.get_template("domain-explore", "path")
@@ -119,10 +114,10 @@ class DomainPipeline(ExploreAdvisorBase):
                 "level": domain["level"],
                 "classic_tracks": tracks,
                 "entry_requirements": domain["entry_requirements"],
-            }, "count_range": {"min": count_min, "max": count_max},
+            },
              "scope_hint": scope_hint,
              "prior_knowledge": get_prior_for_step(final_name, "courses")},
-            {"track_names": {t["name"] for t in tracks}},
+            {"track_names": {t["name"] for t in tracks if t.get("kind") == "main"}},
         )
         course_slugs = {c["slug"] for c in courses["courses"]}
 

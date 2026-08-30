@@ -1,12 +1,13 @@
 # 完成台账
 
 状态：Current
-最后更新：2026-08-25
+最后更新：2026-08-29
 
 本文件只追加已关闭任务的简短结果、提交或本地验证证据。
 
 | ID | 关闭日期 | 结果 | 验证证据 |
 | --- | --- | --- | --- |
+| QED-049 | 2026-08-29 | [跨项目] dashscope API 适配（REQ-066）以**误判关闭**：REQ-066 三点归因与本仓事实不符——① 代码与全量服务日志（8/24~8/29）证明 local 直连一直是 OpenAI 兼容端点 `compatible-mode/v1/chat/completions`，从未调用旧 `/api/v1/services/aigc/text-generation/generation`；② 日志中 dashscope 调用全部 HTTP 200，无 400 `url error` 记录（8/29 仅两次调用均 200）；③ 实际生效模型来自根 `.env` `QED_MODEL`（现 qwen3.8-27b，非报告所写 qwen3.7-plus）。真实存在的现象是 8/29 14:46 `courses/01_math_analysis/prompt-explores/dry-run` 在两次 HTTP 200 后 502——失败发生在响应内容处理层，且 dry-run `engine=None` 不落 `qed_llm_calls`、错误体被吞成「格式无效」，当时无法确诊。**附带最小修复（LLM 错误透明化）**：`llm_client.py` 新增 `_response_detail()`——HTTP 4xx / 错误形状响应体 / finish_reason≠stop 三类失败全部透出 dashscope 原始 code+message（截断 200 字符），direct 失败统一打 warning 日志；`api/main.py` 两个 dry-run 端点 PipelineError 分支加 warning。误判分析文档 docs/design/dashscope-api-adaptation.md 已删除（该文件尚未入库，删除后无 Git 痕迹）。真实 dry-run 修复依赖根仓库侧动作：对齐 `QED_MODEL`（P15a 纪律：探索管线用 qwen3.7-plus 级非思考型）并自查 8900 网关 direct 分支的 dashscope 端点格式；复测仍失败时新错误信息可直接确诊。 | 新增 4 个 MockTransport 测试（400 错误体透出 / 200 错误形状带片段 / finish_reason=length 透出 / 失败 warning 日志）先红后绿；test_llm_client.py 16 passed；全量门禁 pytest + ruff 全绿；回执根仓库 REQ-066 已写入根仓库 todo 行。 |
 | QED-022 | 2026-08-21 | [跨项目] 治理契约范本对齐（REQ-023）：`tests/test_documentation.py` 8 个守护测试全部声明契约头六字段（模块职责/设计关联/实现状态/被测代码/守护面/失效后果）；守护面清单裁剪为五类（architecture/design/standards/guides/trackers）；模块级 docstring 声明编写约定（纯标准库/自包含/零网络）。设计文档 governance-contract-alignment.md 标记 Implemented。 | 8 个测试函数六字段 docstring 齐全（AST 验证）；语法编译通过；**待 Python 3.12+ 环境运行 pytest + ruff 全量门禁**；回执根仓库 REQ-023（提交号 + 测试输出）。 |
 | QED-005 | 2026-08-20 | 真实百炼与 arXiv 论文链路冒烟被吸收关闭：论文链路（papers recommend → selections download 下载临时 PDF）与 QED-014（教材 8901 全链路）链路不同，不构成包含；2026-08-20 用户裁决**并入 QED-010**（CLI 转 HTTP 客户端 + 基于真实 8901 冒烟，论文 recommend/download 转 8901 后链路冒烟纳入其冒烟范围）。真实百炼调用前置已由 QED-037 冒烟证实（local 直连 + qed-engine 网关均成功落 qed_llm_calls）。 | 2026-08-20 用户裁决；QED-010 承接注记已更新；无独立实现。 |
 | QED-036 | 2026-08-20 | [跨项目] 教程命名规范（REQ-041）：`tutorial_name` 命名纯函数（教程{set_no}：书名（作者），en 套/空 set_no 兜底/无作者省略/同名作者后缀去重）+ migrate 默认命名改规范格式并回填 `textbook_ref{title, version, authors}` + **按 (course, kind, set_no) 先查后建保幂等**（knowledge_id 含 name，改名后旧库重放不产生重复行）+ `mainline new --set-no` 与 `review --title/--author`（缺省从规范名剥离前缀/后缀回退）；database-schema.md 决定引用补 authors；存量 01 数学分析 3 行修正（教程1：数学分析原理（Rudin）/ 教程2：微积分学教程（菲赫金哥尔茨）/ 教程3：数学分析（陈纪修），completed 保持，证据归档 docs/history/qed-036-tutorial-naming/）。 | 提交（QED-036）；migrate 12 + mainline CLI 45 + knowledge API 全绿；全量 **246 passed + 3 skipped + ruff clean + git diff --check**；8901 真实冒烟（GET /knowledge 返回 3 行规范名 + completed）；**REQ-041 回执内容已整理，待写入根仓库 REQ-041 行**。 |

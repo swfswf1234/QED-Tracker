@@ -13,12 +13,12 @@
 | ① | 服务生命周期 | 1 | 健康检查 |
 | ② | 目录 | 2 | 下载清单查询（frozen JSON） |
 | ③ | 课程体系只读 | 2 | 按领域分组查询 + 单领域查询 |
-| ④ | 领域管理 | 4 | 领域 CRUD（REQ-059，Web UI 活跃消费） |
+| ④ | 领域管理 | 5 | 领域 CRUD + 手动 JSON 导入（A4，QED-050） |
 | ⑤ | 课程管理 | 3 | 课程创建/更新/删除 |
 | ⑥ | 知识探索评估 | 2 | 领域 dry-run + 课程 dry-run（A1，QED-047，已实现） |
 | ⑦ | 后台任务 | 3 | 基础设施保留（deprecated，当前无注册 handler） |
 | ⑧ | 课程知识采纳 | 1 | 采纳探索推荐建 qt_knowledge 草稿行（A2，已实现） |
-| | **合计** | **18** | |
+| | **合计** | **19** | |
 
 ## ① 服务生命周期
 
@@ -136,7 +136,7 @@ REQ-059 手工维护端点。Web UI DownloadsTree 组件活跃消费（create/up
 ```json
 [
   {"domain_id": "math", "name": "数学", "description": "...", "stages": ["基础", "进阶"],
-   "level": "本科-硕士", "scope": "...", "classic_tracks": [{"name": "分析学", "summary": "..."}]}
+   "level": "本科-硕士", "scope": "...", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}]}
 ]
 ```
 
@@ -154,7 +154,7 @@ REQ-059 手工维护端点。Web UI DownloadsTree 组件活跃消费（create/up
 | stages | string[] | 否 | 学习阶段列表 |
 | level | string | 否 | 探索范围标签（如"本科-硕士"） |
 | scope | string | 否 | 学科知识/领域边界描述 |
-| classic_tracks | object[] | 否 | 课程方向 [{name, summary}]（0~4 项） |
+| classic_tracks | object[] | 否 | 课程方向 [{name, summary, kind}]（0~4 项；kind=main 主干/branch 分支，2026-08-29 语义升级） |
 
 **响应 201：**
 ```json
@@ -163,6 +163,41 @@ REQ-059 手工维护端点。Web UI DownloadsTree 组件活跃消费（create/up
 ```
 
 **错误：** 409 DOMAIN_NAME_CONFLICT（名称重复）| 422 name 为空
+
+### `POST /api/v1/domains/import`（A4，QED-050，**已实现** 2026-08-29）
+
+手动领域 JSON 导入（标准答案录入）：校验 manual@v1 契约 → 写 qed_domain + qed_course（幂等 upsert）。
+与领域探索 apply（PATCH /domains 逐项）不同——本端点是**一整份知识定稿**的一次性落库入口。
+
+**请求 Body（二选一）：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| domain | object | * | 内联领域 JSON（契约：readme「领域 JSON 契约（manual@v1）」） |
+| file_path | string | * | 本机可读文件路径（EOF 模式与 domain 二选一） |
+
+领域 JSON 契约要点：`domain`（标识，如 math-advanced）/ `name` / `description` / `level` /
+`scope` / `entry_requirements`（一句话）/ `classic_tracks[{name,summary,kind}]` /
+`stages`（四档）/ `anchor_courses` / `courses[{slug,name,track,stage,aliases,summary,prerequisites}]` /
+`extensions_planned`。
+
+**落库语义（D8）：**
+- domain：不存在→创建；存在→更新维护字段（description/level/scope/stages/classic_tracks；name 不可变）；
+  `exploration_stage=已完成`（人工探索定稿）；
+- courses：逐条 upsert（slug→course_id；详情字段 update，sort_order=课程数组顺序用于新建）；
+  既有课程 exploration_stage/related_targets 不触碰；
+- `entry_requirements`/`anchor_courses`/`extensions_planned` 属文件侧知识，qed_domain 无对应列，
+  **不落库**（保留在 docs/knowledge 正本）。
+
+**响应 200：**
+```json
+{"domain_id": "math-advanced", "courses_created": 12, "courses_updated": 0, "exploration_stage": "已完成"}
+```
+
+**错误：** 400 INVALID_PARAMS（校验失败/文件不可读/JSON 解析失败）| 422 缺 domain 与 file_path
+
+**契约守护：** `src/qed_tracker/application/knowledge_import.py`（validate_domain/manual@v1）+
+`tests/test_knowledge_import.py`。
 
 ### `PATCH /api/v1/domains/{domain_id}`
 
@@ -408,12 +443,18 @@ textbook_intro / exercise_intro——修复根仓库反馈 §8 缺陷 3（旧 ad
 {"created": [{"knowledge_id": "kn_...", "set_no": "1", "name": "...", "status": "draft", "existing": false}]}
 ```
 
-**语义定稿（2026-08-28 实现落定）：**
+**语义定稿（2026-08-28 实现落定 / 2026-08-29 QED-050 补充）：**
 - **幂等**：同 course + set_no + set_name（id 规则 `kn_md5(domain, course, kind, set_no, name)`）
   命中既有行 → 返回该行且 `existing: true`，不改动已落库内容；
 - **套号冲突**：同 set_no 被不同知识行占用（同名不同 id 或异名）→ 409 `SET_NO_CONFLICT`；
 - **同源可空**：`exercise: null` 放行（textbook.roles 须含 exercises 由 A1 管线校验；
   manual 来源轻校验仅要求 exercise 为 null 或含 title），落库 exercise_ref=null；
+- **roles 强制（2026-08-29 增强）**：textbook.roles 必须为数组且含 `textbook`；
+  exercise 非 null 时 roles 必须含 `exercises`（原轻校验仅查 title）；422 不通过；
+- **source 值域（2026-08-29）**：`explore`（默认）/ `manual`，非法值 422；来源标记透传
+  不落列（qt_knowledge 无 source 列），manual 来源经 CLI `knowledge import` 复用本端点；
+- **target_path 透传**：textbook/exercise 为全量 dict 透传进 ref（含 `target_path`——课程
+  知识 JSON 期望落盘路径标准答案，D9；导入落盘与登记回写由其驱动）；
 - **状态不推进**：exploration_stage 属验收终态，由 knowledge complete 聚合回写，本端点不动。
 
 **错误：** 404 COURSE_NOT_FOUND | 409 SET_NO_CONFLICT | 422 INVALID_PARAMS

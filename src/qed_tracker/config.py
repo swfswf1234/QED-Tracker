@@ -33,6 +33,7 @@ class Settings:
     proxy: str = ""
     timeout_seconds: float = 30.0
     retries: int = 3
+    fetch_attempt_timeout: float = 600.0  # 书籍 fetch 每候选总预算：600s 无响应/未完成即切换下一候选（2026-08-28）
     sources: tuple[str, ...] = DEFAULT_SOURCES
     axiom_url: str = "http://127.0.0.1:8902"
     tls_verify: bool = True
@@ -85,6 +86,7 @@ _ENV_MAP = {
     "QED_PROXY": ("proxy", str),
     "QED_TIMEOUT_SECONDS": ("timeout_seconds", float),
     "QED_RETRIES": ("retries", int),
+    "QED_FETCH_ATTEMPT_TIMEOUT": ("fetch_attempt_timeout", float),
     "QED_TLS_VERIFY": ("tls_verify", _bool),
     "QED_LLM_BASE_URL": ("llm_base_url", str),
     "QED_LLM_TIMEOUT": ("llm_timeout_seconds", float),  # REQ-061 同步：根仓库同键名，原 60s 硬顶致长生成 ReadTimeout

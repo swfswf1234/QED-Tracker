@@ -1,30 +1,49 @@
 # QED-043 进度追踪：prompt 优化模块
 
 状态：Active
-最后更新：2026-08-27
+最后更新：2026-08-28
 > 设计文档：[2026-08-prompt-optimization.md](2026-08-prompt-optimization.md)（Accepted）
 > 需求方：QED-Engine REQ-060
 > 模板注册：`src/qed_tracker/prompt_lab/templates.py`（版本化，git 即历史）
 
-## 当前状态（2026-08-26 晚）
+## 当前状态（2026-08-28）
 
 | 维度 | 状态 |
 |------|------|
 | 领域管线 | v2/v4/v4 全链验证通过（calls 100~102），13 门输出，基线冻结 |
-| 课程管线 | `course-explore/tutorials@v1` 实现完成（砍 tree，单步 tutorials） |
-| 门禁 | **378 passed + 3 skipped + ruff clean** |
+| 课程管线 | tutorials@v1 实现完成；**标准答案范本定稿**（[course-tutorials-math-golden.json](../guides/course-tutorials-math-golden.json)，三课程 7 套，守护测试 4 用例） |
+| 数据根 | QED_DATA_ROOT=D:\coding\QED-Engine\dataset 确认；旧布局/失效清单/仓内残留已清理（见 08-28 台账） |
+| 门禁 | **343 passed + 3 skipped + ruff clean** |
 | 阻塞 | 无 |
 
 ### 待办
 
-- [ ] 执行 `tmp/run_course_tutorials.py` 对数学分析执行 tutorials@v1 真实评估
+- [ ] tutorials 双跑真实评估（direct + ref_text=tmp 探索笔记，× 三课程，对照 golden）
+- [ ] tutorials@v2：放宽「至少一套须含独立习题集」全局强制（11 号课 exercise_count=0，见 golden meta.contract_notes）
+- [ ] 数据库播种（domain math + 三基石课）+ golden 经 A2 采纳落 draft（QED-026/QED-047 链路）
+- [ ] 下载流程梳理 plans/ 文档 + 成功率/准确率分析 + 验收标准讨论（QED-026 收尾）
 - [ ] Phase B 端点组（/api/v1/prompt-explores 课程侧 + CLI）
-- [ ] DAG 约束增强 + slug 强制规范 + tracks_hint 文案优化
 - [ ] REQ-060 根仓库改造回执接收（提交号）
 
 ---
 
 ## 进度日志
+
+### 2026-08-28：课程教材层标准答案范本定稿（QED-026/QED-043 轮）
+
+**golden 定稿**：`docs/guides/course-tutorials-math-golden.json`（数学分析 3 套 / 高等代数 2 套 / 概率论与数理统计 2 套，共 7 套，tutorials@v1 契约格式）。守护测试 `tests/test_course_tutorials_golden.py` 4 用例（01/02 全契约校验通过；11 逐条目校验 + exercise_count=0 已知偏离显式断言）。
+
+**用户裁决**（本轮）：golden 放 docs/guides 单文件；只播种 3 门基石课（catalog 对齐 course_id）；A2 采纳到 draft 即止；评估 direct + ref_text 双跑；数学分析甲方案（Stewart/Apostol/Rudin+吉米多维奇），陈纪修留 catalog 套三不进 golden；高等代数以 Strang LAA 中译为准 + 苏联《线性代数习题集》挂 Axler 套 + 课程名「高等代数」（别名线性代数）；概率论只留 Blitzstein/Ross 两套（茆诗松/Casella 缓议）；catalog 11 目标（Durrett/Billingsley 测度论概率）留待未来「高等概率论」扩展课。
+
+**书目核查证据**（豆瓣，2026-08-28）：《斯图尔特微积分（第九版·上）》人民邮电出版社图灵数学经典 2025（ISBN 9787115667250，原作 Calculus: Early Transcendentals）；《斯特朗线性代数》图灵数学经典 2025（ISBN 9787115676849，**原作名 Linear Algebra and Its Applications**——与 Lay 同名书区分，也非 Introduction to Linear Algebra）；《概率导论（第2版·修订版）》图灵数学经典（Blitzstein 中译正式书名为「概率导论」）；《线性代数应该这样学（第4版）》图灵数学经典。
+
+**契约发现**：①书名强制中文（CJK 校验）→ en 英文对照套与纯英文题解（Axler solutions/Grimmett 1000/Casella solutions）无法表达，留 catalog 侧；②11 号课两套均教材自带习题 → exercise_count=0 违反 v1「至少一套须含独立习题集」→ **tutorials@v2 需放宽该全局强制**（保留单套规则），A2 采纳端点轻校验不受影响。
+
+**数据根清理台账**（QED_DATA_ROOT=D:\coding\QED-Engine\dataset 确认后执行，均先安全断言再删）：
+- ① `dataset\tmp\exploration\`（4 个探索 txt 冗余副本，正本在仓库 tmp/）→ 删除
+- ② `dataset\qed-tracker\raw\books\`（ARCH-019 前旧布局，空目录树）→ 删除
+- ③ `dataset\qed-tracker\meta\resources\` 12 条失效清单记录（全部指向旧路径 raw/books/math-qe/...，文件已迁 raw/math/01_math_analysis/）→ 删除 + `inventory scan` 原地重登记（**12 registered / 0 errors**，`inventory verify` 12/12 ok，sha256 与旧记录一致证明文件完好）
+- ④ 仓内 `QED-Tracker\dataset\`（历史误运行残留数据根：serve-8901 日志 + 同哈希 meta 副本 29 个文件，无 PDF，被 .gitignore 掩盖）→ 删除
 
 ### 2026-08-26 晚：课程管线重新设计
 
@@ -45,7 +64,7 @@ v2/v4/v4 全链验证通过（calls 100~102，qwen3.7-plus）：
 - pipeline scope_hint 贯穿 + tracks 全量 + count_range
 - 输出 13 门（10 slug 命中 + 2 漂移 + 1 extra）；DAG 5/10 一致
 - classic_tracks 漂移（三主线而非 golden 四主线），需后续优化
-- 知识文档 `docs/guides/domain-math-advanced.json`（12 门 + 17 扩展 + DAG）已定稿迁移
+- 知识文档 `docs/knowledge/math-advanced.json`（12 门 + 17 扩展 + DAG；2026-08-29 迁入 knowledge/ 为正本，旧副本 plans/guides 已删除）已定稿迁移
 
 ### 2026-08-26 Round 1 重跑
 
