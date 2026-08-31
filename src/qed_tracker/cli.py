@@ -143,7 +143,8 @@ def build_parser() -> argparse.ArgumentParser:
     knowledge = commands.add_parser("knowledge", help="课程知识手动导入")
     knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
     knowledge_import = knowledge_commands.add_parser(
-        "import", help="导入课程标准答案 JSON（docs/knowledge/<domain>/<course>.json）→ A2 draft"
+        "import",
+        help="导入课程标准答案 JSON（docs/knowledge/<domain>/<course>.json）→ 导入即确认+建候选册",
     )
     knowledge_import.add_argument("path", type=Path, help="课程 JSON 文件路径")
     knowledge_import.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
@@ -665,11 +666,27 @@ def _domains(args, settings: Settings) -> int:
     return 0
 
 
+def _ref_book_payload(knowledge_id: str, kind: str, ref: dict) -> dict:
+    """课程 JSON 的 textbook/exercise ref → POST /books 幂等建册 payload。"""
+    return {
+        "knowledge_id": knowledge_id,
+        "kind": kind,
+        "roles": ref.get("roles") or (["textbook"] if kind == "textbook" else ["exercises"]),
+        "title": str(ref.get("title", "")).strip(),
+        "part": str(ref.get("part", "")),
+        "authors": ref.get("authors") or [],
+        "version": ref.get("version") or {},
+        "language": str(ref.get("language", "")),
+    }
+
+
 def _knowledge_import(args, settings: Settings) -> int:
     """课程标准答案导入：本地校验 → 经 8901 A2（POST /courses/{id}/knowledge，source=manual）。
 
-    tutorial 套逐条透传（textbook/exercise 全量 dict 进 ref，含 target_path）；course 文件
-    在导入前需无目标课程（领域导入先行），或课程已存在（幂等 upsert 语义由 A2 覆盖）。
+    导入即定稿（QED-050 手动轨，2026-08-31）：新建或仍为 draft 的套逐套
+    POST /knowledge/{id}/confirm（显式回传 refs/intros——confirm 空 body 会以 {} 覆盖预填 refs），
+    并按 refs 幂等建 candidate 册（POST /books，同套同书同卷不重复建行）；
+    已确认/已完成套跳过确认、仍补册，重放可续。CLI 路径直达"已确认+候选册就绪"。
     """
     import httpx
 
@@ -713,8 +730,72 @@ def _knowledge_import(args, settings: Settings) -> int:
         detail = response.json().get("detail", response.text)
         _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
         return 2
-    _print(response.json(), args.json)
-    return 0
+
+    def _post(url: str, payload: dict) -> tuple[int, dict]:
+        resp = httpx.post(url, json=payload, timeout=30.0)
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {"detail": resp.text}
+        return resp.status_code, body
+
+    tutorials_by_set = {str(item.get("set_no", "")).strip(): item for item in data["tutorials"]}
+    confirmed = 0
+    skipped_confirm = 0
+    books_ensured = 0
+    errors: list[str] = []
+    for item in response.json().get("created", []):
+        knowledge_id = str(item.get("knowledge_id", ""))
+        set_no = str(item.get("set_no", "")).strip()
+        status = str(item.get("status", ""))
+        tutorial = tutorials_by_set.get(set_no, {})
+        textbook = tutorial.get("textbook") or {}
+        exercise = tutorial.get("exercise")
+        if not knowledge_id:
+            errors.append(f"套 {set_no or '?'}：采纳结果缺 knowledge_id")
+            continue
+        if status == "draft":
+            code, body = _post(
+                f"{base_url}/api/v1/knowledge/{knowledge_id}/confirm",
+                {
+                    "textbook_ref": textbook,
+                    "exercise_ref": exercise,
+                    "textbook_intro": str(textbook.get("intro", "")),
+                    "exercise_intro": str((exercise or {}).get("intro", "")),
+                },
+            )
+            if code >= 400:
+                errors.append(f"套 {set_no} 确认失败（{code}）：{body.get('detail', body)}")
+            else:
+                confirmed += 1
+        else:
+            skipped_confirm += 1
+        for kind, ref in (("textbook", textbook), ("exercise", exercise)):
+            if not ref:
+                continue
+            payload = _ref_book_payload(knowledge_id, kind, ref)
+            if not payload["title"]:
+                errors.append(f"套 {set_no} {kind} 建册失败：ref 缺 title")
+                continue
+            code, body = _post(f"{base_url}/api/v1/books", payload)
+            if code >= 400:
+                errors.append(f"套 {set_no} {kind} 建册失败（{code}）：{body.get('detail', body)}")
+            else:
+                books_ensured += 1
+
+    summary = {
+        "course_id": course_id,
+        "sets": len(response.json().get("created", [])),
+        "confirmed": confirmed,
+        "confirm_skipped": skipped_confirm,
+        "books_ensured": books_ensured,
+        "errors": errors,
+    }
+    _print(summary, args.json)
+    if not args.json and errors:
+        for message in errors:
+            print(f"WARN: {message}", file=sys.stderr)
+    return 2 if errors else 0
 
 
 def _llm_call_engine(settings: Settings):

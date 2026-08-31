@@ -164,6 +164,20 @@ qed-tracker mainline reject <knowledge_id> --reason <原因>
 qed-tracker mainline channels
 ```
 
+手动双轨导入（QED-050，知识正本在 `docs/knowledge/`）：
+
+```powershell
+qed-tracker domains import docs/knowledge/math-advanced.json
+qed-tracker knowledge import docs/knowledge/math-advanced/01_math_analysis.json
+qed-tracker books import <book_id> <本地PDF绝对路径> --target raw/<domain>/<course>/<书名>.pdf
+```
+
+- `domains import` 领域标准答案 JSON → 写 qed_domain/qed_course（领域探索定稿语义）。
+- `knowledge import` 课程标准答案 JSON → 调 A2 采纳后**导入即定稿**：draft 套逐套确认
+  （显式回传 refs/简介）并按 refs 幂等建 candidate 册，直达「已确认+候选册就绪」；重放幂等。
+  前端/API 路径仍是 draft → 确认接口 → 已确认。
+- `books import` 本地 PDF（可在数据根外）→ 校验 → 拷入数据根 → 登记 downloaded。
+
 流程说明：
 
 - `courses list/show` 查看课程体系（先修关系、阶段、关联目标）。
