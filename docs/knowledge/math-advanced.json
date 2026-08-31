@@ -40,7 +40,7 @@
 
   "courses": [
     {
-      "slug": "mathematical_analysis",
+      "slug": "01_math_analysis",
       "name": "数学分析",
       "track": "分析学",
       "stage": "基础",
@@ -49,7 +49,7 @@
       "prerequisites": []
     },
     {
-      "slug": "advanced_algebra",
+      "slug": "02_linear_algebra",
       "name": "高等代数",
       "track": "代数学",
       "stage": "基础",
@@ -58,7 +58,7 @@
       "prerequisites": []
     },
     {
-      "slug": "probability_and_mathematical_statistics",
+      "slug": "11_probability",
       "name": "概率论与数理统计",
       "track": "概率与统计",
       "stage": "基础",
@@ -73,7 +73,7 @@
       "stage": "主干",
       "aliases": ["近世代数", "Abstract Algebra"],
       "summary": "研究群、环、域三类基本代数结构。把整数、多项式、几何变换中共通的运算法则抽象出来统一考察——为什么五次方程没有根式解、尺规作图的边界在哪，都由它的结构性定理裁决。它训练彻底的公理化思维，是代数拓扑与表示论的必备语言。",
-      "prerequisites": ["advanced_algebra"]
+      "prerequisites": ["02_linear_algebra"]
     },
     {
       "slug": "ordinary_differential_equations",
@@ -82,7 +82,7 @@
       "stage": "主干",
       "aliases": ["ODE", "微分方程"],
       "summary": "研究含一元未知函数及其导数的方程——变化规律的直接数学建模。核心内容：解的存在唯一性、线性方程组的解结构、稳定性与定性理论初步。它是微积分工具第一次成为「动力系统理论」的地方，也是偏微分方程与一切连续模型研究的必经前置。",
-      "prerequisites": ["mathematical_analysis"]
+      "prerequisites": ["01_math_analysis"]
     },
     {
       "slug": "complex_analysis",
@@ -91,7 +91,7 @@
       "stage": "主干",
       "aliases": ["复分析", "Complex Analysis"],
       "summary": "研究定义在复平面上的解析函数。以柯西积分理论为核心，展开幂级数、留数定理与共形映射——许多实数域中棘手的积分与级数问题，在复平面上获得出乎意料的简洁答案。它同时是数论、流体力学与量子力学常用的语言。",
-      "prerequisites": ["mathematical_analysis"]
+      "prerequisites": ["01_math_analysis"]
     },
     {
       "slug": "real_analysis",
@@ -100,7 +100,7 @@
       "stage": "主干",
       "aliases": ["实分析", "Real Analysis", "实变函数与泛函分析基础"],
       "summary": "把积分推广到更广函数类上的学问。以勒贝格测度取代 Riemann 直观——「长度」被严格定义后，Dirichlet 函数这类不可积函数重新变得可积可判；由此建立 Lp 空间与抽象测度的框架。它是从经典分析跨入现代分析的关口，也是概率论公理化与泛函分析的共同语言前提。",
-      "prerequisites": ["mathematical_analysis"]
+      "prerequisites": ["01_math_analysis"]
     },
     {
       "slug": "partial_differential_equations",
@@ -109,7 +109,7 @@
       "stage": "分支",
       "aliases": ["数学物理方程", "PDE", "偏微分方程论"],
       "summary": "研究多元未知函数的偏导数方程——波动、扩散、平衡三类连续现象的通用数学模型。围绕波动方程、热传导方程与位势方程三大典范展开：特征线法、分离变量与傅里叶级数解、最大值原理，直至 Sobolev 空间与弱解思想的门槛。它把分析学的全部工具调集起来，处理最贴近物理世界的一侧。",
-      "prerequisites": ["ordinary_differential_equations", "mathematical_analysis"]
+      "prerequisites": ["ordinary_differential_equations", "01_math_analysis"]
     },
     {
       "slug": "functional_analysis",
@@ -118,7 +118,7 @@
       "stage": "分支",
       "aliases": ["Functional Analysis"],
       "summary": "把函数看作空间中的点来研究的数学。在赋范空间与内积空间上考察线性算子：Hahn-Banach 定理、开映射与闭图像定理、谱理论构成定理主干；微分方程解的存在性、积分方程与量子力学的数学框架在此获得统一表述。它需要测度论与线性代数的双重储备，是分析学各条支流的汇合口。",
-      "prerequisites": ["real_analysis", "advanced_algebra"]
+      "prerequisites": ["real_analysis", "02_linear_algebra"]
     },
     {
       "slug": "stochastic_processes",
@@ -127,7 +127,7 @@
       "stage": "分支",
       "aliases": ["Stochastic Processes", "随机过程论"],
       "summary": "研究随时间演化的随机现象——一族相互关联的随机变量如何运动的学问。三大典范模型贯穿全课：泊松过程刻画离散事件的到达流，马尔可夫链刻画「无记忆」的状态跃迁，平稳过程与布朗运动刻画持续的随机涨落；遍历性与鞅的方法论让长期行为可以被精确预言。它是金融、通信、排队论与统计物理共用的数学语言，也是通往随机分析的门槛。",
-      "prerequisites": ["probability_and_mathematical_statistics"]
+      "prerequisites": ["11_probability"]
     },
     {
       "slug": "point_set_topology",
@@ -136,7 +136,7 @@
       "stage": "主干",
       "aliases": ["一般拓扑学", "General Topology"],
       "summary": "把「邻近」概念公理化后研究空间的学问——不依赖距离，只用开集刻画连通、紧致、收敛这些根本性质。它是分析学最一般的工作框架（实变与泛函的语言基础），也为代数拓扑预备直观与词汇。难点在抽象，回报是一眼看穿各类「极限定理」的共同骨架。",
-      "prerequisites": ["mathematical_analysis"]
+      "prerequisites": ["01_math_analysis"]
     },
     {
       "slug": "differential_geometry",
@@ -145,7 +145,7 @@
       "stage": "分支",
       "aliases": ["古典微分几何", "Classical Differential Geometry", "曲线与曲面论"],
       "summary": "用微积分研究空间形状的学问。从曲线论（Frenet 框架）与曲面论入手：第一、第二基本形式量化「怎么弯」，Gauss 曲率揭示内在弯曲，而 Gauss-Bonnet 定理让局部几何与全局拓扑首次握手。它以多元微积分为工具、以经典曲线曲面为载体，是通往流形理论与黎曼几何的台阶。",
-      "prerequisites": ["mathematical_analysis", "advanced_algebra"]
+      "prerequisites": ["01_math_analysis", "02_linear_algebra"]
     }
   ],
 
@@ -183,35 +183,35 @@
       "track": "代数学",
       "direction": "跨方向入口——把抽象群实现为矩阵，特征标理论为核心；物理对称性与数论自守皆用它",
       "reason": "研究生方向课，非代数主干。",
-      "prerequisites_hint": ["abstract_algebra", "advanced_algebra"]
+      "prerequisites_hint": ["abstract_algebra", "02_linear_algebra"]
     },
     {
       "name": "李群李代数",
       "track": "代数学",
       "direction": "几何/物理方向入口——连续对称性的数学，从矩阵群（GL/SO/SU）入手讲李代数与指数映射",
       "reason": "研究生方向课，非代数主干。",
-      "prerequisites_hint": ["advanced_algebra", "abstract_algebra", "mathematical_analysis"]
+      "prerequisites_hint": ["02_linear_algebra", "abstract_algebra", "01_math_analysis"]
     },
     {
       "name": "贝叶斯统计",
       "track": "概率与统计",
       "direction": "统计推断方向——用后验分布组织推断的现代学派",
       "reason": "方向选修课，非本批主线。",
-      "prerequisites_hint": ["probability_and_mathematical_statistics"]
+      "prerequisites_hint": ["11_probability"]
     },
     {
       "name": "多元统计分析",
       "track": "概率与统计",
       "direction": "应用统计方向核心——多维数据的分布理论与推断方法：主成分、判别、聚类（注：若未来覆盖统计方向，第一顺位提拔入主干）",
       "reason": "方向课，非本批主线。",
-      "prerequisites_hint": ["probability_and_mathematical_statistics", "advanced_algebra"]
+      "prerequisites_hint": ["11_probability", "02_linear_algebra"]
     },
     {
       "name": "高等概率论",
       "track": "概率与统计",
       "direction": "概率方向研究生入口——基于测度论重建概率：收敛定理、大偏差理论",
       "reason": "研究生方向课，非本批主线。",
-      "prerequisites_hint": ["real_analysis", "probability_and_mathematical_statistics"]
+      "prerequisites_hint": ["real_analysis", "11_probability"]
     },
     {
       "name": "随机分析",
@@ -246,28 +246,28 @@
       "track": "计算数学",
       "direction": "计算数学方向——数学问题的可计算化：离散化、逼近与误差控制（插值/数值积分/线性方程组解法/常微分方程数值解），「算得准、算得快、算得稳」的科学计算接口",
       "reason": "计算数学方向课程，非本批数学主线（用户裁决 2026-08-26）。",
-      "prerequisites_hint": ["mathematical_analysis", "advanced_algebra"]
+      "prerequisites_hint": ["01_math_analysis", "02_linear_algebra"]
     },
     {
       "name": "信息论",
       "track": "计算数学",
       "direction": "通信学科起源的交叉理论——Shannon 熵与编码，量化「信息」本身",
       "reason": "交叉学科课程，非本批主线。",
-      "prerequisites_hint": ["probability_and_mathematical_statistics"]
+      "prerequisites_hint": ["11_probability"]
     },
     {
       "name": "统计学习理论",
       "track": "计算数学",
       "direction": "机器学习的统计基础——泛化界与经验风险最小化框架",
       "reason": "交叉学科课程，非本批主线。",
-      "prerequisites_hint": ["probability_and_mathematical_statistics", "advanced_algebra"]
+      "prerequisites_hint": ["11_probability", "02_linear_algebra"]
     },
     {
       "name": "凸优化",
       "track": "计算数学",
       "direction": "运筹方向核心——凸集凸函数上的最优化理论（KKT 条件等）",
       "reason": "方向课（运筹方向核心），非本批主线。",
-      "prerequisites_hint": ["advanced_algebra", "mathematical_analysis"]
+      "prerequisites_hint": ["02_linear_algebra", "01_math_analysis"]
     }
   ]
 }
