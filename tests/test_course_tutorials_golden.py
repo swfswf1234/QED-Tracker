@@ -1,4 +1,4 @@
-"""课程教材层标准答案范本契约守护（docs/guides/course-tutorials-math-golden.json）。
+"""课程教材层标准答案范本契约守护（docs/knowledge/course-tutorials-math-golden.json）。
 
 模块职责：确保 golden 范本与 prompt_lab tutorials 契约不漂移——
 - 01/02 课程逐套通过 templates._validate_tutorials（完整契约校验）；
@@ -7,7 +7,7 @@
   逐条目按同一校验器把关 + 显式断言该已知偏离，v2 放宽事项登记于
   golden meta.contract_notes 与 docs/plans/2026-08-prompt-optimization-progress.md。
 实现状态：Implemented
-被测代码：docs/guides/course-tutorials-math-golden.json、
+被测代码：docs/knowledge/course-tutorials-math-golden.json、
 src/qed_tracker/prompt_lab/templates.py（_validate_tutorials/_validate_book_entry）
 守护面：prompt_lab（范本与契约一致性）
 失效后果：范本与管线契约漂移——prompt 优化对照失真、A2 采纳输入格式走样。
@@ -21,7 +21,7 @@ import pytest
 from qed_tracker.prompt_lab.templates import _validate_book_entry, _validate_tutorials
 
 ROOT = Path(__file__).resolve().parents[1]
-GOLDEN = ROOT / "docs" / "guides" / "course-tutorials-math-golden.json"
+GOLDEN = ROOT / "docs" / "knowledge" / "course-tutorials-math-golden.json"
 
 
 def _load_golden() -> dict:

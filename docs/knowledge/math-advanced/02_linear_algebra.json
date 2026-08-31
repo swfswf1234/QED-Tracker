@@ -4,7 +4,7 @@
     "name": "高等代数课程知识（标准答案）",
     "confirmed_at": "2026-08-29",
     "purpose": "高等代数（02_linear_algebra）课程教材层标准答案：tutorials 套决定引用 + 期望落盘路径（target_path 基础名不含 sha，导入时按命名规则补 _<sha8>）",
-    "source": "docs/guides/course-tutorials-math-golden.json（2026-08-28 定稿范本）拆分",
+    "source": "docs/knowledge/course-tutorials-math-golden.json（2026-08-28 定稿范本）拆分",
     "notes": [
       "套1 教材自带习题（roles=[textbook,exercises]），exercise=null；套2 配独立习题集（苏联《线性代数习题集》沿用 catalog 登记名，编者待核实）",
       "target_path 为期望落盘相对路径（QED_DATA_ROOT 相对），不含 sha 后缀"

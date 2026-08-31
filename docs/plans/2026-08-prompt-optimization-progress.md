@@ -11,7 +11,7 @@
 | 维度 | 状态 |
 |------|------|
 | 领域管线 | v2/v4/v4 全链验证通过（calls 100~102），13 门输出，基线冻结 |
-| 课程管线 | tutorials@v1 实现完成；**标准答案范本定稿**（[course-tutorials-math-golden.json](../guides/course-tutorials-math-golden.json)，三课程 7 套，守护测试 4 用例） |
+| 课程管线 | tutorials@v1 实现完成；**标准答案范本定稿**（[course-tutorials-math-golden.json](../knowledge/course-tutorials-math-golden.json)，三课程 7 套，守护测试 4 用例） |
 | 数据根 | QED_DATA_ROOT=D:\coding\QED-Engine\dataset 确认；旧布局/失效清单/仓内残留已清理（见 08-28 台账） |
 | 门禁 | **343 passed + 3 skipped + ruff clean** |
 | 阻塞 | 无 |

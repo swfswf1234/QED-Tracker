@@ -4,7 +4,7 @@
     "name": "概率论与数理统计课程知识（标准答案）",
     "confirmed_at": "2026-08-29",
     "purpose": "概率论与数理统计（11_probability）课程教材层标准答案：tutorials 套决定引用 + 期望落盘路径（target_path 基础名不含 sha，导入时按命名规则补 _<sha8>）",
-    "source": "docs/guides/course-tutorials-math-golden.json（2026-08-28 定稿范本）拆分",
+    "source": "docs/knowledge/course-tutorials-math-golden.json（2026-08-28 定稿范本）拆分",
     "notes": [
       "两套教材均自带习题（各自官方题解 Student Solutions Manual 均为英文书，tutorials 契约书名强制中文，不作独立 exercise 条目），exercise=null，exercise_count=0",
       "target_path 为期望落盘相对路径（QED_DATA_ROOT 相对），不含 sha 后缀"
