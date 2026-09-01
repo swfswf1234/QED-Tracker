@@ -435,7 +435,7 @@ def test_mainline_review_missing_knowledge_returns_2(tmp_path, repo, capsys) -> 
 
     args = _args(mainline_command="review", knowledge_id="kn_missing")
     assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
-    assert "知识行不存在" in capsys.readouterr().err
+    assert "教程不存在" in capsys.readouterr().err
 
 
 def test_reject_missing_knowledge_returns_2(tmp_path, repo, capsys) -> None:
@@ -536,7 +536,7 @@ def test_mainline_download_missing_knowledge_returns_2(tmp_path, repo, monkeypat
     monkeypatch.setattr(cli_module, "_book_service", lambda s: _FakeBookService())
     args = _args(mainline_command="download", knowledge_id="kn_missing")
     assert cli_module._mainline_impl(args, repo, _settings(tmp_path)) == 2
-    assert "知识行不存在" in capsys.readouterr().err
+    assert "教程不存在" in capsys.readouterr().err
 
 
 def test_mainline_download_retry_from_failed(tmp_path, repo, monkeypatch) -> None:
@@ -665,7 +665,7 @@ def test_mainline_approve_copies_and_completes(tmp_path, repo, monkeypatch, pdf_
     target = tmp_path / "raw" / "math" / "01_math_analysis" / "math_analysis.pdf"
     assert target.is_file()
     assert target.read_bytes() == pdf_bytes
-    assert repo.get_knowledge(knowledge.knowledge_id).status == "completed"  # 全部书行 verified 后自动完成
+    assert repo.get_knowledge(knowledge.knowledge_id).status == "completed"  # 全部书籍 verified 后自动完成
     assert "验收通过" in capsys.readouterr().out
 
 
@@ -702,7 +702,7 @@ def test_approve_verify_specific_book_multi_volume(tmp_path, repo, monkeypatch, 
                                page_count=1, absolute_path=str(pdf), file_name=pdf.name)
 
     settings = _settings(tmp_path)
-    # 指定书行 verify → approve：vol1 移交，但 vol2 未 verified，知识行不完成（提示）
+    # 指定书籍 verify → approve：vol1 移交，但 vol2 未 verified，教程不完成（提示）
     assert cli_module._mainline_impl(
         _args(mainline_command="verify", knowledge_id=knowledge.knowledge_id, book=first.book_id),
         repo, settings) == 0
@@ -714,7 +714,7 @@ def test_approve_verify_specific_book_multi_volume(tmp_path, repo, monkeypatch, 
     assert target1.is_file()
     assert target1.read_bytes() == pdf_bytes
     assert repo.get_knowledge(knowledge.knowledge_id).status == "confirmed"
-    assert "书行全 verified 后可再次 approve" in capsys.readouterr().err
+    assert "书籍全 verified 后可再次 approve" in capsys.readouterr().err
     # 缺省 approve：唯一 verified 的 vol1 已移交 → 无新目标，exit 2（死锁防护，不重复复制）
     assert cli_module._mainline_impl(
         _args(mainline_command="approve", knowledge_id=knowledge.knowledge_id),
@@ -723,7 +723,7 @@ def test_approve_verify_specific_book_multi_volume(tmp_path, repo, monkeypatch, 
     assert target1.is_file()
     assert target1.read_bytes() == pdf_bytes
     assert repo.get_knowledge(knowledge.knowledge_id).status == "confirmed"
-    # 第二册 verify → approve → 全部书行 verified，知识行完成
+    # 第二册 verify → approve → 全部书籍 verified，教程完成
     assert cli_module._mainline_impl(
         _args(mainline_command="verify", knowledge_id=knowledge.knowledge_id, book=second.book_id),
         repo, settings) == 0

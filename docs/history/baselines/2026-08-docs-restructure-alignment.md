@@ -1,5 +1,12 @@
 # QED-039 文档体系范本对齐 实施计划
 
+设计状态：Accepted
+实现状态：Implemented
+最后更新：2026-09-01
+需求方：QED-Engine（ADR 0010）
+目标项目：QED-Tracker
+评审方：用户
+
 **Goal:** 按 QED-Engine 根仓库 ADR 0010 对齐 QED-Tracker 文档体系三层结构：architecture/（确定文档）→ design/（相对确定）→ trackers/（实时状态）
 
 **Architecture:** architecture/ 固定化（5 确定文档）+ 新增 api.md + database-schema.md 升级 + project-status.md 移出 + design/ 三态清理 + adr/index 版本声明 + 契约测试同步
@@ -179,7 +186,7 @@ Expected: 匹配到1行
 | [代码与设计映射表](../architecture/code-map.md) | Accepted | Implemented | 受管代码、DesignRef 与测试的映射唯一事实源 |
 | [主链路架构](../architecture/main-line.md) | Accepted | Implemented | 领域课程梳理 → 教材寻找 → 下载 → 人工验收的主链路体系（与 evaluate 平行） |
 | [8901 API 接口文档](../architecture/api.md) | Accepted | Implemented | FastAPI 8901 端点分类（生命周期/数据查询/资源操作/LLM 业务）与契约 |
-| [数据库设计](../architecture/database-schema.md) | Accepted | Plan | qed 库 qed_*/qt_* 表族唯一事实源（领域/课程/知识行/书行/渠道五层模型） |
+| [数据库设计](../architecture/database-schema.md) | Accepted | Plan | qed 库 qed_*/qt_* 表族唯一事实源（领域/课程/教程/书籍/渠道五层模型） |
 ```
 
 - [ ] **Step 2: 更新文件顶部描述**
@@ -204,8 +211,8 @@ Expected: 匹配到1行
 ## 数据设计
 
 - [数据库设计](../architecture/database-schema.md)（Accepted，2026-08-16 用户裁决知识层次重构）：qed 库
-  `qed_*`（共享）与 `qt_*`（QED-Tracker 私有）表族**唯一事实源文档**——领域/课程/知识行/
-  书行/渠道五层模型（qed_domain → qed_course → qt_knowledge → qt_books → qt_sources）、
+  `qed_*`（共享）与 `qt_*`（QED-Tracker 私有）表族**唯一事实源文档**——领域/课程/教程/
+  书籍/渠道五层模型（qed_domain → qed_course → qt_knowledge → qt_books → qt_sources）、
   状态机、文件命名（物理名/展示名）、存量迁移与共享表所有权。
 ```
 

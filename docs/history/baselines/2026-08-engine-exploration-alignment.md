@@ -1,9 +1,12 @@
 # QED-Engine 探索对齐承接设计（根仓库 REQ-064/065 配合清单）
 
-状态：Draft（待用户评审）
-最后更新：2026-08-28
+归档状态：已归档
+状态：已归档（Draft → 已归档）
+最后更新：2026-09-01
+归档说明：QED-047（课程层 dry-run）、QED-048（写权限+字段补充）均已完成，四项配合事项全部
+落地（实现轮 339 passed + 3 skipped + ruff clean）。
 需求方：QED-Engine（根仓库 REQ-064、REQ-065；流程计划 PLAN-022）
-关联文档：根仓库 [2026-08-exploration-download-flow.md](../../../docs/plans/2026-08-exploration-download-flow.md)（三端架构与数据流，含四项用户裁决 D1~D4）、本仓库 [shared-tables.md](../design/shared-tables.md)（Accepted）、[2026-08-api-design.md](2026-08-api-design.md)（Draft）、[2026-08-prompt-optimization.md](2026-08-prompt-optimization.md)（Accepted）
+关联文档：根仓库 [2026-08-exploration-download-flow.md](../../../docs/plans/2026-08-27-exploration-download-flow.md)（三端架构与数据流，含四项用户裁决 D1~D4）、本仓库 [shared-tables.md](../architecture/shared-tables.md)（Accepted）、[2026-08-api-design.md](2026-08-api-design.md)（Draft）、[2026-08-prompt-optimization.md](2026-08-prompt-optimization.md)（Accepted）
 关联任务：todo [QED-047](../trackers/todo.md)（课程层探索 dry-run 端点）、[QED-048](../trackers/todo.md)（写权限修订与 API 设计补充）
 
 ## 背景与时间线
@@ -39,7 +42,7 @@ migration 0013（删除 qt_explore_runs / qt_prompt_runs、旧探索端点全部
 
 ### 需求理由（需求方视角）
 
-ARCH-019 主线找书链路「探索教程 → 用户勾选 → 采纳建 draft 知识行」依赖本端点；无它则 LLM 选书
+ARCH-019 主线找书链路「探索教程 → 用户勾选 → 采纳建 draft 教程」依赖本端点；无它则 LLM 选书
 能力落空，用户只能手工经 books/search 找渠道。管线已存在，仅差端点暴露，成本低。
 
 ### 顺带确认（X3）
@@ -158,7 +161,7 @@ A1→A2 串接即完整课程探索链路：dry-run 出候选 → 用户勾选 �
 
 ### 文档同步记录
 
-- [shared-tables.md](../design/shared-tables.md)：写权限例外行 + 两表 exploration_stage 状态机写主体列已修订（同日，事项一/三落地）；
+- [shared-tables.md](../architecture/shared-tables.md)：写权限例外行 + 两表 exploration_stage 状态机写主体列已修订（同日，事项一/三落地）；
 - [2026-08-api-design.md](2026-08-api-design.md)：⑥ 组补 A1 五要素 + A2 草案（新 ⑧ 组）+ A3 附注（④ 组）。
 
 ## 验收与回执

@@ -138,15 +138,17 @@ def test_catalog_detail_exposes_set_no(tmp_path):
         assert "set_no" in targets["01-polya"]
 
 
-def test_task_records_are_persisted_under_meta_tasks(tmp_path):
+def test_task_records_are_persisted(tmp_path):
+    """REQ-032：任务记录持久化到 qt_tasks 表（替代 meta/tasks/ JSON 文件）。"""
     def ok_handler(params, progress):
         progress(100, "done")
         return {"ok": True}
 
     with make_client(tmp_path, handlers={"persist": ok_handler}) as client:
         task_id = client.post("/api/v1/tasks/persist", json={}).json()["task_id"]
-        _wait_finished(client, task_id)
-        assert (tmp_path / "qed-tracker" / "meta" / "tasks" / f"{task_id}.json").exists()
+        data = _wait_finished(client, task_id)
+        assert data["status"] == "succeeded"
+        assert data["task_id"] == task_id
 
 
 def test_concurrency_is_capped_at_two(tmp_path):

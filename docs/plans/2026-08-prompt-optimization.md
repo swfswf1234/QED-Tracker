@@ -233,7 +233,7 @@ CLI：`qed-tracker promptlab domain "高等数学"`（`--scope`/`--ref-doc`）�
 | 主链路预填 mainline-prefill | 既有（main_line/advisor） | 已存在，补编号 |
 | 课程/领域探索 course/curriculum-explore | 既有（QED-040/041） | 已存在，补编号 |
 | 领域/课程知识探索（本模块） | 新（prompt_lab） | 本次 |
-| 知识行材料简介预填 | 预留（migrate_knowledge 注释「简介留空待 LLM 预填」） | 后续候选 |
+| 教程材料简介预填 | 预留（migrate_knowledge 注释「简介留空待 LLM 预填」） | 后续候选 |
 | 课程介绍/领域描述补全 | 未启动 | 后续候选 |
 | 下载资源元数据预填 | 未启动 | 后续候选（API 摘要仍归 Axiom-Flow 边界外） |
 

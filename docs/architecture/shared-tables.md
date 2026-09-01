@@ -2,11 +2,14 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-27
+最后更新：2026-08-31
 需求方：QED-Engine
 关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/migrations/`
-关联架构：`docs/architecture/database-schema.md`（DDL 唯一事实源）
-跨项目所有权：QED-Engine 根仓库 `docs/design/database-design.md`
+关联测试：`tests/test_db_models.py`、`tests/test_courses.py`
+关联架构：[数据库设计](database-schema.md)（全库 DDL 唯一事实源，分共享/专用两区）
+关联 ADR：[ADR 0005](../adr/0005-shared-tables-doc-location.md)（本文档迁入 architecture/ 与归属裁决）
+文档归属与维护：QED-Tracker；登记同步点：QED-Engine 根仓库 `docs/design/database-design.md`
+（共享表 schema 变更先经根仓库登记，见「Schema 变更流程」；QED-Engine 及其他子项目从本文档同步）
 
 ## 背景与目标
 
@@ -46,10 +49,11 @@ CREATE TABLE qed_domain (
   description        TEXT          NOT NULL,           -- 学科介绍
   level              VARCHAR(50)   NOT NULL DEFAULT '',-- 探索范围（本科-硕士）
   scope              TEXT          NOT NULL,           -- 学科知识（管线暂不输出，置空）
-  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态
+  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态（6 态契约见下文；待确认/失败未实现）
   classic_tracks     JSON          NOT NULL,           -- 课程方向 [{name,summary,kind}] 0~4 项
   stages             JSON          NOT NULL,           -- 学习阶段顺序（无默认值，四档）
   path_results       JSON,                            -- 学习流程（notes/edges/graph_td）
+  explore_pending    JSON,                            -- 探索待确认载荷（REQ-067-B12：审阅结果/失败原因）
   created_by         VARCHAR(16)   NOT NULL DEFAULT '',
   updated_by         VARCHAR(16)   NOT NULL DEFAULT '',
   created_at         DATETIME      NOT NULL,
@@ -71,28 +75,29 @@ CREATE TABLE qed_domain (
 | 7 | `classic_tracks` | JSON | `[]` | 课程方向，JSON 数组 [{name, summary, kind}]，0~4 项。`kind`：`main`=主干方向 / `branch`=分支方向（2026-08-29 语义升级）。管线 domain@v3 输出 |
 | 8 | `stages` | JSON | —（无默认值） | 学习阶段顺序列表，值为四档 `["基础","主干","分支","前沿"]`（2026-08-29 用户裁定；基础=入门基石；主干=方向主干；分支=方向细分/拓展；前沿=研究前沿/论文驱动）。之后可变更 |
 | 9 | `path_results` | JSON | `null` | 学习流程，可空。管线 path@v4 输出，包含 notes/edges[{from,to}]/graph_td |
-| 10-13 | audit | — | — | created_by/updated_by/created_at/updated_at |
+| 10 | `explore_pending` | JSON | `null` | 探索待确认载荷（REQ-067-B12）：`待确认` = `{kind:"review_results", courses:[...], domain_report}`；`失败` = `{kind:"failed", error:"..."}`；其余状态 NULL |
+| 11-14 | audit | — | — | created_by/updated_by/created_at/updated_at |
 
-### exploration_stage 状态机
+### exploration_stage 状态机（6 态，REQ-067-B12 契约）
 
 ```
-未开始 → 探索中 → 已完成
-                 ↘ 已生成 → 探索中（名称确认重跑，REQ-067 B7）
-探索中 → 失败（管线异常，可重新 POST explore）
+未开始 → 已生成 → 探索中 → 待确认 → 已完成
+                        └──────────────→ 失败
+（待确认 --re-explore--> 探索中；失败可由 8900 重新发起探索回到 探索中）
 ```
 
-| 值 | 触发时机 | 写主体 | 说明 |
+> **实现状态标注（2026-09-01）**：6 态状态机与 `explore_pending` 载荷为 REQ-067-B12
+> **已实现**（迁移 0015、ORM 模型、Repository、API 端点、测试；设计见
+> [2026-08-31-req067-b10-b12-exploration-stage.md](../history/baselines/2026-08-31-req067-b10-b12-exploration-stage.md)）。
+
+| 值 | 触发时机 | 写主体 | explore_pending |
 |---|---|---|---|
-| 未开始 | 手动创建 | 创建方（8900 直建或本仓库 API） | 初始状态 |
-| 探索中 | POST /domains/{id}/explore 或 confirm-name | **8901**（本仓库端点同步置位） | 管线执行中；explore_pending 同时清空 |
-| 已生成 | 管线完成但名称需确认 | **8901** | explore_pending={kind:name_confirm, name_check} |
-| 已完成 | 探索应用落库完成 | **8901** | 课程已写入 qed_course；explore_pending=NULL |
-| 失败 | 管线异常 | **8901** | explore_pending={kind:failed, error}；可重新触发 |
-
-> 写主体口径修订（2026-08-30，REQ-067 B8 用户裁决）：**领域探索过程状态
-> （探索中/已生成/已完成/失败）写主体由 8900 移交 8901**；qed_course 侧维持 REQ-064
-> 口径（8900 负责课程探索过程状态，本仓库负责验收终态）。8900 不再直写
-> qed_domain.exploration_stage，领域探索由 8901 `POST /domains/{id}/explore` 任务链驱动。
+| 未开始 | 手动创建 | 创建方（8900 直建或本仓库 API） | NULL |
+| 已生成 | 探索会话产出报告、待用户确认 | **8900**（写权限例外，见下） | NULL |
+| 探索中 | 探索会话启动 | **8900**（同上） | NULL |
+| 待确认 | 探索完成、审阅结果待用户采纳（REQ-067-B12 新增，未实现） | **8900**（同上） | `{kind:"review_results", courses:[...], domain_report}` |
+| 已完成 | 审阅采纳落库（本仓库 `POST /domains/{id}/apply-results`，REQ-067-B12 未实现）或手动导入（8901 `/domains/import`） | **本仓库 8901** | NULL（采纳时清空） |
+| 失败 | 探索失败 / 服务重启中断（8901 lifespan 启动清理，REQ-067-B10 未实现） | **本仓库 8901** | `{kind:"failed", error:"服务重启，探索任务中断"}`（B10 固定文案） |
 
 ### 字段语义补充
 
@@ -128,7 +133,8 @@ CREATE TABLE qed_course (
   prerequisites      JSON          NOT NULL,         -- list[str]：先修 course_id 数组
   related_targets    JSON          NOT NULL,         -- list[str]：已验收关联目标
   description        VARCHAR(1000) NOT NULL DEFAULT '',-- 课程介绍
-  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态
+  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态（6 态契约同 qed_domain）
+  explore_pending    JSON,                            -- 探索待确认载荷（REQ-067-B12：tutorials 审阅结果/失败原因）
   created_by         VARCHAR(16)   NOT NULL DEFAULT '',
   updated_by         VARCHAR(16)   NOT NULL DEFAULT '',
   created_at         DATETIME      NOT NULL,
@@ -152,8 +158,9 @@ CREATE TABLE qed_course (
 | 8 | `prerequisites` | JSON | `[]` | 先修 course_id 数组（主知识链路 DAG） |
 | 9 | `related_targets` | JSON | `[]` | 已通过验收的关联 catalog 目标（随验收回填） |
 | 10 | `description` | VARCHAR(1000) | `""` | 课程介绍（原 note 字段，2026-08-27 重命名） |
-| 11 | `exploration_stage` | VARCHAR(20) | `"未开始"` | 流程状态枚举（同 qed_domain） |
-| 12-15 | audit | — | — | created_by/updated_by/created_at/updated_at |
+| 11 | `exploration_stage` | VARCHAR(20) | `"未开始"` | 流程状态枚举（6 态，同 qed_domain，见上文状态机） |
+| 12 | `explore_pending` | JSON | `null` | 探索待确认载荷（REQ-067-B12）：`待确认` = `{kind:"review_results", tutorials:[...]}`；`失败` = `{kind:"failed", error:"..."}`；其余状态 NULL |
+| 13-16 | audit | — | — | created_by/updated_by/created_at/updated_at |
 
 ### stage 字段说明
 
@@ -163,21 +170,24 @@ pipeline path@v5 输出的 `tier` 与 `stage` 已**统一为同一概念**（值
 2026-08-29 取代旧值域 基础/进阶/核心/冲刺）；tier 不落 qed_course 表，其结果已存
 qed_domain.path_results（Graph 分组用）。
 
-### exploration_stage 状态机
+### exploration_stage 状态机（6 态，同 qed_domain）
 
-同 qed_domain：`未开始 → 已生成 → 探索中 → 已完成`
+`未开始 → 已生成 → 探索中 → 待确认 → 已完成`，`探索中/待确认 → 失败`。值域、explore_pending
+载荷与实现状态标注见上文 qed_domain 状态机节（REQ-067-B12 契约，待确认/失败未实现）。
 
 | 阶段 | 触发条件 | 写主体 |
 |---|---|---|
 | 未开始 | 手动创建 | 创建方（8900 直建或本仓库 API） |
 | 已生成 | course-explore tutorials@v1 完成 | **8900**（写权限例外，见下） |
 | 探索中 | 正式探索启动（异步场景） | **8900**（同上） |
-| 已完成 | 教材采纳 + 验收完成 | **本仓库 8901**（knowledge complete 聚合时顺带回写，天然合规） |
+| 待确认 | 课程探索完成、教材审阅结果待采纳（REQ-067-B12 新增，未实现） | **8900**（同上） |
+| 已完成 | 教材采纳 + 验收完成（knowledge complete 聚合时顺带回写）或课程 apply-results（REQ-067-B12 未实现） | **本仓库 8901** |
+| 失败 | 探索失败 / 服务重启中断（8901 lifespan 启动清理，REQ-067-B10 未实现） | **本仓库 8901** |
 
-> 写主体口径（2026-08-28 澄清，根仓库 REQ-064⑤）：**8900 负责探索过程状态流转
-> （探索中/已生成/领域已完成），本仓库负责验收终态（课程已完成）**。消解原
-> 「已生成 = dry-run 完成」与 api-design「dry-run 不写任何表」的表述冲突——
-> dry-run 端点不写表，状态由 8900 在探索会话管理中直写（依赖下方写权限例外）。
+> 写主体口径（2026-08-28 澄清，根仓库 REQ-064⑤；2026-08-31 按 REQ-067-B12 修订）：**8900 负责
+> 探索过程状态流转（探索中/已生成/待确认），本仓库负责验收终态（已完成）与失败清理
+> （B10 启动清理）**。消解原「已生成 = dry-run 完成」与 api-design「dry-run 不写任何表」的
+> 表述冲突——dry-run 端点不写表，状态由 8900 在探索会话管理中直写（依赖下方写权限例外）。
 
 ### 写入权限
 
@@ -293,6 +303,8 @@ QED-Tracker 的 prompt_lab 管线（DomainPipeline / CoursePipeline）在执行�
 | 0011 | qed_domain 新增 level/scope/exploration_stage/classic_tracks/path_results；description 扩容 TEXT；stages 去默认值 | 2026-08-27 |
 | 0012 | qed_course 新增 track/exploration_stage；note 重命名 description | 2026-08-27 |
 | 0013 | DROP TABLE qt_explore_runs + qt_prompt_runs（共享表重构，两表功能已由 qed_domain/qed_course + qed_llm_calls 替代） | 2026-08-27 |
+| 0014 | qt_sources 重建（FK 从 qt_downloads.download_id 切换为 qt_books.book_id，schema drift 修复） | 2026-08-31 |
+| 0015 | qed_domain/qed_course 新增 explore_pending JSON（可空；6 态状态机承载，REQ-067-B12） | 2026-09-01 |
 | — | qed_llm_calls 由 QED-Engine 后端 `call_log.py` 幂等建表（不在 QED-Tracker 迁移范围内） | — |
 
 ## 约束与契约
@@ -312,15 +324,14 @@ QED-Tracker 的 prompt_lab 管线（DomainPipeline / CoursePipeline）在执行�
 | qed_course | QED-Tracker | 其他项目只读，**例外见下** |
 | qed_llm_calls | 三项目均可写 | 通过 service 字段区分调用方 |
 
-**8900 离线降级直写例外（2026-08-27 根仓库用户裁决 D2，REQ-064④；2026-08-28 修订留痕；
-2026-08-30 REQ-067 B8 修订：删除 qed_domain 行）**：
-根仓库「服务独立性铁律」要求 8901 离线时 8903 下载管理仍可维护课程并推进课程探索流程，
+**8900 离线降级直写例外（2026-08-27 根仓库用户裁决 D2，REQ-064④；2026-08-28 修订留痕）**：
+根仓库「服务独立性铁律」要求 8901 离线时 8903 下载管理仍可维护领域/课程并推进探索流程，
 故允许 8900 在降级场景直写下列白名单列：
 
 | 表 | 8900 离线直写允许列 | 仍然禁止列（探索产物，只归本仓库写） |
 |---|---|---|
-| qed_domain | （无——领域探索由 8901 驱动，8900 离线时领域探索不可执行） | level、scope、classic_tracks、path_results、exploration_stage |
-| qed_course | stage、sort_order、description、aliases、exploration_stage | track、related_targets |
+| qed_domain | description、stages、exploration_stage、explore_pending（REQ-067-B12） | level、scope、classic_tracks、path_results |
+| qed_course | stage、sort_order、description、aliases、exploration_stage、explore_pending（REQ-067-B12） | track、related_targets |
 
 ### Schema 变更流程
 

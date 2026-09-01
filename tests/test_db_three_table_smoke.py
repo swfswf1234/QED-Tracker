@@ -94,7 +94,7 @@ def test_upgrade_and_migrate_creates_five_tables_with_contract_columns():
     settings = load_settings()
     upgrade_database(settings)  # 幂等：已到 head 则空操作
     # 注意：不重放 migrate_legacy_data —— 存量迁移为一次性动作，重放会按旧表重建已人工定稿的
-    # 知识行/来源（如 Principles 独立行、重复 source）；迁移逻辑幂等性由 test_migrate_knowledge.py 覆盖。
+    # 教程/来源（如 Principles 独立行、重复 source）；迁移逻辑幂等性由 test_migrate_knowledge.py 覆盖。
     settings, conn = _connect()
     try:
         with conn.cursor() as cur:

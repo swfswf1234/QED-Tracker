@@ -25,15 +25,16 @@ from qed_tracker import __version__
 from qed_tracker.api.tasks import TaskManager, TaskStore
 from qed_tracker.application import BookService, ResourceService
 from qed_tracker.application.book_fetch import BookFetchService, build_book_service
-from qed_tracker.application.domain_explore import run_domain_explore
 from qed_tracker.application.knowledge_import import KnowledgeImportError, validate_domain
 from qed_tracker.application.papers import PaperService
 from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key
 from qed_tracker.db.knowledge_repository import (
+    CLEAR,
     AdoptionConflict,
     CourseHasKnowledge,
     DomainNotEmpty,
+    InvalidExplorationTransition,
     InvalidTransition,
     KnowledgeRepository,
 )
@@ -89,9 +90,9 @@ class Application:
             )
         )
         self.books = BookService(providers, self.resources)
-        self.papers = PaperService(papers_provider or ArxivProvider(retries=settings.retries), self.resources)
         self._db_engine = None
         self._knowledge_repository = knowledge_repository
+        self._session_factory = None
         # 会话工厂来源：优先复用注入 repo 的工厂（测试 SQLite 路径），
         # 否则凭据齐备时自建 MySQL engine——两表域操作必须共享同一事务边界。
         factory = knowledge_repository.session_factory if knowledge_repository is not None else None
@@ -101,6 +102,13 @@ class Application:
             self._db_engine = create_engine_for(settings)
             factory = session_factory(self._db_engine)
             self._knowledge_repository = KnowledgeRepository(factory)
+        self._session_factory = factory
+        # REQ-032：PaperService 需要 session_factory 创建 SelectionStore
+        self.papers = PaperService(
+            papers_provider or ArxivProvider(retries=settings.retries),
+            self.resources,
+            session_factory=factory,
+        )
         if advisor is None and settings.llm_configured:
             advisor = BailianBookAdvisor(
                 api_key=llm_api_key(),
@@ -181,28 +189,26 @@ def create_app(
         )
         return fetcher.fetch(book_id, progress=progress)
 
-    def _domain_explore_handler(params: dict[str, Any], progress) -> dict[str, Any]:
-        """领域探索后台任务：管线执行 → 状态机终态 + 全量自动落库（REQ-067 B8）。"""
-        repo = _kn(app)
-        pipeline = DomainPipeline(**{**_advisor_kwargs()})
-        try:
-            return run_domain_explore(
-                repo, pipeline,
-                domain_id=str(params["domain_id"]),
-                scope_hint=str(params.get("scope_hint", "")),
-                mode=str(params.get("mode", "direct")),
-                ref_text=str(params.get("ref_text", "")),
-                ref_doc_path=str(params.get("ref_doc_path", "")),
-                confirm_name_override=str(params.get("confirm_name_override", "")),
-            )
-        finally:
-            pipeline.close()
-
-    all_handlers = {"book_download": _book_download_handler,
-                    "domain_explore": _domain_explore_handler}
-    # 测试注入优先：extra_handlers 覆盖默认 handler（book_download/domain_explore 同约）。
-    all_handlers.update(extra_handlers or {})
-    manager = TaskManager(TaskStore(settings.state_dir / "tasks"), all_handlers)
+    all_handlers = {**(extra_handlers or {}), "book_download": _book_download_handler}
+    # REQ-032：TaskStore 使用 qt_tasks 数据库表
+    # 优先复用 knowledge_repository 的 session_factory（测试 SQLite / 生产 MySQL），
+    # 否则为 TaskStore 创建独立的 SQLite 引擎（兼容无 MySQL 测试场景）。
+    if app._session_factory is not None:
+        task_store = TaskStore(app._session_factory)
+    else:
+        import sqlalchemy as _sa
+        from sqlalchemy.pool import StaticPool
+        from qed_tracker.database import session_factory as _sf
+        from qed_tracker.db.models import Base as _Base
+        _engine = _sa.create_engine(
+            "sqlite://", future=True,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        _Base.metadata.create_all(_engine)
+        app._task_engine = _engine  # prevent GC
+        task_store = TaskStore(_sf(_engine))
+    manager = TaskManager(task_store, all_handlers)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -276,7 +282,7 @@ def create_app(
     def _require_knowledge(repo: KnowledgeRepository, knowledge_id: str):
         row = repo.get_knowledge(knowledge_id)
         if row is None:
-            raise HTTPException(status_code=404, detail=f"知识行不存在：{knowledge_id}")
+            raise HTTPException(status_code=404, detail=f"教程不存在：{knowledge_id}")
         return row
 
     def _domain_view(repo: KnowledgeRepository, domain: QedDomain) -> dict[str, Any]:
@@ -289,7 +295,6 @@ def create_app(
             "classic_tracks": domain.classic_tracks or [],
             "exploration_stage": domain.exploration_stage,
             "path_results": domain.path_results,
-            "explore_pending": domain.explore_pending,
             "stages": list(domain.stages),
             "courses": [
                 {
@@ -337,7 +342,6 @@ def create_app(
             "classic_tracks": domain.classic_tracks or [],
             "path_results": domain.path_results,
             "exploration_stage": domain.exploration_stage,
-            "explore_pending": domain.explore_pending,
         }
 
     @fastapi_app.get("/api/v1/domains")
@@ -376,62 +380,6 @@ def create_app(
         return f"c_{_hl.md5(f'{domain_id}:{name}'.encode()).hexdigest()[:10]}"
 
     _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}$")
-
-    def _require_explore_mode(mode: str) -> str:
-        if mode not in ("direct", "text", "doc"):
-            raise api_error(400, "INVALID_PARAMS", "mode 必须为 direct/text/doc")
-        return mode
-
-    @fastapi_app.post("/api/v1/domains/{domain_id}/explore", status_code=202)
-    def explore_domain(domain_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, str]:
-        """启动领域探索（REQ-067 B2/B8）：同步置「探索中」→ 提交 domain_explore 后台任务。"""
-        repo = _kn(app)
-        domain = repo.get_domain(domain_id)
-        if domain is None:
-            raise api_error(404, "DOMAIN_NOT_FOUND", f"领域不存在：{domain_id}")
-        mode = _require_explore_mode(str(payload.get("mode", "direct") or "direct"))
-        if domain.exploration_stage == "探索中":
-            raise api_error(409, "DOMAIN_EXPLORING", f"领域正在探索中：{domain_id}")
-        repo.update_domain(domain_id, exploration_stage="探索中", explore_pending=None)
-        record = manager.submit("domain_explore", {
-            "domain_id": domain_id, "mode": mode,
-            "scope_hint": str(payload.get("scope_hint", "")),
-            "ref_text": str(payload.get("ref_text", "")),
-            "ref_doc_path": str(payload.get("ref_doc_path", "")),
-        })
-        return {"task_id": record.task_id}
-
-    @fastapi_app.post("/api/v1/domains/{domain_id}/confirm-name", status_code=202)
-    def confirm_domain_name(domain_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, str]:
-        """确认领域名称（REQ-067 B7）：仅「已生成」态放行 → 重跑管线 → 已完成。"""
-        repo = _kn(app)
-        domain = repo.get_domain(domain_id)
-        if domain is None:
-            raise api_error(404, "DOMAIN_NOT_FOUND", f"领域不存在：{domain_id}")
-        if domain.exploration_stage != "已生成":
-            raise api_error(409, "INVALID_TRANSITION", f"仅「已生成」态可确认名称：{domain.exploration_stage}")
-        decision = str(payload.get("decision", "")).strip()
-        if decision not in ("accept", "custom", "retain"):
-            raise api_error(422, "INVALID_PARAMS", "decision 必须为 accept/custom/retain")
-        name = str(payload.get("name", "")).strip()
-        pending = (domain.explore_pending or {}).get("name_check", {}) if domain.explore_pending else {}
-        suggested = str(pending.get("suggested_name", "")).strip()
-        if decision == "accept":
-            final_name = name or suggested or domain.name
-            if not final_name or len(final_name) > 100:
-                raise api_error(422, "INVALID_PARAMS", "最终名称非空且 ≤100")
-        elif decision == "custom":
-            if not name or len(name) > 100:
-                raise api_error(422, "INVALID_PARAMS", "custom 必须提供 name（非空且 ≤100）")
-            final_name = name
-        else:  # retain
-            final_name = domain.name
-        repo.update_domain(domain_id, exploration_stage="探索中", explore_pending=None)
-        record = manager.submit("domain_explore", {
-            "domain_id": domain_id, "mode": "direct",
-            "confirm_name_override": final_name,
-        })
-        return {"task_id": record.task_id}
 
     @fastapi_app.post("/api/v1/domains", status_code=201)
     def create_domain(payload: dict[str, Any]) -> dict[str, Any]:
@@ -532,6 +480,86 @@ def create_app(
         except DomainNotEmpty as exc:
             raise api_error(409, "DOMAIN_NOT_EMPTY", str(exc)) from None
         return {"ok": "true"}
+
+    # ---------------- REQ-067-B12: apply-results / re-explore ----------------
+
+    def _require_domain(repo: KnowledgeRepository, domain_id: str) -> QedDomain:
+        domain = repo.get_domain(domain_id)
+        if domain is None:
+            raise api_error(404, "DOMAIN_NOT_FOUND", f"领域不存在：{domain_id}")
+        return domain
+
+    def _require_course(repo: KnowledgeRepository, course_id: str):
+        course = repo.get_course(course_id)
+        if course is None:
+            raise api_error(404, "COURSE_NOT_FOUND", f"课程不存在：{course_id}")
+        return course
+
+    @fastapi_app.post("/api/v1/domains/{domain_id}/apply-results")
+    def domain_apply_results(domain_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """确认领域探索结果：选择要保留的课程，删除其余，exploration_stage -> 已完成。"""
+        repo = _kn(app)
+        domain = _require_domain(repo, domain_id)
+        if domain.exploration_stage != "待确认":
+            raise api_error(409, "INVALID_TRANSITION",
+                            f"当前状态 {domain.exploration_stage}，需要 待确认")
+        selected_courses = payload.get("selected_courses")
+        if not isinstance(selected_courses, list):
+            raise api_error(422, "INVALID_PARAMS", "selected_courses 必须是数组")
+        try:
+            kept = repo.apply_domain_results(domain_id, selected_courses)
+        except InvalidExplorationTransition as exc:
+            raise api_error(409, "INVALID_TRANSITION", str(exc)) from None
+        return {"domain_id": domain_id, "courses_kept": kept}
+
+    @fastapi_app.post("/api/v1/domains/{domain_id}/re-explore", status_code=202)
+    def domain_re_explore(domain_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        """重置领域探索：exploration_stage -> 探索中，提交后台重新探索任务。"""
+        repo = _kn(app)
+        domain = _require_domain(repo, domain_id)
+        if domain.exploration_stage != "待确认":
+            raise api_error(409, "INVALID_TRANSITION",
+                            f"当前状态 {domain.exploration_stage}，需要 待确认")
+        # 更新描述（可选）+ 重置状态
+        description = payload.get("description") or domain.description
+        repo.update_domain(domain_id, description=description,
+                           exploration_stage="探索中", explore_pending=CLEAR)
+        # 提交后台任务
+        record = manager.submit("domain_explore", {"domain_id": domain_id, "mode": payload.get("mode", "web")})
+        return {"task_id": record.task_id}
+
+    @fastapi_app.post("/api/v1/courses/{course_id}/apply-results")
+    def course_apply_results(course_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """确认课程探索结果：选择要保留的教程，删除其余，exploration_stage -> 已完成。"""
+        repo = _kn(app)
+        course = _require_course(repo, course_id)
+        if course.exploration_stage != "待确认":
+            raise api_error(409, "INVALID_TRANSITION",
+                            f"当前状态 {course.exploration_stage}，需要 待确认")
+        selected_tutorials = payload.get("selected_tutorials")
+        if not isinstance(selected_tutorials, list):
+            raise api_error(422, "INVALID_PARAMS", "selected_tutorials 必须是数组")
+        try:
+            kept = repo.apply_course_results(course_id, selected_tutorials)
+        except InvalidExplorationTransition as exc:
+            raise api_error(409, "INVALID_TRANSITION", str(exc)) from None
+        return {"course_id": course_id, "tutorials_kept": kept}
+
+    @fastapi_app.post("/api/v1/courses/{course_id}/re-explore", status_code=202)
+    def course_re_explore(course_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        """重置课程探索：exploration_stage -> 探索中，提交后台重新探索任务。"""
+        repo = _kn(app)
+        course = _require_course(repo, course_id)
+        if course.exploration_stage != "待确认":
+            raise api_error(409, "INVALID_TRANSITION",
+                            f"当前状态 {course.exploration_stage}，需要 待确认")
+        # 更新描述（可选）+ 重置状态
+        description = payload.get("description") or course.description
+        repo.update_course(course_id, description=description,
+                           exploration_stage="探索中", explore_pending=CLEAR)
+        # 提交后台任务
+        record = manager.submit("course_explore", {"course_id": course_id, "mode": payload.get("mode", "web")})
+        return {"task_id": record.task_id}
 
     @fastapi_app.post("/api/v1/domains/import")
     def import_domain(payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
@@ -677,7 +705,7 @@ def create_app(
 
     @fastapi_app.post("/api/v1/books")
     def create_book(payload: dict[str, Any]) -> dict[str, Any]:
-        """新建书行候选（先登记再下载）：candidate 态。"""
+        """新建书籍候选（先登记再下载）：candidate 态。"""
         knowledge_id = str(payload.get("knowledge_id", "")).strip()
         if not knowledge_id:
             raise HTTPException(status_code=422, detail="必须提供 knowledge_id")
@@ -705,14 +733,14 @@ def create_app(
     def book_sources(book_id: str) -> list[dict[str, Any]]:
         repo = _kn(app)
         if repo.get_book(book_id, include_hidden=True) is None:
-            raise HTTPException(status_code=404, detail=f"书行不存在：{book_id}")
+            raise HTTPException(status_code=404, detail=f"书籍不存在：{book_id}")
         return [s.to_dict() for s in repo.list_sources(book_id)]
 
     @fastapi_app.post("/api/v1/books/{book_id}/sources")
     def book_add_source(book_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
         repo = _kn(app)
         if repo.get_book(book_id, include_hidden=True) is None:
-            raise HTTPException(status_code=404, detail=f"书行不存在：{book_id}")
+            raise HTTPException(status_code=404, detail=f"书籍不存在：{book_id}")
         row = repo.add_source(
             book_id,
             channel=str(payload.get("channel", "manual")),
@@ -731,7 +759,7 @@ def create_app(
         repo = _kn(app)
         row = repo.get_book(book_id, include_hidden=True)
         if row is None:
-            raise HTTPException(status_code=404, detail=f"书行不存在：{book_id}")
+            raise HTTPException(status_code=404, detail=f"书籍不存在：{book_id}")
         relative = str(payload.get("relative_path", "")).strip()
         if not relative:
             raise HTTPException(status_code=422, detail="必须提供数据根内相对路径（relative_path）")
@@ -769,13 +797,13 @@ def create_app(
         body：`{"file_path": "...", "target_path": "..."?}`
         - 目标位置：target_path（期望路径，基础名不合 sha；落盘按命名规则补 `_<sha8>`）或
           默认 `raw/<domain>/<course>/<safe_name>_<sha8>.pdf`；一律强制在数据根内；
-        - sha256 去重复用：complete_download 同哈希命中既有书行 → 复用（不重复落文件）；
+        - sha256 去重复用：complete_download 同哈希命中既有书籍 → 复用（不重复落文件）；
         - 登记直转 candidate→downloaded；渠道留痕 channel=local_import。
         """
         repo = _kn(app)
         row = repo.get_book(book_id, include_hidden=True)
         if row is None:
-            raise HTTPException(status_code=404, detail=f"书行不存在：{book_id}")
+            raise HTTPException(status_code=404, detail=f"书籍不存在：{book_id}")
         file_path = str(payload.get("file_path", "")).strip()
         if not file_path:
             raise HTTPException(status_code=422, detail="必须提供本地文件路径（file_path）")
@@ -803,7 +831,7 @@ def create_app(
             if knowledge is None:
                 raise HTTPException(
                     status_code=400,
-                    detail="书行无知识行归属，无法推导默认路径（请显式提供 target_path）",
+                    detail="书籍无教程归属，无法推导默认路径（请显式提供 target_path）",
                 )
             course = repo.get_course(knowledge.course_id)
             domain_id = (course.domain_id if course is not None else "_general")
@@ -927,17 +955,17 @@ def create_app(
     def book_fetch(book_id: str) -> dict[str, str]:
         """自动取书（方案 A 2026-08-28）：提交 book_download 后台任务。
 
-        每候选限时 settings.fetch_attempt_timeout（默认 600s），全部失败书行置 failed，
+        每候选限时 settings.fetch_attempt_timeout（默认 600s），全部失败书籍置 failed，
         任务 error 附人工下载指引（metadata_only 候选链接清单）。
         """
         repo = _kn(app)
         row = repo.get_book(book_id, include_hidden=True)
         if row is None:
-            raise HTTPException(status_code=404, detail=f"书行不存在：{book_id}")
+            raise HTTPException(status_code=404, detail=f"书籍不存在：{book_id}")
         if row.status not in ("candidate", "decided", "failed"):
             raise HTTPException(
                 status_code=409,
-                detail=f"书行状态 {row.status} 不可自动取书（仅 candidate/decided/failed）",
+                detail=f"书籍状态 {row.status} 不可自动取书（仅 candidate/decided/failed）",
             )
         record = manager.submit("book_download", {"book_id": book_id})
         return {"task_id": record.task_id, "book_id": book_id}

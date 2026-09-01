@@ -1,23 +1,28 @@
 # 数据库设计：qed 库 qed_*/qt_* 表族（唯一事实源）
 
 设计状态：Accepted
+确认状态：暂定
 实现状态：Implemented
-最后更新：2026-08-26
+最后更新：2026-09-01
 需求方：QED-Engine（根仓库 REQ-026/REQ-029/REQ-030；2026-08-16 用户裁决知识层次重构）
 关联代码：`src/qed_tracker/db/`（models/knowledge_repository/migrations）、`src/qed_tracker/database.py`、
 `src/qed_tracker/courses.py`（migrations/data/math.json，规划退役）
 关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、
 `tests/test_db_three_table_smoke.py`、`tests/test_courses.py`（实现轮同步更新）
-关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)；根仓库 [ADR 0003](../../../docs/adr/0003-shared-qed-database-independence.md)（命名空间隔离）与 [ADR 0009](../../../docs/adr/0009-shared-qed-tables.md)（2026-08-16：新增 qed_* 共享表族）
+关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)；根仓库 [ADR 0003](../../../docs/history/adr/v0.1/0003-shared-qed-database-independence.md)（命名空间隔离）与 [ADR 0009](../../../docs/history/adr/v0.1/0009-shared-qed-tables.md)（2026-08-16：新增 qed_* 共享表族）
 
 > **唯一事实源声明**：本文件是 qed 库全部 `qed_*`（共享）与 `qt_*`（QED-Tracker 私有）表的
-> **唯一当前事实源文档**，取代 `database-schema-ownership.md`（QED-023 时代留档）与
-> `three-table-schema.md`（三表模型，QED-028）。被取代文档保留只读、标注 Retired/Superseded，
-> 不再作为实现依据。新增/修改表必须先更新本文件，再写 Alembic 迁移。
+> **唯一当前事实源文档**（全库 DDL 与表结构），取代 `database-schema-ownership.md`（QED-023
+> 时代留档）与 `three-table-schema.md`（三表模型，QED-028）。被取代文档保留只读、标注
+> Retired/Superseded，不再作为实现依据。新增/修改表必须先更新本文件，再写 Alembic 迁移。
+> **确认状态：暂定**——以代码现状为准的先行整理，正式稿五要素评审由 QED-044 收口。
+> 按 [ADR 0005](../adr/0005-shared-tables-doc-location.md)，数据库设计分两区：
+> **共享表（`qed_*`）**——跨项目契约（写权限、状态机写主体、Schema 变更流程）以
+> [共享表设计](shared-tables.md) 为准；**项目专用表（`qt_*`）**——本仓库私有，契约即本文件。
 
 ## 背景与动机
 
-现三表模型（qt_selections / qt_downloads / qt_sources，QED-028）存在以下缺口：
+原三表模型（qt_selections / qt_downloads / qt_sources，QED-028，已退役）存在以下缺口：
 
 1. **缺领域/课程层次**：领域（subject）只存在于 `courses/math.json` 静态 JSON，课程体系元数据
    （阶段/先修/别名）不在 DB，三项目无法共享；
@@ -28,29 +33,29 @@
 5. **粒度错位**：qt_selections 一条=一套书，「套」与「候选/决定/下载/验证」四段进度混杂，
    多卷教材靠 vols JSON 表达，下载与验收入口在 qt_downloads 跨表。
 
-2026-08-16 用户裁决：**重构为「领域 → 课程 → 知识行（教程/资料归类）→ 书行 → 渠道」五层模型**，
-领域/课程表为三项目共享（新前缀 `qed_*`），书行一行=一册/一卷/一个快照（取消册行表），
+2026-08-16 用户裁决：**重构为「领域 → 课程 → 教程（教程/资料归类）→ 书籍 → 渠道」五层模型**，
+领域/课程表为三项目共享（新前缀 `qed_*`），书籍一行=一册/一卷/一个快照（取消册行表），
 文件命名「物理名/展示名」分离，存量数据一次性迁移，旧表退役。
 
-## 表清单（5 张新表 + 2 张退役）
+## 表清单（6 张在用表）
 
 ```
 qed_domain（领域，共享 qed_*）
   └── qed_course（课程，共享 qed_*）
-        └── qt_knowledge（知识行，qt_* 私有：一套教程 / 一组课程延展资料）
-              └── qt_books（书行：一册/一卷/一个快照，候选→决定→下载→验证全生命周期）
+        └── qt_knowledge（教程，qt_* 私有：一套教程 / 一组课程延展资料）
+              └── qt_books（书籍：一册/一卷/一个快照，候选→决定→下载→验证全生命周期）
                     └── qt_sources（渠道尝试，一次一条）
+qt_tasks（后台任务，qt_* 私有：一行一个后台任务记录）
 ```
 
 | 表 | 中文表名 | 前缀 | 所有权 | 一行= | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| `qed_domain` | 领域表 | 共享 | QED-Tracker 建表维护，其他项目只读 | 一个学科（math；预留扩展） | 本轮新增（规划迁移 0006） |
-| `qed_course` | 课程表 | 共享 | 同上 | 一门课程（含阶段/先修/别名/顺序） | 本轮新增 |
-| `qt_knowledge` | 知识行表 | 私有 | QED-Tracker | kind=tutorial：一套教程；kind=other_material：课程延展资料归类 | 本轮新增 |
-| `qt_books` | 书行表 | 私有 | QED-Tracker | 一个文件单元（书的一册/一篇论文/一个博客快照） | 本轮新增 |
-| `qt_sources` | 渠道表 | 私有 | QED-Tracker | 一次渠道尝试 | 迁移重建（外键改挂 book_id） |
-| `qt_sources_legacy` | 渠道备份表 | 私有 | — | 0006 迁移改名保留的旧版渠道表快照 | 确认后由 `migrate --drop-legacy` 删除 |
-| `qt_selections` / `qt_downloads` | 旧选择/下载表 | 私有 | — | — | 存量迁移后退役（drop） |
+| `qed_domain` | 领域表 | 共享 | QED-Tracker 建表维护，其他项目只读 | 一个学科领域（math / math-advanced；扩展预留） | 在用（迁移 0006 建，0011 扩展） |
+| `qed_course` | 课程表 | 共享 | 同上 | 一门课程（含阶段/先修/别名/顺序） | 在用（迁移 0006 建，0012 扩展） |
+| `qt_knowledge` | 教程表 | 私有 | QED-Tracker | kind=tutorial：一套教程；kind=other_material：课程延展资料归类 | 在用 |
+| `qt_books` | 书籍表 | 私有 | QED-Tracker | 一个文件单元（书的一册/一篇论文/一个博客快照） | 在用 |
+| `qt_sources` | 渠道表 | 私有 | QED-Tracker | 一次渠道尝试 | 在用（0014 迁移重建，外键挂 book_id） |
+| `qt_tasks` | 任务表 | 私有 | QED-Tracker | 一个后台任务记录（REQ-032） | 在用（迁移 0016 建） |
 
 > 表/列中文注释：0007 迁移（`0007_table_comments`）从 `migrations/data/table_comments.json`
 > （UTF-8，唯一事实源）应用到真实库；ORM 模型 `comment=` 与新建库 `create_all` 保持一致。
@@ -59,7 +64,13 @@ qed_domain（领域，共享 qed_*）
 > 经 `scripts/apply_table_comments.py` 幂等应用到真实库（迁移加列不会自动应用注释，
 > 加列后须跑一次；2026-08-28 已全量对齐 qed_domain/qed_course）。
 
-## qed_domain 表结构（表1，共享）
+## 共享表（`qed_*`，跨项目契约）
+
+三项目可读；所有权与写权限（含 8900 离线降级直写例外）、exploration_stage 状态机写主体、
+Schema 变更流程的**契约事实源**为[共享表设计](shared-tables.md)，本区维护其 DDL 与列语义。
+`qed_llm_calls` 由根仓库建表维护，见下方存根节。
+
+### qed_domain 表结构（表1，共享）
 
 ```sql
 CREATE TABLE qed_domain (
@@ -68,11 +79,11 @@ CREATE TABLE qed_domain (
   description        TEXT          NOT NULL,           -- 学科介绍
   level              VARCHAR(50)   NOT NULL DEFAULT '',-- 探索范围（本科-硕士）
   scope              TEXT          NOT NULL,           -- 学科知识（管线暂不输出，置空）
-  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态（未开始/已生成/探索中/已完成）
-  classic_tracks     JSON          NOT NULL,           -- 课程方向 [{name,summary}] 0~4 项
+  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态（6 态契约见 shared-tables.md）
+  classic_tracks     JSON          NOT NULL,           -- 课程方向 [{name,summary,kind}] 0~4 项
   stages             JSON          NOT NULL,           -- 学习阶段顺序（无默认值，后续可变更）
-  path_results       JSON                              -- 学习流程（notes/edges/graph_td）
-  explore_pending    JSON                              -- 探索挂起信息（名称确认 name_check / 失败 error，REQ-067 B8）
+  path_results       JSON,                             -- 学习流程（notes/edges/graph_td）
+  explore_pending    JSON,                             -- 探索待确认载荷（REQ-067-B12：审阅结果/失败原因）
   created_by         VARCHAR(16)   NOT NULL DEFAULT '',
   updated_by         VARCHAR(16)   NOT NULL DEFAULT '',
   created_at         DATETIME      NOT NULL,
@@ -84,13 +95,13 @@ CREATE TABLE qed_domain (
 - 共享表：三项目可读；QED-Tracker 唯一写权限（Alembic 建表维护）。
 - `level`：探索范围（管线 domain@v2 输出），描述该领域的默认学习阶段范围。
 - `scope`：学科知识（领域边界描述），当前管线不输出，先置空。
-- `exploration_stage`：流程状态枚举（未开始→探索中→已完成；探索中→已生成→探索中重跑；探索中→失败）。
-  写主体=QED-Tracker（领域侧重 8901 驱动，REQ-067 B8 修订）。
-- `classic_tracks`：课程方向（管线 domain@v2 输出），JSON 数组 [{name,summary}]，0~4 项。
+- `exploration_stage`：流程状态枚举（未开始→已生成→探索中→待确认→已完成；探索中/待确认→
+  失败。6 态契约、explore_pending 载荷与写主体见[共享表设计](shared-tables.md)状态机节；
+  待确认/失败为 REQ-067-B10/B12 已裁决契约，**已实现**（迁移 0015 落地，库内为 6 态）。
+- `classic_tracks`：课程方向（管线 domain@v3 输出），JSON 数组 [{name,summary,kind}]，0~4 项
+  （kind=main 主干 / branch 分支）。
 - `stages`：学习阶段顺序，无默认值，后续根据 LLM 生成结果确定。
 - `path_results`：学习流程（管线 path@v4 输出），可空，包含 notes/edges/graph_td。
-- `explore_pending`：探索挂起信息（名称确认/失败诊断），终态为 null；结构
-  `{kind: name_confirm, name_check}` 或 `{kind: failed, error}`（迁移 0015，2026-08-30）。
 
 ## qed_course 表结构（表2，共享）
 
@@ -106,7 +117,8 @@ CREATE TABLE qed_course (
   prerequisites      JSON          NOT NULL,         -- list[str]：先修 course_id 数组（主知识链路 DAG）
   related_targets    JSON          NOT NULL,         -- list[str]：已通过验收的关联 catalog 目标（现为空，随验收回填）
   description        VARCHAR(1000) NOT NULL DEFAULT '',-- 课程介绍
-  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态（未开始/已生成/探索中/已完成）
+  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态（6 态契约见 shared-tables.md）
+  explore_pending    JSON,                             -- 探索待确认载荷（REQ-067-B12：tutorials 审阅结果/失败原因）
   created_by         VARCHAR(16)   NOT NULL DEFAULT '',
   updated_by         VARCHAR(16)   NOT NULL DEFAULT '',
   created_at         DATETIME      NOT NULL,
@@ -120,13 +132,24 @@ CREATE TABLE qed_course (
 - `track`：课程所属学术方向（管线 courses@v4 输出），如 "分析学"/"代数学"。
 - `stage`：所属学习阶段（纵向），来自 qed_domain.stages。
 - `description`：课程介绍（原 note 字段，2026-08-27 重命名与 qed_domain 同步）。
-- `exploration_stage`：流程状态枚举（未开始→已生成→探索中→已完成）。
+- `exploration_stage`：流程状态枚举（6 态，同 qed_domain，见上）；`explore_pending` 载荷与
+  写主体契约见[共享表设计](shared-tables.md)（6 态已实现，迁移 0015）。
 
 - **`courses/math.json` 退役**（2026-08-16 用户裁决）：表为课程体系唯一事实源；CLI/8903 改读表；
   `subject`/`stages` 迁入 qed_domain，`courses[]` 迁入本表（sort_order=数组序）。
 - `related_targets` 规则延续主链路决策：只关联已通过二次确认评估（人工验收 approved）的课程目标。
 
-## qt_knowledge 表结构（表3，私有）
+### qed_llm_calls 表结构（LLM 调用审计，共享）
+
+由 QED-Engine 后端 `call_log.py` 幂等建表维护（不在本仓库 Alembic 迁移链内），三项目均可写
+（`service` 字段区分调用方）。DDL、列语义、写入路径与模板编号登记见
+[共享表设计](shared-tables.md)表3，本文件不重复维护。
+
+## 项目专用表（`qt_*`，QED-Tracker 私有）
+
+仅本仓库读写，契约即本文件；对其他项目无同步义务。
+
+### qt_knowledge 表结构（表3，私有）
 
 一行 = 一套教程（kind=tutorial）或 一组课程延展资料归类（kind=other_material）。
 
@@ -158,23 +181,23 @@ CREATE TABLE qt_knowledge (
   KEY ix_qt_knowledge_course (course_id),
   KEY ix_qt_knowledge_domain (domain_id),
   KEY ix_qt_knowledge_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识行表：登记一套教程或一组课程延展资料，承载教材/习题集简介与决定引用，指引资源检索';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='教程表：登记一套教程或一组课程延展资料，承载教材/习题集简介与决定引用，指引资源检索';
 ```
 
 - **状态机**：`draft`（探索中）→ `confirmed`（定稿，简介/决定引用确认）→ `completed`
-  （所辖书行全部 verified）；`rejected` / `superseded` 终态（彻底隐藏，仅 DB 留痕）。
+  （所辖书籍全部 verified）；`rejected` / `superseded` 终态（彻底隐藏，仅 DB 留痕）。
 - **创建时机**（2026-08-16 用户裁决）：探索开始时建 draft（mainline new 落库），定稿时
-  （mainline review）LLM 预填两段简介 + 人工审，转 confirmed；下载进度不冗余在知识行
-  （由书行聚合）。
+  （mainline review）LLM 预填两段简介 + 人工审，转 confirmed；下载进度不冗余在教程
+  （由书籍聚合）。
 - **决定引用**：`textbook_ref` / `exercise_ref` 存 `{title, version, authors}`（书名级引用，
   不含逐册；authors 为 list[str]，QED-036 补——教程行规范命名「教程{set_no}：书名（作者）」
-  取此处 title + authors）；多卷书行同 `title`（part 不同）自动归入该引用。候选/决定/下载/
-  验证状态仍在书行。
+  取此处 title + authors）；多卷书籍同 `title`（part 不同）自动归入该引用。候选/决定/下载/
+  验证状态仍在书籍。
 
-## qt_books 表结构（表4，私有）
+### qt_books 表结构（表4，私有）
 
 一行 = 一册/一卷/一个快照（书的一卷、一篇论文、一个博客快照）；**取消独立册行表**
-（2026-08-16 用户裁决）：多卷按「XXX 第一册 / 第二册」写成独立书行（part 区分）。
+（2026-08-16 用户裁决）：多卷按「XXX 第一册 / 第二册」写成独立书籍（part 区分）。
 
 ```sql
 CREATE TABLE qt_books (
@@ -214,7 +237,7 @@ CREATE TABLE qt_books (
   UNIQUE KEY uq_qt_books_sha256 (sha256),
   KEY ix_qt_books_knowledge (knowledge_id),
   KEY ix_qt_books_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='书行表：登记一册/一卷/一个快照，跟踪候选→决定→下载→验证的完整生命周期';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='书籍表：登记一册/一卷/一个快照，跟踪候选→决定→下载→验证的完整生命周期';
 ```
 
 - **唯一性**：`uq_qt_books_knowledge_title_part`（同套同书同卷不重复建行）；
@@ -234,7 +257,7 @@ CREATE TABLE qt_books (
 
   - `downloading → failed`（下载失败，可重试 → downloading）；`candidate → downloaded`
     允许（人工下载登记 register 直转，需 sha256+path 已登记）。
-  - `verified` 为终态（知识行 completed 由所辖书行全 verified 聚合触发）；
+  - `verified` 为终态（教程 completed 由所辖书籍全 verified 聚合触发）；
     `superseded` 允许从 candidate/decided/downloaded（版本换代留痕）。
   - rejected / superseded 为终态（彻底隐藏：任何接口默认过滤，仅 DB 留痕）。
 - **命名规矩（2026-08-16 用户裁决）**：下载时 `.part` 临时区 → 校验通过后按 `file_name`
@@ -243,12 +266,11 @@ CREATE TABLE qt_books (
 - **absolute_path**：QED-Engine dataset 目录下的绝对路径（如
   `D:\coding\QED-Engine\dataset\qed-tracker\raw\books\...`），验证/移交后回填，供人工打开核对。
 
-## qt_sources 表结构（表5，私有）
+### qt_sources 表结构（表5，私有）
 
-现状延续，仅外键更名挂书行。**0014 迁移（2026-08-28）**：alembic 链此前遗留旧三表结构
-（download_id），致 add_source/list_sources 报 Unknown column 'book_id'；0014 将旧表改名
-qt_sources_legacy 留档后按本节 DDL 重建（download_id → book_id 的行级映射仍由
-migrate_knowledge.py 在真实存量库上完成）。
+现状延续，仅外键更名挂书籍。**0014 迁移（2026-08-28）**：修复 alembic 链遗留的旧结构
+（download_id），按本节 DDL 重建并改挂 book_id 外键（真实存量行级映射由
+migrate_knowledge.py 完成）。
 
 ```sql
 CREATE TABLE qt_sources (
@@ -275,6 +297,32 @@ CREATE TABLE qt_sources (
   固化）为主，渠道优化流程从下一门课程开始**；表结构不变，记录即优化依据。人工获取书的
   自动渠道保留 ok=0 失败留痕（note 标注"自动下载失败，转人工"），成功渠道归因以 manual 为准。
 
+### qt_tasks 表结构（表6，私有）
+
+一行 = 一个后台任务记录（REQ-032），替代 `meta/tasks/` JSON 文件。迁移 0016 建表。
+
+```sql
+CREATE TABLE qt_tasks (
+  task_id         VARCHAR(100)  NOT NULL,         -- PK：任务标识
+  type            VARCHAR(50)   NOT NULL,         -- 任务类型（book_download / domain_explore / course_explore）
+  status          VARCHAR(24)   NOT NULL,         -- queued / running / succeeded / failed
+  params          JSON          NOT NULL,         -- 任务参数
+  progress        INT           NOT NULL DEFAULT 0, -- 进度（0-100）
+  message         TEXT          NOT NULL,          -- 当前状态消息
+  result          JSON          NULL,             -- 成功结果
+  error           TEXT          NOT NULL,          -- 失败错误信息
+  created_at      DATETIME      NOT NULL,
+  updated_at      DATETIME      NOT NULL,
+  PRIMARY KEY (task_id),
+  KEY ix_qt_tasks_status (status),
+  KEY ix_qt_tasks_type (type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台任务表：一行一个后台任务记录，替代 meta/tasks/ JSON 文件';
+```
+
+- **状态机**：`queued`（排队中）→ `running`（执行中）→ `succeeded`（成功）/ `failed`（失败）。
+- **写权限**：QED-Tracker 唯一写权限（TaskManager 通过 `manager.submit()` 写入，`manager.complete_task()` 更新）。
+- **清理策略**：succeeded 记录可定期清理；failed 记录保留用于排查。
+
 ## 状态机汇总与迁移合法性
 
 | 层 | 状态机 | 终态 | 非法迁移（API 409） |
@@ -283,23 +331,21 @@ CREATE TABLE qt_sources (
 | qt_books | candidate → decided → downloading → downloaded → verified；candidate/decided/downloaded → rejected；downloading → failed（→downloading 重试）；downloading → decided（cancel 取消复位，仅 downloading，2026-08-28）；candidate → downloaded（register 直转，需 sha256+path）；candidate/decided/downloaded → superseded | verified、rejected、superseded | 终态任何迁移；downloaded 前须已登记 sha256+path；candidate → failed 不允许 |
 | qt_sources | 无（仅 ok 标记） | — | — |
 
-## 一次性存量迁移（迁移 0006 之后执行，服务端脚本）
+## 迁移与存量说明
 
-| 存量 | 映射目标 |
-| --- | --- |
-| `src/qed_tracker/migrations/data/math.json` | qed_domain（subject/stages/name/description）+ qed_course（courses[]，sort_order=数组序） |
-| `qt_selections`（一套书） | qt_knowledge（kind=tutorial；set_no；name=套名；textbook_ref/exercise_ref 由决定书行回填；简介先留空待 LLM 预填）+ 拆出书行 |
-| `qt_selections.authors/roles/version` | 各书行 |
-| `qt_downloads`（一册） | qt_books（一册一行：title 拆分卷名 → part；display_title=title+part；sha256/relative_path/page_count/status 映射；absolute_path 由 relative_path 拼数据根） |
-| `qt_sources` | qt_sources（外键改挂新 book_id） |
-
-- 幂等可重放：以 `knowledge_id`（=套内容 MD5）与书行 `sha256`/`title+part` 为幂等键。
-- 迁移前全量备份快照（迁移测试用）；确认无误后 drop `qt_selections` / `qt_downloads`。
-- 主链路 JSON（`meta/main-line/`）存量已按 QED-028 并入三表，随本次迁移一并入新表。
+- 建表与存量迁移均已执行完成：迁移 0006 建五层表（课程种子 `migrations/data/math.json`）+
+  `application/migrate_knowledge.py` 一次性迁入存量（以 `knowledge_id` 与书籍
+  `sha256`/`title+part` 为幂等键，可重放）；`qt_sources` 经 0014 重建（外键挂 book_id）。
+- 迁移 0015（`add_explore_pending`）：为 `qed_domain`/`qed_course` 新增 `explore_pending` JSON
+  列，承载探索待确认载荷（REQ-067-B12）；6 态状态机生效。
+- 迁移 0016（`qt_tasks`）：新建 `qt_tasks` 表（REQ-032），替代 `meta/tasks/` JSON 文件，
+  一行一个后台任务记录（task_id/type/status/params/progress/message/result/error）。
+- 历史映射细节（旧三表 → 五层的逐表映射、备份快照策略）见 Git 历史与
+  [共享表设计](shared-tables.md)迁移史；退役旧表已清理，不再列于本文件表清单。
 
 ## 共享表所有权与根仓库契约变更
 
-- **表命名空间**（根仓库 [ADR 0009](../../../docs/adr/0009-shared-qed-tables.md) 补充 0003，需同步 QED-Engine）：
+- **表命名空间**（根仓库 [ADR 0009](../../../docs/history/adr/v0.1/0009-shared-qed-tables.md) 补充 0003，需同步 QED-Engine）：
   - `qt_*`：QED-Tracker 私有；`af_*`：Axiom-Flow 私有（不变）；
   - **新增 `qed_*` 共享前缀表族**（qed_domain / qed_course）：所有权 QED-Tracker
     （Alembic 建表维护），其他项目只读不写；共享表 schema 变更须先经根仓库登记。
@@ -313,7 +359,7 @@ CREATE TABLE qt_sources (
 - CLI/8903：课程体系读取改读 qed_course（`courses list/show` 语义不变）；书单/主链路
   `mainline` 命令族改读写 qt_knowledge/qt_books（new/review/download/verify/approve/reject 映射
   到新状态机）；channels 汇总仍读 qt_sources。
-- 书行 `candidate → decided` 对应旧表1 `candidate → confirmed`；`verified` 对应旧表2 `approved`。
+- 书籍 `candidate → decided` 对应旧表1 `candidate → confirmed`；`verified` 对应旧表2 `approved`。
 - 论文/博客：进入 qt_books（kind=paper/blog），快照落盘统一链路（HTML→PDF 或归档，实现计划明确）。
 
 ### 课程体系只读端点（QED-033，8901 透出）
@@ -324,7 +370,7 @@ CREATE TABLE qt_sources (
 
 | 方法/路径 | 响应 | 错误语义 |
 | --- | --- | --- |
-| `GET /api/v1/courses` | `[{domain_id, name, description, stages, courses:[{course_id, name, aliases, stage, prerequisites, related_targets, note}]}]`；domains 按 domain_id 有序，courses 按 sort_order 有序 | DB 未配置 → 409「数据库未配置」 |
+| `GET /api/v1/courses` | `[{domain_id, name, description, level, classic_tracks, exploration_stage, path_results, stages, courses:[{course_id, name, aliases, track, stage, prerequisites, related_targets, description, exploration_stage}]}]`；domains 按 domain_id 有序，courses 按 sort_order 有序 | DB 未配置 → 409「数据库未配置」 |
 | `GET /api/v1/courses/{domain_id}` | 单领域 curriculum（同上单元素） | 未知 domain → 404；DB 未配置 → 409 |
 
 - 字段与 `src/qed_tracker/courses.py` 的 `Curriculum`/`Course` dataclass 一致（课程不透出
@@ -332,9 +378,9 @@ CREATE TABLE qt_sources (
 - 支撑根仓库 REQ-035「课程体系数据源切换」（8900 `tracker_client.list_courses` 透传本端点，
   前端学习中心 courseMeta 改读本端点）。
 
-### 书行响应契约（QED-034，8901 透出）
+### 书籍响应契约（QED-034，8901 透出）
 
-`GET /api/v1/knowledge/{knowledge_id}` 的书行数组（`books[]`）与书行相关响应，每行**必含**
+`GET /api/v1/knowledge/{knowledge_id}` 的书籍数组（`books[]`）与书籍相关响应，每行**必含**
 `title` 与 `display_title`（源自 `QtBook.to_dict()`，全列透出）：
 
 - `title`：规范化书名（不含卷号，如 微积分学教程）。
@@ -362,16 +408,16 @@ CREATE TABLE qt_sources (
 
 1. **替换重构**：新表族替代三表，存量迁移后旧表退役（不并行保留）。
 2. **拆三表层次**：领域/课程/知识（教程层）三张表；领域/课程为三项目共享表（新前缀 `qed_*`），
-   知识行一行=一套教程。
+   教程一行=一套教程。
 3. **共享机制**：改根仓库契约（ADR 0003 / database-design.md / service-contracts.md），
    QED-Tracker 建表维护，其他项目只读。
-4. **知识行粒度**：一行=一套教程；教程选择（教材/习题集）为决定引用（书名+版本），
-   候选书目存书行（状态机四段：候选/决定/下载成功/确认正确）。
-5. **简介生成时机**：探索定稿时 LLM 预填 + 人工审（指引后续检索）；知识行探索开始即建
+4. **教程粒度**：一行=一套教程；教程选择（教材/习题集）为决定引用（书名+版本），
+   候选书目存书籍（状态机四段：候选/决定/下载成功/确认正确）。
+5. **简介生成时机**：探索定稿时 LLM 预填 + 人工审（指引后续检索）；教程探索开始即建
    draft，定稿转 confirmed。
 6. **课程 JSON 退役**：courses/math.json 数据迁入 qed_course，表为主、JSON 退役。
-7. **多卷教材建模**：取消册行表，书行一行=一册/一卷/一个快照（part 区分）；教材含习题 →
-   书行 roles 标注，不另建行；论文/博客入书行（kind=paper/blog），知识行 kind=other_material
+7. **多卷教材建模**：取消册行表，书籍一行=一册/一卷/一个快照（part 区分）；教材含习题 →
+   书籍 roles 标注，不另建行；论文/博客入书籍（kind=paper/blog），教程 kind=other_material
    作为课程延展资料归类行。
 8. **博客落盘**：快照落盘统一链路（非 PDF 也产生文件），不存 URL 了事。
 9. **文件命名**：物理名（display slug + 短 hash）/ 展示名（不含 hash）分离；下载校验成功后

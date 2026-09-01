@@ -53,11 +53,29 @@ class PaperService:
         *,
         advisor: PaperAdvisor | None = None,
         selections: SelectionStore | None = None,
+        session_factory=None,
     ):
         self.provider = provider
         self.resources = resources
         self.advisor = advisor
-        self.selections = selections or SelectionStore(resources.inventory.data_root)
+        if selections is not None:
+            self.selections = selections
+        elif session_factory is not None:
+            self.selections = SelectionStore(session_factory)
+        else:
+            # 无 MySQL 时创建 SQLite in-memory fallback（兼容测试场景）
+            from sqlalchemy import create_engine as _ce
+            from sqlalchemy.orm import sessionmaker as _sm
+            from sqlalchemy.pool import StaticPool
+            from qed_tracker.db.models import Base as _Base
+            _engine = _ce(
+                "sqlite://", future=True,
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+            )
+            _Base.metadata.create_all(_engine)
+            _factory = _sm(bind=_engine, expire_on_commit=False)
+            self.selections = SelectionStore(lambda: _factory())
 
     def close(self) -> None:
         # ExitStack still closes the remaining clients if an earlier close fails.

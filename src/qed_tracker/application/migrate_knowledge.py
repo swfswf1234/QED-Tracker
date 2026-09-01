@@ -3,7 +3,7 @@
 流程（docs/design/database-schema.md §一次性存量迁移）：
 1. migrate_curriculum：migrations/data/math.json → qed_domain + qed_course（sort_order=数组序，幂等 upsert；
    重跑会用 math.json 覆盖 name/aliases/stage/note —— 该数据由 math.json 拥有）；
-2. migrate_legacy_data：qt_selections → qt_knowledge + 拆书行；qt_downloads → qt_books
+2. migrate_legacy_data：qt_selections → qt_knowledge + 拆书籍；qt_downloads → qt_books
    （vol → part，旧 approved → verified，sha256 幂等）；qt_sources 改名 qt_sources_legacy 重建挂 book_id；
 3. 旧表（qt_selections / qt_downloads / qt_sources_legacy）默认保留为备份快照，
    确认无误后用户显式 drop_legacy=True 才 drop。

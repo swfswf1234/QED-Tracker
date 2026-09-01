@@ -109,7 +109,9 @@ def test_recommendation_without_eligible_candidate_returns_report(tmp_path):
     report = service.recommend(_profile())
     assert report["status"] == "no_recommendations"
     assert report["recommendations"] == []
-    assert Path(service.selections.root / f"{report['selection_id']}.json").is_file()
+    # REQ-032：验证选择报告已持久化到数据库
+    loaded = service.selections.load(report["selection_id"])
+    assert loaded["selection_id"] == report["selection_id"]
     service.close()
 
 

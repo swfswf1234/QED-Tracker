@@ -1,10 +1,13 @@
 # 文档体系范本对齐设计（docs-restructure-alignment）
 
-设计状态：Accepted
-实现状态：Implemented
-最后更新：2026-08-21
+设计状态：Historical
+实现状态：Completed
+最后更新：2026-08-31
 需求方：QED-Engine 根仓库（REQ-002 文档治理，依据 ADR 0010 文档体系分层与版本治理）
 关联 ADR：`docs/adr/0001-tracker-service-architecture.md`
+归档说明：首轮文档体系对齐（2026-08-20~21）已完成使命；治理规则现行版本见
+`docs/standards/doc-governance.md`，本轮（2026-08-31）新对齐登记见
+`docs/adr/0004-standards-governance-alignment.md`。2026-08-31 经用户裁决归档至 `history/baselines/`。
 
 ## 背景
 

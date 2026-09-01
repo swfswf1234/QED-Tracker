@@ -1,8 +1,11 @@
 # 治理契约范本对齐（QED-022，承接根仓库 REQ-023）
 
+归档状态：已归档
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-21
+最后更新：2026-09-01
+归档说明：QED-022 已稳固实现（契约头六字段守护、守护面清单裁剪、新增流程采纳），确认状态为暂定，
+已实现即归档。
 关联代码：`tests/test_documentation.py`（8 个守护测试已声明契约头六字段）
 关联测试：`tests/test_documentation.py`（守护面清单五类：architecture/design/standards/guides/trackers）
 关联 ADR：—（承接根仓库 ADR 0006，见背景）

@@ -22,6 +22,7 @@ import json
 from collections.abc import Callable, Iterable
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -38,18 +39,24 @@ class DomainNotEmpty(RuntimeError):
 
 
 class CourseHasKnowledge(RuntimeError):
-    """删除有知识行的课程。"""
+    """删除有教程的课程。"""
 
 
 class AdoptionConflict(RuntimeError):
-    """A2 采纳冲突：同课程套号已被不同知识行占用。"""
+    """A2 采纳冲突：同课程套号已被不同教程占用。"""
+
+
+class InvalidExplorationTransition(RuntimeError):
+    """探索状态迁移非法：当前态不允许执行该操作（REQ-067-B12）。"""
 
 
 _HIDDEN_KNOWLEDGE_STATUSES = {KnowledgeStatus.REJECTED.value, KnowledgeStatus.SUPERSEDED.value}
 _HIDDEN_BOOK_STATUSES = {BookStatus.REJECTED.value, BookStatus.SUPERSEDED.value}
 
-_UNSET = object()
-"""哨兵：区分「未传」与「显式置 None」（explore_pending 清空语义，REQ-067 B8）。"""
+# Sentinel to distinguish "not provided" from "explicitly set to None".
+_MISSING = object()
+# Special value to explicitly clear explore_pending to NULL.
+CLEAR = "__CLEAR__"
 
 _KNOWLEDGE_TRANSITIONS: dict[KnowledgeStatus, set[KnowledgeStatus]] = {
     KnowledgeStatus.DRAFT: {KnowledgeStatus.CONFIRMED, KnowledgeStatus.REJECTED},
@@ -114,7 +121,7 @@ class KnowledgeRepository:
 
     @property
     def session_factory(self) -> Callable[[], Session]:
-        """公开只读访问：探索域组合操作需与知识行共享同一事务工厂。"""
+        """公开只读访问：探索域组合操作需与教程共享同一事务工厂。"""
         return self._session_factory
 
     # ---------------- 共享表只读（qed_domain / qed_course 所有权在建表与种子脚本） ----------------
@@ -207,22 +214,18 @@ class KnowledgeRepository:
             session.commit()
             return row
 
-    def update_domain(self, domain_id: str, *, name: str | None = None,
-                      description: str | None = None, stages: list[str] | None = None,
-                      level: str | None = None, scope: str | None = None,
+    def update_domain(self, domain_id: str, *, description: str | None = None,
+                      stages: list[str] | None = None, level: str | None = None,
+                      scope: str | None = None,
                       classic_tracks: list[dict[str, Any]] | None = None,
                       path_results: dict[str, Any] | None = None,
                       exploration_stage: str | None = None,
-                      explore_pending: dict[str, Any] | None | object = _UNSET) -> QedDomain:
-        """更新领域（name 仅探索名确认路径可写——REQ-067 B8；path_results/
-        exploration_stage/explore_pending 属探索产物，本仓库写方；explore_pending
-        显式传 None 即清空，未传保持现状）。"""
+                      explore_pending: dict[str, Any] | None = _MISSING) -> QedDomain:
+        """更新领域（name 不可变；path_results/exploration_stage/explore_pending 属探索产物，本仓库写方）。"""
         with self._session_factory() as session:
             row = session.get(QedDomain, domain_id)
             if row is None:
                 raise KeyError(f"领域不存在：{domain_id}")
-            if name is not None:
-                row.name = name
             if description is not None:
                 row.description = description
             if stages is not None:
@@ -237,8 +240,8 @@ class KnowledgeRepository:
                 row.path_results = path_results
             if exploration_stage is not None:
                 row.exploration_stage = exploration_stage
-            if explore_pending is not _UNSET:
-                row.explore_pending = explore_pending
+            if explore_pending is not _MISSING:
+                row.explore_pending = None if explore_pending == CLEAR else explore_pending
             row.updated_at = utc_now()
             session.commit()
             session.refresh(row)
@@ -247,8 +250,10 @@ class KnowledgeRepository:
     def update_course(self, course_id: str, *, stage: str | None = None,
                       sort_order: int | None = None, description: str | None = None,
                       aliases: list[str] | None = None, track: str | None = None,
-                      prerequisites: list[str] | None = None) -> QedCourse:
-        """更新课程（name 不可变；exploration_stage 由探索流程管理）。"""
+                      prerequisites: list[str] | None = None,
+                      exploration_stage: str | None = None,
+                      explore_pending: dict[str, Any] | None = _MISSING) -> QedCourse:
+        """更新课程（name 不可变；exploration_stage/explore_pending 由探索流程管理）。"""
         with self._session_factory() as session:
             row = session.get(QedCourse, course_id)
             if row is None:
@@ -265,13 +270,98 @@ class KnowledgeRepository:
                 row.track = track
             if prerequisites is not None:
                 row.prerequisites = prerequisites
+            if exploration_stage is not None:
+                row.exploration_stage = exploration_stage
+            if explore_pending is not _MISSING:
+                row.explore_pending = None if explore_pending == CLEAR else explore_pending
             row.updated_at = utc_now()
             session.commit()
             session.refresh(row)
             return row
 
+    # --- REQ-067-B12: apply-results / re-explore ---
+
+    def apply_domain_results(self, domain_id: str, selected_courses: list[str]) -> int:
+        """确认领域探索结果：exploration_stage -> 已完成，清空 explore_pending，删除未选课程。
+
+        返回保留课程数。仅 当 exploration_stage == '待确认' 时可调用。
+        """
+        with self._session_factory() as session:
+            domain = session.get(QedDomain, domain_id)
+            if domain is None:
+                raise KeyError(f"领域不存在：{domain_id}")
+            if domain.exploration_stage != "待确认":
+                raise InvalidExplorationTransition(
+                    f"当前状态 {domain.exploration_stage}，需要 待确认"
+                )
+            domain.exploration_stage = "已完成"
+            domain.explore_pending = None
+            domain.updated_at = utc_now()
+            # 删除未选课程（QtKnowledge/QtBook/QtSource 由数据库 ON DELETE CASCADE 或手动清理）
+            all_courses = list(session.scalars(
+                select(QedCourse).where(QedCourse.domain_id == domain_id)
+            ))
+            kept = 0
+            for course in all_courses:
+                if course.course_id in selected_courses:
+                    kept += 1
+                else:
+                    # 手动级联删除子表
+                    kn_ids = [
+                        kn.knowledge_id for kn in session.scalars(
+                            select(QtKnowledge).where(QtKnowledge.course_id == course.course_id)
+                        )
+                    ]
+                    for kid in kn_ids:
+                        session.execute(
+                            sa.delete(QtSource).where(QtSource.book_id.in_(
+                                sa.select(QtBook.book_id).where(QtBook.knowledge_id == kid)
+                            ))
+                        )
+                        session.execute(sa.delete(QtBook).where(QtBook.knowledge_id == kid))
+                    session.execute(sa.delete(QtKnowledge).where(QtKnowledge.course_id == course.course_id))
+                    session.delete(course)
+            session.commit()
+            return kept
+
+    def apply_course_results(self, course_id: str, selected_tutorials: list[str]) -> int:
+        """确认课程探索结果：exploration_stage -> 已完成，清空 explore_pending，删除未选教程。
+
+        返回保留教程数。仅 当 exploration_stage == '待确认' 时可调用。
+        """
+        with self._session_factory() as session:
+            course = session.get(QedCourse, course_id)
+            if course is None:
+                raise KeyError(f"课程不存在：{course_id}")
+            if course.exploration_stage != "待确认":
+                raise InvalidExplorationTransition(
+                    f"当前状态 {course.exploration_stage}，需要 待确认"
+                )
+            course.exploration_stage = "已完成"
+            course.explore_pending = None
+            course.updated_at = utc_now()
+            # 删除未选教程
+            all_kn = list(session.scalars(
+                select(QtKnowledge).where(QtKnowledge.course_id == course_id)
+            ))
+            kept = 0
+            for kn in all_kn:
+                if kn.knowledge_id in selected_tutorials:
+                    kept += 1
+                else:
+                    # 手动级联删除子表
+                    session.execute(
+                        sa.delete(QtSource).where(QtSource.book_id.in_(
+                            sa.select(QtBook.book_id).where(QtBook.knowledge_id == kn.knowledge_id)
+                        ))
+                    )
+                    session.execute(sa.delete(QtBook).where(QtBook.knowledge_id == kn.knowledge_id))
+                    session.delete(kn)
+            session.commit()
+            return kept
+
     def delete_course(self, course_id: str) -> None:
-        """删除课程：有知识行 → CourseHasKnowledge。"""
+        """删除课程：有教程 → CourseHasKnowledge。"""
         with self._session_factory() as session:
             row = session.get(QedCourse, course_id)
             if row is None:
@@ -280,7 +370,7 @@ class KnowledgeRepository:
                 select(func.count()).select_from(QtKnowledge).where(QtKnowledge.course_id == course_id)
             )
             if kn_count:
-                raise CourseHasKnowledge(f"课程 {course_id} 仍有 {kn_count} 条知识行，禁止删除")
+                raise CourseHasKnowledge(f"课程 {course_id} 仍有 {kn_count} 条教程，禁止删除")
             session.delete(row)
             session.commit()
 
@@ -351,10 +441,10 @@ class KnowledgeRepository:
         return row
 
     def adopt_tutorials(self, course_id: str, tutorials: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """A2 课程知识采纳：每套一条 draft 知识行，预填 set_no/name/双 ref/双 intro。
+        """A2 课程知识采纳：每套一条 draft 教程，预填 set_no/name/双 ref/双 intro。
 
         幂等：同 course+set_no+name（id 规则 kn_md5(...)）命中 → 返回既有行（existing=True），
-        不改动已落库内容；同 set_no 被不同知识行占用 → AdoptionConflict（端点映射 409）。
+        不改动已落库内容；同 set_no 被不同教程占用 → AdoptionConflict（端点映射 409）。
         单事务批量提交，逐套返回 {knowledge_id, set_no, name, status, existing}。
         """
         with self._session_factory() as session:
@@ -383,7 +473,7 @@ class KnowledgeRepository:
                 conflict = by_set.get(set_no)
                 if conflict is not None:
                     raise AdoptionConflict(
-                        f"课程 {course_id} 套号 {set_no} 已被知识行 "
+                        f"课程 {course_id} 套号 {set_no} 已被教程 "
                         f"{conflict.knowledge_id}（{conflict.name}）占用"
                     )
                 row = self.build_tutorial_row(domain_id=domain_id, course_id=course_id,
@@ -438,10 +528,10 @@ class KnowledgeRepository:
         with self._session_factory() as session:
             row = session.get(QtKnowledge, knowledge_id)
             if row is None:
-                raise KeyError(f"知识行不存在：{knowledge_id}")
+                raise KeyError(f"教程不存在：{knowledge_id}")
             current = KnowledgeStatus(row.status)
             if target not in _KNOWLEDGE_TRANSITIONS[current]:
-                raise InvalidTransition(f"知识行状态迁移非法：{current.value} → {target.value}")
+                raise InvalidTransition(f"教程状态迁移非法：{current.value} → {target.value}")
             row.status = target.value
             for key, value in fields.items():
                 setattr(row, key, value)
@@ -470,13 +560,13 @@ class KnowledgeRepository:
         )
 
     def complete_knowledge(self, knowledge_id: str) -> QtKnowledge:
-        """confirmed → completed（所辖非隐藏书行全部 verified 聚合触发；无书行或全隐藏则不允许）。"""
+        """confirmed → completed（所辖非隐藏书籍全部 verified 聚合触发；无书籍或全隐藏则不允许）。"""
         with self._session_factory() as session:
             row = session.get(QtKnowledge, knowledge_id)
             if row is None:
-                raise KeyError(f"知识行不存在：{knowledge_id}")
+                raise KeyError(f"教程不存在：{knowledge_id}")
             if row.status != KnowledgeStatus.CONFIRMED.value:
-                raise InvalidTransition(f"知识行状态迁移非法：{row.status} → completed")
+                raise InvalidTransition(f"教程状态迁移非法：{row.status} → completed")
             visible = session.scalar(
                 select(func.count())
                 .select_from(QtBook)
@@ -484,7 +574,7 @@ class KnowledgeRepository:
                 .where(QtBook.status.not_in(_HIDDEN_BOOK_STATUSES))
             )
             if not visible:
-                raise InvalidTransition("知识行没有非隐藏书行，不能完成")
+                raise InvalidTransition("教程没有非隐藏书籍，不能完成")
             pending = session.scalar(
                 select(func.count())
                 .select_from(QtBook)
@@ -493,11 +583,11 @@ class KnowledgeRepository:
                 .where(QtBook.status.not_in(_HIDDEN_BOOK_STATUSES))
             )
             if pending:
-                raise InvalidTransition("存在未验证（verified）的书行，不能完成知识行")
+                raise InvalidTransition("存在未验证（verified）的书籍，不能完成教程")
             row.status = KnowledgeStatus.COMPLETED.value
             row.completed_at = utc_now()
             row.updated_at = utc_now()
-            # G2 修复（QED-050）：课程下全部非隐藏知识行 completed 时回写课程探索终态。
+            # G2 修复（QED-050）：课程下全部非隐藏教程 completed 时回写课程探索终态。
             remaining = session.scalar(
                 select(func.count())
                 .select_from(QtKnowledge)
@@ -561,7 +651,7 @@ class KnowledgeRepository:
             if row is None:
                 knowledge = session.get(QtKnowledge, knowledge_id)
                 if knowledge is None:
-                    raise KeyError(f"知识行不存在：{knowledge_id}")
+                    raise KeyError(f"教程不存在：{knowledge_id}")
                 row = QtBook(
                     book_id=book_id,
                     knowledge_id=knowledge_id,
@@ -603,10 +693,10 @@ class KnowledgeRepository:
         with self._session_factory() as session:
             row = session.get(QtBook, book_id)
             if row is None:
-                raise KeyError(f"书行不存在：{book_id}")
+                raise KeyError(f"书籍不存在：{book_id}")
             current = BookStatus(row.status)
             if target not in _BOOK_TRANSITIONS[current]:
-                raise InvalidTransition(f"书行状态迁移非法：{current.value} → {target.value}")
+                raise InvalidTransition(f"书籍状态迁移非法：{current.value} → {target.value}")
             row.status = target.value
             for key, value in fields.items():
                 setattr(row, key, value)
@@ -638,10 +728,10 @@ class KnowledgeRepository:
         """
         current = self.get_book(book_id, include_hidden=True)
         if current is None:
-            raise KeyError(f"书行不存在：{book_id}")
+            raise KeyError(f"书籍不存在：{book_id}")
         if current.status != BookStatus.DOWNLOADING:
             raise InvalidTransition(
-                f"书行状态迁移非法：{current.status} → {BookStatus.DECIDED.value}（仅 downloading 可取消）"
+                f"书籍状态迁移非法：{current.status} → {BookStatus.DECIDED.value}（仅 downloading 可取消）"
             )
         return self._transition_book(book_id, BookStatus.DECIDED, review_note=note.strip(), updated_by=by)
 
@@ -671,10 +761,10 @@ class KnowledgeRepository:
                 return existing
             row = session.get(QtBook, book_id)
             if row is None:
-                raise KeyError(f"书行不存在：{book_id}")
+                raise KeyError(f"书籍不存在：{book_id}")
             current = BookStatus(row.status)
             if current not in (BookStatus.DOWNLOADING, BookStatus.CANDIDATE):
-                raise InvalidTransition(f"书行状态迁移非法：{current.value} → downloaded")
+                raise InvalidTransition(f"书籍状态迁移非法：{current.value} → downloaded")
             row.sha256 = sha256
             row.relative_path = relative_path
             row.absolute_path = absolute_path

@@ -1,7 +1,7 @@
 # 设计索引
 
 状态：Current
-最后更新：2026-08-20
+最后更新：2026-08-31
 
 文档类别固定：设计文档按下列类别维护，不随意增加；新能力先入 [待办列表](../trackers/todo.md)
 为 Plan，方案确定后再进入设计文档（如套标记字段 set_no，见
@@ -38,13 +38,13 @@
 
 ## 数据设计
 
-- [共享表设计](shared-tables.md)（Accepted/Implemented，需求方 QED-Engine）：qed 库三张共享表
-  `qed_domain`（领域）、`qed_course`（课程）、`qed_llm_calls`（LLM 调用审计）的完整设计——
-  DDL、列语义、状态机、写权限模型与跨项目契约。
 - [数据库架构](../architecture/database-schema.md)（Accepted，2026-08-16 用户裁决知识层次重构）：qed 库
-  `qed_*`（共享）与 `qt_*`（QED-Tracker 私有）表族**唯一事实源文档**——领域/课程/知识行/
-  书行/渠道五层模型（qed_domain → qed_course → qt_knowledge → qt_books → qt_sources）、
-  状态机、文件命名（物理名/展示名）、存量迁移与共享表所有权。
+  `qed_*`（共享）与 `qt_*`（QED-Tracker 私有）表族**唯一事实源文档**——领域/课程/教程/
+  书籍/渠道五层模型（qed_domain → qed_course → qt_knowledge → qt_books → qt_sources）、
+  状态机、文件命名（物理名/展示名）、存量迁移与共享表所有权。数据库设计分共享表/项目专用表
+  两区；共享表跨项目契约（写权限、状态机写主体、Schema 变更流程）见
+  [共享表设计](../architecture/shared-tables.md)（[ADR 0005](../adr/0005-shared-tables-doc-location.md)
+  迁入 architecture/，归属 QED-Tracker，其他项目同步）。
   - 被取代文档已移入 [历史留档](../history/)：`database-schema-ownership.md`（QED-023，Retired）
     与 `three-table-schema.md`（QED-028，Superseded）。
 - [教程命名规范](tutorial-naming.md)（Accepted/Implemented，需求方 QED-Engine REQ-041，
@@ -55,7 +55,7 @@
 
 ## 治理
 
-- [治理契约范本对齐](governance-contract-alignment.md)（Implemented，QED-022）：守护契约测试的
+- [治理契约范本对齐](../history/baselines/2026-08-governance-contract-alignment.md)（Implemented，QED-022，已归档）：守护契约测试的
   契约头六字段、守护面清单与编写约定对齐根仓库范本。
 
 用户命令查[日常操作](../guides/operations.md)，系统级边界查[系统总览](../architecture/system-overview.md)。跨项目契约（端口、环境变量、dataset 布局）以 QED-Engine 根仓库 `docs/` 为准。

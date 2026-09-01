@@ -130,7 +130,7 @@ def test_fetch_success_first_candidate(repo, seeded_book, pdf_bytes, tmp_path):
 
 
 def test_fetch_query_uses_title_and_authors(repo, seeded_book, tmp_path):
-    """检索词用书行 title+authors，不用 knowledge.name 的展示名。"""
+    """检索词用书籍 title+authors，不用 knowledge.name 的展示名。"""
     provider = FakeProvider("fake", [])
     service = build_service(repo, [provider], static_handler(b""), data_root=tmp_path)
     with pytest.raises(BookFetchError):
@@ -198,7 +198,7 @@ def test_fetch_timeout_switches_to_next_candidate(repo, seeded_book, pdf_bytes, 
 
 
 def test_fetch_all_fail_marks_failed(repo, seeded_book, tmp_path):
-    """可下载候选下载失败（HTTP 500）→ 书行 failed + 全部渠道 ok=False。"""
+    """可下载候选下载失败（HTTP 500）→ 书籍 failed + 全部渠道 ok=False。"""
     provider = FakeProvider("broken", [make_candidate("broken", "测试书")])
     service = build_service(
         repo, [provider], lambda request: httpx.Response(500, request=request), data_root=tmp_path

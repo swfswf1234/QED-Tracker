@@ -18,7 +18,7 @@ ADR 0003（共享 qed 库实例、qt_*/af_* 表命名空间隔离）；pending_m
 
 ## 背景
 
-QED-Engine 按 [ADR 0002](../../../docs/adr/0002-frontend-and-port-centralization.md) 统一全局
+QED-Engine 按 [ADR 0002](../../../docs/history/adr/v0.1/0002-frontend-and-port-centralization.md) 统一全局
 端口段：QED-Tracker 服务端口 8901。统一 CLI 与前端需要经 HTTP 调用本项目的搜索、下载、校验、
 登记与 Axiom 推送能力；长操作（大 PDF 下载、百炼推荐）不能阻塞请求，须以后台任务 + 状态轮询
 暴露。跨项目契约见根仓库[服务契约](../../../docs/design/service-contracts.md)与

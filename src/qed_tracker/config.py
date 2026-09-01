@@ -166,7 +166,7 @@ def degradation_notice(settings: Settings) -> str:
     if not settings.llm_configured:
         missing.append("API_KEY（LLM 评估降级：catalog evaluate 跳过评估只落候选）")
     if not settings.db_configured:
-        missing.append("QED_DB_PASSWORD（MySQL 登记降级：仅写 meta/resources/ JSON）")
+        missing.append("QED_DB_PASSWORD（MySQL 必选：qt_tasks/qt_selections 需要数据库连接）")
     if not missing:
         return ""
     return "启动尾注：.env 缺少 " + "、".join(missing) + "；相关能力已降级，不阻塞主链路。"

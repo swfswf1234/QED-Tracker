@@ -4,7 +4,7 @@
 最后更新：2026-08-29
 任务类型：Plan
 需求方：QED-Tracker 内部（用户审定）；探索语义与根仓库 REQ-064/065 对齐；QED-043 长期任务联动
-关联文档：[prompt 优化模块设计](2026-08-prompt-optimization.md)（Accepted）、[下载流程现状分析与优化方向](2026-08-download-flow.md)（Current）、[QED-Engine 探索对齐承接设计](2026-08-engine-exploration-alignment.md)（Draft）、[API 设计](2026-08-api-design.md)（Draft）、[shared-tables](../design/shared-tables.md)（Accepted）、根仓库 [探索下载全流程计划](../../../docs/plans/2026-08-exploration-download-flow.md)
+关联文档：[prompt 优化模块设计](2026-08-prompt-optimization.md)（Accepted）、[下载流程现状分析与优化方向](2026-08-download-flow.md)（Current）、[QED-Engine 探索对齐承接设计](../history/baselines/2026-08-engine-exploration-alignment.md)（已归档）、[API 设计](2026-08-api-design.md)（Draft）、[shared-tables](../architecture/shared-tables.md)（Accepted）、根仓库 [探索下载全流程计划](../../../docs/plans/2026-08-27-exploration-download-flow.md)
 关联任务：todo 本计划行（新 QED-050）、[QED-043](../trackers/todo.md)（prompt 优化），QED-047/048（dry-run/采纳端点已实现）
 
 ## 一、目标与成功标准
@@ -26,7 +26,7 @@
 | # | 裁决 | 内容 |
 |---|---|---|
 | D1 | 实现方案 A | 薄壳导入层 + 复用现有能力；手动/自动共用 qt_knowledge/qt_books 状态机同一链路；前端按流程同步实现（前端侧在根仓库） |
-| D2 | 手动探索录入粒度 | 分两段：领域导入=仅写共享表（qed_domain/qed_course）；课程导入=复用 A2（draft 态），人工按确认→书行→下载流程走 |
+| D2 | 手动探索录入粒度 | 分两段：领域导入=仅写共享表（qed_domain/qed_course）；课程导入=复用 A2（draft 态），人工按确认→书籍→下载流程走 |
 | D3 | 手动下载语义 | 外部路径导入 + 数据根内登记：`POST /books/{id}/import`，本地 PDF（可在数据根外）→ 校验 → 拷贝入数据根 → 登记 downloaded |
 | D4 | 接口形态 | API + CLI 双形态；CLI 命令组 `domains import` / `knowledge import` / `books import` 分别挂现有命令组 |
 | D5 | classic_tracks 结构 | 每项加 `kind`（`main`=主干方向 / `branch`=分支方向）；数学四条主线（分析学/代代数/概率与统计/几何与拓扑）均为 main |
@@ -57,7 +57,7 @@
                              knowledge(completed) → qed_course.exploration_stage = 已完成（G2 修复）
 ```
 
-两轨唯一差异在「候选书行如何产生 + 文件如何进入数据根」；**登记、去重、校验、状态机、验收全部复用**。
+两轨唯一差异在「候选书籍如何产生 + 文件如何进入数据根」；**登记、去重、校验、状态机、验收全部复用**。
 
 ### 3.1 探索流程时序（教材角度）
 
@@ -74,7 +74,7 @@
    推荐套列表（2~4 套）                                     → qt_knowledge(draft)×套（含 textbook_ref/exercise_ref）
    用户在 8900 侧勾选（≤4 上限）                             用户审阅 draft
 ┌────────────────────────── 汇合 ──────────────────────────┐
-⑤ 用户「确认」：qt_knowledge(draft→confirmed)，按决定引用自动建 qt_books(candidate) 书行
+⑤ 用户「确认」：qt_knowledge(draft→confirmed)，按决定引用自动建 qt_books(candidate) 书籍
 └──────────────────────────────────────────────────────────┘
 ⑥ 用户「决定」：qt_books(candidate→decided) → 进入下载轨
 ```
@@ -91,12 +91,12 @@
    → add_source(channel, ok=...) 留痕                     → sha256 去重（命中复用）
    → complete_download 或 fail_download                    → 拷入数据根 raw/<domain>/<course>/（target_path 为准，
    （失败→人工指引：候选链接清单）                              _<sha8> 命名规则补足）
-→ qt_books(downloaded) | failed                          → Inventory 登记 + 建书行
+→ qt_books(downloaded) | failed                          → Inventory 登记 + 建书籍
                                                          → add_source(channel=local_import) 留痕
                                                          → qt_books(downloaded)
 ┌────────────────────────── 汇合 ──────────────────────────┐
 ③ 用户「验收」：qt_books(downloaded→verified)
-④ 套内全部书行 verified → qt_knowledge(completed)（聚合）
+④ 套内全部书籍 verified → qt_knowledge(completed)（聚合）
 ⑤ knowledge complete → qed_course.exploration_stage=已完成（G2 修复，本批补实现）
 └──────────────────────────────────────────────────────────┘
 ```
@@ -263,9 +263,14 @@ CLI：`qed-tracker domains import <json-path>`（读文件→构造 body→调 8
     exercise 非 null 时 roles 必须含 `exercises`；
   - **target_path 全量透传**：textbook/exercise 为全量 dict 透传进 ref（`dict(textbook)` 保留
     target_path，D9）；手动导入落盘与登记回写由它驱动；
-- 状态机：draft 起点不变；用户 confirm 自动建书行（既有行为）。
+- 状态机：draft 起点不变；用户 confirm 自动建书籍（既有行为）。
 
-CLI：`qed-tracker knowledge import <course-json>`（读文件→validate_course→调 A2（source=manual）→打印 draft 行）。
+CLI：`qed-tracker knowledge import <course-json>`（读文件→validate_course→调 A2（source=manual））。
+**导入即定稿（2026-08-31 行为变更，QED-050 手动轨）**：采纳后对新建/仍 draft 的套逐套
+`POST /knowledge/{id}/confirm`（显式回传 JSON 里的 refs/双 intro——confirm 空 body 会以 `{}`
+覆盖预填 refs，须防），并按 refs 幂等 `POST /books` 建 candidate 册（textbook/exercise 各一，
+同名册不重复建行）；已 confirmed/completed 的套跳过确认、仍补册，重放可续。CLI 路径直达
+「已确认+候选册就绪」，前端/API 路径维持 draft→确认接口→已确认不变（D2 状态机不变）。
 
 ## 七、手动下载链路（M6，D3）
 
@@ -274,7 +279,7 @@ CLI：`qed-tracker knowledge import <course-json>`（读文件→validate_course
 流程（复用既有能力，零重复状态机逻辑）：
 1. `file_path` 解析（本地绝对/相对路径，可在数据根外）；找不到 → 404；
 2. `inspect_pdf`（魔数 `%PDF` + 页数阈值）异常 → 400；
-3. sha256 全文计算；`repo.complete_download` 同哈希命中既有书行 → 复用（不重复落文件）；
+3. sha256 全文计算；`repo.complete_download` 同哈希命中既有书籍 → 复用（不重复落文件）；
 4. 目标路径解析：优先 `target_path`（D9；基础名不含 sha → 落盘自动补 `_<sha8>`），缺省规则
    `raw/<domain_id>/<course_id>/<safe_name>_<sha8>.pdf`；强制 `resolve` 后 `relative_to(data_root)`（越界 → 400）；
 5. 外部文件 → 先写 tmp 暂存（`downloads_tmp_dir`）→ `os.replace` 原子落盘 raw/；数据根内为目标位置 → 原地登记（不移动）；
@@ -284,7 +289,7 @@ CLI：`qed-tracker knowledge import <course-json>`（读文件→validate_course
 > **登记口径**：本端点与既有 `POST /books/{id}/register` 对齐——只登记 qt_books + qt_sources；
 > Inventory（meta/resources JSON）双轨登记属 REQ-032 课题，本批不引入（避免双轨漂移）。
 
-错误：400 路径越界/非 PDF | 404 文件不存在/书行不存在 | 409 sha256 冲突/状态非法 | 422 缺参。
+错误：400 路径越界/非 PDF | 404 文件不存在/书籍不存在 | 409 sha256 冲突/状态非法 | 422 缺参。
 
 CLI：`qed-tracker books import <book_id> <file_path> [--target raw/...]`。
 
@@ -311,7 +316,7 @@ CLI：`qed-tracker books import <book_id> <file_path> [--target raw/...]`。
 | M3 | 探索/下载双轨时序入本文档 §三.1/§三.2 | — |
 | M4 | `application/knowledge_import.py`（validate_domain/validate_course）+ `POST /domains/import` + CLI `domains import` | test_knowledge_import.py（校验器参数化 + API 契约 + 正本合规） |
 | M5 | A2 source 值域/roles 强制扩展 + CLI `knowledge import` | 同上（source/manual 3 用例） |
-| M6 | `POST /books/{id}/import`（外部路径→暂存→原子落盘→登记+留痕）+ CLI `books import`；**G2 修复**：complete_knowledge 全知识行 completed 回写 course.exploration_stage | 同上（import 6 用例 + G2 1 用例） |
+| M6 | `POST /books/{id}/import`（外部路径→暂存→原子落盘→登记+留痕）+ CLI `books import`；**G2 修复**：complete_knowledge 全教程 completed 回写 course.exploration_stage | 同上（import 6 用例 + G2 1 用例） |
 | M7 | api.md / api-design（④ A4 + ⑧ 语义）/ shared-tables（kind+四档）/ main-line-curriculum（标注）/ README 同步；test_documentation 白名单 ± | 白名单 2 行 |
 
 门禁：**402 passed + 3 skipped + ruff clean + test_documentation.py 全绿**（362 → 402，+40 用例）。

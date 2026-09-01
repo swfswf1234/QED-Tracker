@@ -309,3 +309,19 @@ def test_course_dry_run_unconfigured_key_maps_409(tmp_path, monkeypatch) -> None
         )
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "LLM_UNAVAILABLE"
+
+
+def test_course_dry_run_llm_failure_maps_502(course_client, monkeypatch) -> None:
+    """QED-047 502 覆盖：LLM 层异常映射为502 + 原始错误码。"""
+
+    class BoomCoursePipeline(FakeCoursePipeline):
+        def explore(self, course, **kw):
+            raise PipelineError("模型网络请求失败", code="LLM_UNAVAILABLE")
+
+    monkeypatch.setattr(api_main, "CoursePipeline", BoomCoursePipeline)
+    response = course_client.post(
+        "/api/v1/courses/01_math_analysis/prompt-explores/dry-run",
+        json={"mode": "direct"},
+    )
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "LLM_UNAVAILABLE"

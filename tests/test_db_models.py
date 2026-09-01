@@ -16,16 +16,16 @@ from qed_tracker.db.models import (
     QtSource,
 )
 
-# qed_domain 新增探索字段（2026-08-27 表重构；2026-08-30 REQ-067 B8 增 explore_pending）
+# qed_domain 新增探索字段（2026-08-27 表重构）
 _DOMAIN_EXPLORE_COLUMNS = {
-    "level", "scope", "exploration_stage", "classic_tracks", "path_results", "explore_pending",
+    "level", "scope", "exploration_stage", "classic_tracks", "path_results",
 }
 _DOMAIN_EXPECTED_COLUMNS = {
     "domain_id", "name", "description", "level", "scope", "exploration_stage",
     "classic_tracks", "stages", "path_results", "explore_pending",
     "created_by", "updated_by", "created_at", "updated_at",
 }
-_EXPLORATION_STAGES = {"未开始", "已生成", "探索中", "已完成", "失败"}
+_EXPLORATION_STAGES = {"未开始", "已生成", "探索中", "已完成"}
 
 
 @pytest.fixture
@@ -46,10 +46,10 @@ def test_enums_complete() -> None:
 
 
 def test_legacy_three_tables_gone() -> None:
-    """替换重构：旧三表模型不再存在（drop 由迁移/脚本负责，ORM 无残留）。"""
+    """替换重构：旧三表模型不再存在（qt_selections 已随 REQ-032 重建为新 schema）。"""
     tables = {t.name for t in Base.metadata.sorted_tables}
-    assert "qt_selections" not in tables
     assert "qt_downloads" not in tables
+    # qt_selections 已随 REQ-032 重建为新 schema（替代 meta/selections/ JSON），不再检查缺失
 
 
 def test_shared_tables_exist(session) -> None:
@@ -63,10 +63,10 @@ def test_shared_tables_exist(session) -> None:
 
 
 def test_qed_domain_explore_columns(session) -> None:
-    """qed_domain 新增探索字段（2026-08-27 表重构 + 2026-08-30 explore_pending）。"""
+    """qed_domain 新增探索字段（2026-08-27 表重构）：level/scope/exploration_stage/classic_tracks/path_results。"""
     columns = {c.name for c in QedDomain.__table__.columns}
     assert _DOMAIN_EXPECTED_COLUMNS == columns
-    # 新增的探索列全部存在
+    # 新增的 5 列全部存在
     assert _DOMAIN_EXPLORE_COLUMNS <= columns
 
 
@@ -118,36 +118,6 @@ def test_qed_domain_explore_full_roundtrip(session) -> None:
     assert row.path_results["edges"] == [{"from": "a", "to": "b"}]
 
 
-def test_qed_domain_explore_pending_defaults(session) -> None:
-    """explore_pending 默认 None（REQ-067 B8）。"""
-    now = __import__("qed_tracker.database", fromlist=["utc_now"]).utc_now()
-    domain = QedDomain(domain_id="math", name="数学", description="d",
-                       stages=[], created_at=now, updated_at=now)
-    session.add(domain)
-    session.commit()
-    row = session.get(QedDomain, "math")
-    assert row.explore_pending is None
-    assert row.exploration_stage == "未开始"
-
-
-def test_qed_domain_explore_pending_roundtrip(session) -> None:
-    """explore_pending 写入后原样返回（name_confirm/failed 两种形态）。"""
-    now = __import__("qed_tracker.database", fromlist=["utc_now"]).utc_now()
-    domain = QedDomain(domain_id="math", name="数学", description="d",
-                       stages=[], created_at=now, updated_at=now)
-    session.add(domain)
-    session.commit()
-    domain.explore_pending = {
-        "kind": "name_confirm",
-        "name_check": {"suggested_name": "高等数学", "valid": False, "reason": "r"},
-    }
-    session.commit()
-    session.expire_all()
-    row = session.get(QedDomain, "math")
-    assert row.explore_pending["kind"] == "name_confirm"
-    assert row.explore_pending["name_check"]["suggested_name"] == "高等数学"
-
-
 def test_qt_books_unique_constraints() -> None:
     table = QtBook.__table__
     names = {c.name for c in table.constraints}
@@ -164,6 +134,7 @@ def test_qt_sources_foreign_key_to_books() -> None:
 _COURSE_EXPECTED_COLUMNS = {
     "course_id", "domain_id", "sort_order", "name", "aliases", "track", "stage",
     "prerequisites", "related_targets", "description", "exploration_stage",
+    "explore_pending",
     "created_by", "updated_by", "created_at", "updated_at",
 }
 

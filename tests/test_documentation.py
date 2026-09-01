@@ -3,7 +3,7 @@
 守护面清单（裁剪自根仓库七类，适配本仓库五层文档体系）：
   - architecture：架构文档完整性（入口集合、元数据、链接）
   - design：设计文档完整性（元数据、链接、DesignRef 引用）
-  - standards：工程规范合规（文档规范、ADR 治理）
+  - standards：工程规范合规（文档治理规范、ADR 治理、测试门禁、跨项目协作）
   - guides：操作入口可用性（CLI 命令一致性、不链历史）
   - trackers：任务治理（ID 唯一性、活跃计划关联）
 
@@ -31,45 +31,47 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/architecture/main-line.md"),
     Path("docs/architecture/api.md"),
     Path("docs/architecture/database-schema.md"),
+    Path("docs/architecture/shared-tables.md"),
     Path("docs/design/index.md"),
     Path("docs/design/acquisition-and-inventory.md"),
-    Path("docs/design/docs-restructure-alignment.md"),
     Path("docs/design/paper-discovery.md"),
     Path("docs/design/source-discovery.md"),
     Path("docs/design/review-round-dedup.md"),
     Path("docs/design/tracker-service.md"),
-    Path("docs/design/governance-contract-alignment.md"),
     Path("docs/design/main-line-curriculum.md"),
     Path("docs/design/service-lifecycle.md"),
     Path("docs/design/service-lifecycle-encoding-fix.md"),
     Path("docs/design/tutorial-naming.md"),
     Path("docs/design/model-mode-config.md"),
     Path("docs/standards/index.md"),
-    Path("docs/standards/documentation.md"),
+    Path("docs/standards/doc-governance.md"),
     Path("docs/standards/adr-governance.md"),
-    Path("docs/standards/version-cleanup.md"),
+    Path("docs/standards/testing.md"),
+    Path("docs/standards/cross-project-collaboration.md"),
+    Path("docs/standards/local-dev.md"),
     Path("docs/adr/index.md"),
     Path("docs/adr/0001-tracker-service-architecture.md"),
     Path("docs/adr/0002-version-cleanup-governance.md"),
     Path("docs/adr/0003-pending-design-location.md"),
+    Path("docs/adr/0004-standards-governance-alignment.md"),
+    Path("docs/adr/0005-shared-tables-doc-location.md"),
     Path("docs/guides/index.md"),
     Path("docs/guides/operations.md"),
     Path("docs/guides/development.md"),
     Path("docs/plans/index.md"),
     Path("docs/plans/2026-08-main-line-curriculum.md"),
-    Path("docs/plans/2026-08-docs-restructure-alignment.md"),
     Path("docs/plans/2026-08-prompt-explore-baseline.md"),
     Path("docs/plans/2026-08-prompt-optimization.md"),
     Path("docs/plans/2026-08-prompt-optimization-progress.md"),
-    Path("docs/design/shared-tables.md"),
     Path("docs/plans/2026-08-db-api-docs-completion.md"),
     Path("docs/plans/2026-08-api-design.md"),
-    Path("docs/plans/2026-08-engine-exploration-alignment.md"),
     Path("docs/plans/2026-08-download-flow.md"),
     Path("docs/plans/2026-08-knowledge-dual-flow.md"),
-    Path("docs/plans/2026-08-30-req067-b8-explore-orchestration.md"),
-    Path("docs/plans/2026-08-30-req067-a-import-api-reply.md"),
-    Path("docs/plans/2026-08-30-req067-b8-impl-plan.md"),
+    Path("docs/plans/2026-09-exploration-overview.md"),
+    Path("docs/plans/2026-09-exploration-pipeline.md"),
+    Path("docs/plans/2026-09-knowledge-import.md"),
+    Path("docs/plans/2026-09-download-registration.md"),
+    Path("docs/plans/2026-09-data-lifecycle.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
     Path("docs/trackers/completed.md"),
@@ -81,7 +83,12 @@ REQUIRED_HISTORY_DOCS = {
     Path("docs/history/baselines/pre-acquisition-cli.md"),
     Path("docs/history/baselines/math-qe-2026-05.md"),
     Path("docs/history/baselines/catalog-set-field.md"),
+    Path("docs/history/baselines/docs-restructure-alignment.md"),
     Path("docs/history/baselines/2026-08-service-and-book-download.md"),
+    Path("docs/history/baselines/2026-08-31-req067-b10-b12-exploration-stage.md"),
+    Path("docs/history/baselines/2026-08-docs-restructure-alignment.md"),
+    Path("docs/history/baselines/2026-08-governance-contract-alignment.md"),
+    Path("docs/history/baselines/2026-08-engine-exploration-alignment.md"),
     Path("docs/history/qed-030-retire-qt_resources/index.md"),
     Path("docs/history/qed-036-tutorial-naming/index.md"),
     Path("docs/history/three-table-schema.md"),
@@ -100,12 +107,14 @@ DESIGN_DOCS = {
     Path("docs/architecture/system-overview.md"),
     Path("docs/architecture/main-line.md"),
     Path("docs/architecture/database-schema.md"),
+    Path("docs/architecture/shared-tables.md"),
+    Path("docs/architecture/api.md"),
+    Path("docs/architecture/code-map.md"),
     Path("docs/design/acquisition-and-inventory.md"),
     Path("docs/design/paper-discovery.md"),
     Path("docs/design/source-discovery.md"),
     Path("docs/design/review-round-dedup.md"),
     Path("docs/design/tracker-service.md"),
-    Path("docs/design/governance-contract-alignment.md"),
     Path("docs/design/main-line-curriculum.md"),
     Path("docs/design/service-lifecycle.md"),
     Path("docs/design/service-lifecycle-encoding-fix.md"),
@@ -145,7 +154,7 @@ def test_documentation_entrypoints_are_intentional():
     模块职责：确保当前文档与历史文档的集合严格匹配预定义白名单，
     防止未授权文件混入或必要文件被意外移除。
 
-    设计关联（DesignRef）：docs/standards/documentation.md「文档分类与事实边界」
+    设计关联（DesignRef）：docs/standards/doc-governance.md「文档分类与事实边界」
     实现状态：Implemented
     被测代码：docs/ 全目录 Markdown 文件集合
     守护面：architecture + design（文档结构完整性）
@@ -167,7 +176,7 @@ def test_managed_documentation_has_required_metadata():
     模块职责：确保所有管理文档包含强制元数据字段（状态、最后更新），
     设计与架构文档额外包含实现状态、关联代码、关联测试。
 
-    设计关联（DesignRef）：docs/standards/documentation.md「元数据」
+    设计关联（DesignRef）：docs/standards/doc-governance.md「元数据」
     实现状态：Implemented
     被测代码：docs/ 全目录 Markdown 文件（架构/设计/标准/指南/索引/ADR）
     守护面：design + architecture（文档元数据规范）
@@ -194,7 +203,7 @@ def test_all_documentation_links_resolve():
     模块职责：确保当前文档中所有本地相对链接指向真实存在的文件，
     防止断链导致 Agent 导航失败。（历史文件豁免：只读留档相对路径可能因文件移动失效）
 
-    设计关联（DesignRef）：docs/standards/documentation.md「内部链接显式指向文件」
+    设计关联（DesignRef）：docs/standards/doc-governance.md「内部链接显式指向文件」
     实现状态：Implemented
     被测代码：docs/ 全目录 Markdown 文件（history/ 豁免）
     守护面：architecture + design（文档链接完整性）
@@ -217,7 +226,7 @@ def test_current_code_and_test_references_resolve():
     模块职责：确保当前文档中反引号引用的 src/ 和 tests/ 路径指向真实文件，
     防止文档描述的代码路径不存在。（plans/ 豁免：计划文档描述未来文件）
 
-    设计关联（DesignRef）：docs/standards/documentation.md「代码与测试引用」
+    设计关联（DesignRef）：docs/standards/doc-governance.md「代码与测试引用」
     实现状态：Implemented
     被测代码：docs/ 当前文档中 `src/...` 和 `tests/...` 反引号引用
     守护面：code（文档与代码对齐）
@@ -241,7 +250,7 @@ def test_current_documentation_has_no_legacy_guidance():
     模块职责：确保当前文档不包含旧版本路径（app/、docs/discuss/）、
     退役版本号（0.2）等过期内容，防止 Agent 执行已废弃操作。
 
-    设计关联（DesignRef）：docs/standards/documentation.md「归档与删除」
+    设计关联（DesignRef）：docs/standards/doc-governance.md「归档与删除」
     实现状态：Implemented
     被测代码：docs/ 当前文档（history/ 豁免）
     守护面：standards（文档时效性）
@@ -263,7 +272,7 @@ def test_operational_entrypoints_do_not_link_to_history():
     模块职责：确保 README.md 和操作指南（operations.md、development.md）
     中的本地链接不指向 docs/history/ 目录，防止用户执行历史操作。
 
-    设计关联（DesignRef）：docs/standards/documentation.md「失效指南默认删除」
+    设计关联（DesignRef）：docs/standards/doc-governance.md「失效指南默认删除」
     实现状态：Implemented
     被测代码：README.md、docs/guides/operations.md、docs/guides/development.md
     守护面：guides（操作入口纯净性）
@@ -290,7 +299,7 @@ def test_documented_cli_commands_match_the_parser():
     模块职责：确保当前文档中记录的 qed-tracker 命令行用法
     能被 CLI parser 正确解析，防止文档描述的命令不可用。
 
-    设计关联（DesignRef）：docs/standards/documentation.md「CLI 命令一致性」
+    设计关联（DesignRef）：docs/standards/doc-governance.md「CLI 命令一致性」
     实现状态：Implemented
     被测代码：src/qed_tracker/cli.py（build_parser）
     守护面：guides（CLI 可用性）

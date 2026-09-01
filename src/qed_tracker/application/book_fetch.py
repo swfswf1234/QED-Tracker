@@ -1,12 +1,12 @@
 """书籍自动取书执行器（方案 A，2026-08-28）：搜索 → 逐候选限时下载 → 状态转移与渠道留痕。
 
 背景：8901 books API 此前只有状态转移端点（decide/start/...），点击"下载"后没有任何
-组件执行实际下载，书行永远停在 downloading。本模块把 CLI mainline download 的自动链
+组件执行实际下载，书籍永远停在 downloading。本模块把 CLI mainline download 的自动链
 （BookService.search → 逐候选下载 → complete_download）移植为可注入、可测试的用例层，
 供 API 后台任务（book_download）调用。
 
 超时语义（用户裁决 2026-08-28）：每个候选一个总预算（默认 600s，QED_FETCH_ATTEMPT_TIMEOUT），
-预算内无响应/未完成即记失败并切换下一候选；全部候选失败后书行置 failed，任务以
+预算内无响应/未完成即记失败并切换下一候选；全部候选失败后书籍置 failed，任务以
 BookFetchError 结束并附人工下载指引（metadata_only 候选的链接清单）。
 
 并发与隔离：每次 fetch 经 factory 新建独立 BookService（providers + downloader + inventory），
@@ -58,7 +58,7 @@ def build_book_service(settings: Settings, names: tuple[str, ...] | None = None)
 
 
 class BookFetchService:
-    """对单个书行执行自动取书；输入 book_id（UI 决定的具体书行，非 CLI 的 knowledge 粗选）。"""
+    """对单个书籍执行自动取书；输入 book_id（UI 决定的具体书籍，非 CLI 的 knowledge 粗选）。"""
 
     def __init__(
         self,
@@ -78,10 +78,10 @@ class BookFetchService:
     def fetch(self, book_id: str, *, progress: ProgressCallback | None = None) -> dict:
         book = self.repo.get_book(book_id, include_hidden=True)
         if book is None:
-            raise KeyError(f"书行不存在：{book_id}")
+            raise KeyError(f"书籍不存在：{book_id}")
         if book.status not in _ALLOWED_FETCH_STATUSES:
             raise ValueError(
-                f"书行状态 {book.status} 不可自动取书（仅 candidate/decided/failed）；"
+                f"书籍状态 {book.status} 不可自动取书（仅 candidate/decided/failed）；"
                 "downloading 卡住请先 cancel 复位"
             )
         if book.status == "candidate":
@@ -181,7 +181,7 @@ class BookFetchService:
             raise BookFetchError(self._failure_message(queries, attempts, manual, provider_failures))
         except BookFetchError:
             raise
-        except Exception as exc:  # noqa: BLE001 - 任务层兜底：书行复位为 failed
+        except Exception as exc:  # noqa: BLE001 - 任务层兜底：书籍复位为 failed
             self._safe_fail(book_id)
             raise BookFetchError(f"取书任务异常：{exc}") from exc
         finally:

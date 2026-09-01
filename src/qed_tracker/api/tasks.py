@@ -1,22 +1,27 @@
-"""后台任务层：`meta/tasks/` 持久化、并发上限与 queued→running→succeeded/failed 状态机。
+"""后台任务层：qt_tasks 数据库表持久化、并发上限与 queued→running→succeeded/failed 状态机。
 
-任务由 HTTP 写操作提交，线程池执行，状态与结果落盘 JSON；
+任务由 HTTP 写操作提交，线程池执行，状态与结果落盘 qt_tasks 表；
 同一任务执行失败后可通过重新提交获得新任务（不隐式重试失败任务）。
+
+2026-09-01 REQ-032：从 meta/tasks/ JSON 文件迁移到 qt_tasks 数据库表。
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 import secrets
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
+
+import sqlalchemy as sa
+from sqlalchemy.orm import Session
+
+from qed_tracker.db.models import QtTask
 
 logger = logging.getLogger("qed_tracker.tasks")
 
@@ -51,48 +56,72 @@ class TaskRecord:
             "error": self.error,
         }
 
+    @classmethod
+    def from_row(cls, row: QtTask) -> TaskRecord:
+        return cls(
+            task_id=row.task_id,
+            type=row.type,
+            status=row.status,
+            created_at=row.created_at.isoformat(),
+            params=row.params,
+            progress=row.progress,
+            message=row.message,
+            updated_at=row.updated_at.isoformat(),
+            result=row.result,
+            error=row.error,
+        )
+
 
 class TaskStore:
-    def __init__(self, tasks_dir: Path):
-        self.tasks_dir = tasks_dir
+    """qt_tasks 数据库表的读写层（REQ-032：替代 meta/tasks/ JSON 文件）。"""
 
-    def _path(self, task_id: str) -> Path:
-        return self.tasks_dir / f"{task_id}.json"
+    def __init__(self, session_factory: Callable[[], Session]):
+        self._session_factory = session_factory
+
+    def _new_session(self) -> Session:
+        return self._session_factory()
 
     def save(self, record: TaskRecord) -> None:
-        self.tasks_dir.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps(record.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-        target = self._path(record.task_id)
-        temporary = target.with_suffix(".json.tmp")
-        temporary.write_text(payload, encoding="utf-8")
-        # 轮询读线程可能短暂持有目标文件的读句柄（Windows 上 rename 会被该句柄阻止），
-        # 短重试后仍失败则原样抛出，由调用方决定如何兜底。
-        for _ in range(5):
-            try:
-                os.replace(temporary, target)
-                return
-            except PermissionError:
-                time.sleep(0.02)
-        os.replace(temporary, target)
+        with self._new_session() as session:
+            existing = session.get(QtTask, record.task_id)
+            if existing is not None:
+                existing.type = record.type
+                existing.status = record.status
+                existing.params = record.params
+                existing.progress = record.progress
+                existing.message = record.message
+                existing.result = record.result
+                existing.error = record.error
+                existing.updated_at = datetime.fromisoformat(record.updated_at) if record.updated_at else datetime.now(UTC)
+            else:
+                row = QtTask(
+                    task_id=record.task_id,
+                    type=record.type,
+                    status=record.status,
+                    params=record.params,
+                    progress=record.progress,
+                    message=record.message,
+                    result=record.result,
+                    error=record.error,
+                    created_at=datetime.fromisoformat(record.created_at),
+                    updated_at=datetime.fromisoformat(record.updated_at) if record.updated_at else datetime.now(UTC),
+                )
+                session.add(row)
+            session.commit()
 
     def load(self, task_id: str) -> TaskRecord | None:
-        path = self._path(task_id)
-        if not path.exists():
-            return None
-        # 与 save() 的 os.replace 存在 Windows 读/写竞争窗口，读取侧同样短重试。
-        for _ in range(5):
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-                return TaskRecord(**value)
-            except PermissionError:
-                time.sleep(0.02)
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return TaskRecord(**value)
+        with self._new_session() as session:
+            row = session.get(QtTask, task_id)
+            if row is None:
+                return None
+            return TaskRecord.from_row(row)
 
     def list(self) -> list[TaskRecord]:
-        if not self.tasks_dir.exists():
-            return []
-        return [self.load(path.stem) for path in sorted(self.tasks_dir.glob("*.json"), reverse=True) if path.stem != ".tmp"]
+        with self._new_session() as session:
+            rows = session.execute(
+                sa.select(QtTask).order_by(QtTask.created_at.desc())
+            ).scalars().all()
+            return [TaskRecord.from_row(row) for row in rows]
 
 
 class TaskManager:
@@ -110,12 +139,14 @@ class TaskManager:
     def submit(self, task_type: str, params: dict[str, Any]) -> TaskRecord:
         if task_type not in self.handlers:
             raise ValueError(f"未知任务类型：{task_type}")
+        now = datetime.now(UTC)
         record = TaskRecord(
             task_id=secrets.token_hex(6),
             type=task_type,
             status="queued",
-            created_at=datetime.now(UTC).isoformat(),
+            created_at=now.isoformat(),
             params=params,
+            updated_at=now.isoformat(),
         )
         self.store.save(record)
         self._executor.submit(self._execute, record)

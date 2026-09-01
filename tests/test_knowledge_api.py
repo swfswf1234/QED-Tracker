@@ -120,7 +120,7 @@ def test_knowledge_reject_requires_reason(client, repo):
 def test_knowledge_invalid_transition_409(client, repo):
     knowledge = _seed_knowledge(repo, status="confirmed")
     response = client.post(f"/api/v1/knowledge/{knowledge.knowledge_id}/complete")
-    assert response.status_code == 409  # 无书行，不能 completed
+    assert response.status_code == 409  # 无书籍，不能 completed
 
 
 def test_book_create_and_transitions(client, repo):

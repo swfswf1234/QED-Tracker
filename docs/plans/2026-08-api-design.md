@@ -96,6 +96,8 @@
     "description": "学科介绍",
     "level": "本科-硕士",
     "classic_tracks": [{"name": "分析学", "summary": "..."}],
+    "exploration_stage": "未开始",
+    "path_results": null,
     "stages": ["基础", "进阶"],
     "courses": [
       {
@@ -275,7 +277,7 @@ REQ-059 手工维护端点。Web UI DownloadsTree 组件活跃消费（create/up
 
 **路径参数：** `course_id`
 
-**守卫：** 有知识行 → 409 COURSE_HAS_KNOWLEDGE
+**守卫：** 有教程 → 409 COURSE_HAS_KNOWLEDGE
 
 **响应 200：**
 ```json
@@ -379,7 +381,7 @@ REQ-059 手工维护端点。Web UI DownloadsTree 组件活跃消费（create/up
 **边界与语义：**
 - 推荐套数 2~4（模板校验「宁缺勿滥」）；根仓库 ≤4 上限逻辑在根仓库侧，本仓库只返回候选；
 - 8901 离线时本端点不可达——采纳步骤依赖本端点产物，根仓库探索会话挂起等待（X3 确认，
-  见 [engine-exploration-alignment](2026-08-engine-exploration-alignment.md) 评审记录）；
+  见 [engine-exploration-alignment](../history/baselines/2026-08-engine-exploration-alignment.md) 评审记录）；
 - 课程探索状态（exploration_stage）由 8900 在探索会话管理中直写（写权限例外），本端点自身不写。
 
 **错误：**
@@ -446,7 +448,7 @@ textbook_intro / exercise_intro——修复根仓库反馈 §8 缺陷 3（旧 ad
 **语义定稿（2026-08-28 实现落定 / 2026-08-29 QED-050 补充）：**
 - **幂等**：同 course + set_no + set_name（id 规则 `kn_md5(domain, course, kind, set_no, name)`）
   命中既有行 → 返回该行且 `existing: true`，不改动已落库内容；
-- **套号冲突**：同 set_no 被不同知识行占用（同名不同 id 或异名）→ 409 `SET_NO_CONFLICT`；
+- **套号冲突**：同 set_no 被不同教程占用（同名不同 id 或异名）→ 409 `SET_NO_CONFLICT`；
 - **同源可空**：`exercise: null` 放行（textbook.roles 须含 exercises 由 A1 管线校验；
   manual 来源轻校验仅要求 exercise 为 null 或含 title），落库 exercise_ref=null；
 - **roles 强制（2026-08-29 增强）**：textbook.roles 必须为数组且含 `textbook`；
@@ -473,7 +475,7 @@ textbook_intro / exercise_intro——修复根仓库反馈 §8 缺陷 3（旧 ad
 | 409 | DOMAIN_NAME_CONFLICT | 领域名重复 / domain_id 已存在 |
 | 409 | COURSE_ALREADY_EXISTS | course_id 已存在 |
 | 409 | DOMAIN_NOT_EMPTY | 领域下有课程，不可删除 |
-| 409 | COURSE_HAS_KNOWLEDGE | 课程下有知识行，不可删除 |
+| 409 | COURSE_HAS_KNOWLEDGE | 课程下有教程，不可删除 |
 | 409 | LLM_UNAVAILABLE | LLM 未配置或初始化失败 |
 | 422 | INVALID_PARAMS | 缺必填字段 |
 | 502 | LLM_UNAVAILABLE / BUDGET_EXHAUSTED | 模型调用失败 |

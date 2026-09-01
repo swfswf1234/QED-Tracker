@@ -34,7 +34,7 @@ targets（冻结目录 math-qe.json）
 
 成功条件：至少一个 catalog target 的首选候选下载成功 + PDF 校验通过 + sha256 唯一。
 
-### 链路二：mainline CLI（知识行 → 书行 → 下载 → 校验 → 移交）
+### 链路二：mainline CLI（教程 → 书籍 → 下载 → 校验 → 移交）
 
 触发方式：`mainline download <course_id>` → `mainline verify <course_id>` → `mainline approve <course_id>`。
 
@@ -42,7 +42,7 @@ targets（冻结目录 math-qe.json）
 ```
 qt_knowledge WHERE status=confirmed（非 hidden）
   → 自动查找/创建 qt_books 行（candidate/decided/failed）：
-    若无书行 → 以 knowledge.name 为 title 粗糙创建（无 authors/version/ref）
+    若无书籍 → 以 knowledge.name 为 title 粗糙创建（无 authors/version/ref）
   → BookProvider.search(query=f"{knowledge.name} {book.kind}", limit=3)
     → 无 original_title（不使用 decision 引用）
     → 无 file_hint 注入
@@ -56,7 +56,7 @@ qt_knowledge WHERE status=confirmed（非 hidden）
 
 **verify 阶段：**
 ```
-status=downloaded 的书行
+status=downloaded 的书籍
   → inspect_pdf（魔数+页数）
   → 若 PDF 异常 → reject_download（status=rejected，reason 记录）
   → 若通过 → verify_book（status=verified）
@@ -64,11 +64,11 @@ status=downloaded 的书行
 
 **approve 阶段：**
 ```
-status=verified 的书行
+status=verified 的书籍
   → inspect_pdf 二次确认
   → 复制到 raw/<domain>/<course>/（硬链接或复制）
   → complete_knowledge 聚合：
-    所有非 hidden 书行全 verified → knowledge.status = completed
+    所有非 hidden 书籍全 verified → knowledge.status = completed
     （注：设计声称 completion 回写 qed_course.exploration_stage=已完成，但代码未实现此回写）
 ```
 
@@ -79,7 +79,7 @@ status=verified 的书行
 触发方式：`POST /books` + `POST /books/{id}/sources` + `POST /books/{id}/register`。
 
 ```
-POST /books → 创建 candidate 书行（手动指定 title/authors/roles/version）
+POST /books → 创建 candidate 书籍（手动指定 title/authors/roles/version）
 POST /books/{id}/sources → add_source 登录渠道（channel + source_url + quality 等）
 POST /books/{id}/register → register（downloaded→register 直转：记录相对路径、md5、sha256、page_count）
   或 decide→start→download→register 完整流程
@@ -89,7 +89,7 @@ POST /books/{id}/complete → complete_book（verified→completed）
 POST /books/{id}/reject → reject（有 reason）
 ```
 
-成功条件：书行达到 completed 状态。
+成功条件：书籍达到 completed 状态。
 
 ### 链路四：8901 books fetch API（自动取书执行器，方案 A 2026-08-28）
 
@@ -99,7 +99,7 @@ POST /books/{id}/reject → reject（有 reason）
 POST /books/{id}/fetch（202 → task_id）
   → 状态校验（仅 candidate/decided/failed；candidate 自动 decide；downloading 409 提示先 cancel）
   → start（downloading）
-  → 检索词 = 书行 title + authors（非 knowledge.name 展示名）
+  → 检索词 = 书籍 title + authors（非 knowledge.name 展示名）
   → BookService.search(query, limit=8)（每次任务独立 BookService，结束 close）
   → 按序逐候选（downloadable 优先）：
       每候选总预算 QED_FETCH_ATTEMPT_TIMEOUT（默认 600s，工作线程 + future.result 看门狗）；
@@ -110,7 +110,7 @@ POST /books/{id}/fetch（202 → task_id）
       任务 error 附逐候选摘要 + 人工下载指引（metadata_only 候选链接清单）
 ```
 
-成功条件：任务 succeeded + 书行 downloaded（verify 仍人工）。
+成功条件：任务 succeeded + 书籍 downloaded（verify 仍人工）。
 配套端点：`POST /books/{id}/cancel`（downloading → decided 复位，仅 downloading 可取消）。
 渠道留痕（qt_sources）同时产出 REQ-020② 找得率数据。
 
@@ -146,11 +146,11 @@ rejected  superseded
 
 - draft：A2 采纳后初始态
 - confirmed：探索定稿（预填决定引用 + 简介）
-- completed：所有非 hidden 书行全 verified 聚合触发
+- completed：所有非 hidden 书籍全 verified 聚合触发
 - rejected：拒绝（reason 必填，by 必填）
 - superseded：被替代（hidden）
 
-complete 聚合条件：`visible_books > 0 AND all_visible_books.status == verified`。无书行或全 hidden 时不允许 complete。
+complete 聚合条件：`visible_books > 0 AND all_visible_books.status == verified`。无书籍或全 hidden 时不允许 complete。
 
 ### 聚合回写（设计 vs 代码）
 
@@ -216,7 +216,7 @@ complete 聚合条件：`visible_books > 0 AND all_visible_books.status == verif
 | **md5 校验** | 仅 IA 提供 md5 声明 | 全渠道 md5 声明对比；无声明时跳过而非失败 |
 | **书名一致性** | 下载后不验证书名/作者 | inspect_pdf 提取首页文本 → fuzzy match 决定引用 |
 | **页数/体积** | 仅最小页数阈值 | 增加最大页数/体积 sanity（防止错误文件） |
-| **书行↔资源关联** | 依赖 Inventory JSON 的 catalog_target 字段 | qt_books.relative_path 直接关联（已有字段，mainline 链路使用） |
+| **书籍↔资源关联** | 依赖 Inventory JSON 的 catalog_target 字段 | qt_books.relative_path 直接关联（已有字段，mainline 链路使用） |
 
 ### 4.3 人工兜底路径
 
@@ -307,9 +307,9 @@ complete 聚合条件：`visible_books > 0 AND all_visible_books.status == verif
 | G1 | confirm 端点覆写陷阱 | 实现缺陷 | 本轮脚本回显规避；后续修端点语义（缺省=保留既有值） |
 | G2 | course exploration_stage 回写缺口 | 设计-实现差距 | complete_knowledge 不回写 qed_course.exploration_stage；后续修复 |
 | G3 | tmp/exploration 根契约冲突 | 治理冲突 | 根文档定义"用户资产不自动清理"；按用户指令已删除（正本在 QED-Tracker/tmp/）；待用户裁决：恢复副本 or 修订根文档 |
-| G4 | mainline 书行 auto-create 粗糙 | 实现不足 | 用 knowledge.name 为 title、无 authors/version/ref；API fetch 链路已改为按书行 title+authors 检索（2026-08-28），CLI 链路待对齐 |
+| G4 | mainline 书籍 auto-create 粗糙 | 实现不足 | 用 knowledge.name 为 title、无 authors/version/ref；API fetch 链路已改为按书籍 title+authors 检索（2026-08-28），CLI 链路待对齐 |
 | G5 | file_keywords 注入不统一 | 实现不足 | 仅 catalog 链路注入；mainline/fetch 无；后续统一 |
-| G6 | 知识行 8 条（含 CS 测试数据 1 条） | 预存数据 | 非本轮创建，不影响 math 播种；后续可清理 |
+| G6 | 教程 8 条（含 CS 测试数据 1 条） | 预存数据 | 非本轮创建，不影响 math 播种；后续可清理 |
 | G7 | qt_sources schema 漂移（旧 download_id 结构） | 已修复 | 2026-08-28 迁移 0014：旧表改名 qt_sources_legacy 留档后按 ORM DDL 重建；此前 add_source/list_sources 全部 500（Unknown column 'book_id'） |
 | G8 | 8901 无自动下载执行器（点击下载后无后续动作） | 已修复 | 2026-08-28 方案 A：`book_download` 后台任务 + `POST /books/{id}/fetch`（见链路四）；每候选 600s 预算看门狗 |
 

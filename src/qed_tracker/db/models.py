@@ -20,7 +20,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class KnowledgeStatus(StrEnum):
-    """qt_knowledge 知识行生命周期：draft（探索中）→ confirmed（定稿）→ completed；终态 rejected/superseded。"""
+    """qt_knowledge 教程生命周期：draft（探索中）→ confirmed（定稿）→ completed；终态 rejected/superseded。"""
 
     DRAFT = "draft"
     CONFIRMED = "confirmed"
@@ -30,7 +30,7 @@ class KnowledgeStatus(StrEnum):
 
 
 class BookStatus(StrEnum):
-    """qt_books 书行四段状态机：candidate → decided → downloading → downloaded → verified；failed 可重试。"""
+    """qt_books 书籍四段状态机：candidate → decided → downloading → downloaded → verified；failed 可重试。"""
 
     CANDIDATE = "candidate"
     DECIDED = "decided"
@@ -61,7 +61,7 @@ class QedDomain(Base):
     classic_tracks: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="课程方向")
     stages: Mapped[list[str]] = mapped_column(JSON, nullable=False, comment="学习阶段顺序")
     path_results: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="学习流程")
-    explore_pending: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="探索挂起信息（名称确认/失败诊断）")
+    explore_pending: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="探索待确认载荷（REQ-067-B12）")
     created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="创建人")
     updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="最后更新人")
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
@@ -96,6 +96,7 @@ class QedCourse(Base):
     related_targets: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="已验收关联目标")
     description: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="课程介绍")
     exploration_stage: Mapped[str] = mapped_column(String(20), nullable=False, default="未开始", comment="流程状态")
+    explore_pending: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="探索待确认载荷（REQ-067-B12）")
     created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="创建人")
     updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="最后更新人")
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
@@ -112,12 +113,12 @@ class QedCourse(Base):
 
 
 class QtKnowledge(Base):
-    """qt_knowledge 知识行（私有）：一行 = 一套教程（tutorial）或一组课程延展资料归类（other_material）。"""
+    """qt_knowledge 教程（私有）：一行 = 一套教程（tutorial）或一组课程延展资料归类（other_material）。"""
 
     __tablename__ = "qt_knowledge"
     __table_args__ = ({"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},)
 
-    knowledge_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="知识行标识（主键）")
+    knowledge_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="教程标识（主键）")
     domain_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="所属领域")
     course_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="所属课程")
     kind: Mapped[str] = mapped_column(
@@ -161,7 +162,7 @@ class QtKnowledge(Base):
 
 
 class QtBook(Base):
-    """qt_books 书行（私有）：一行 = 一册/一卷/一个快照（论文/博客）；候选→决定→下载→验证全生命周期。"""
+    """qt_books 书籍（私有）：一行 = 一册/一卷/一个快照（论文/博客）；候选→决定→下载→验证全生命周期。"""
 
     __tablename__ = "qt_books"
     __table_args__ = (
@@ -170,8 +171,8 @@ class QtBook(Base):
         {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
     )
 
-    book_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="书行标识（主键）")
-    knowledge_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment="所属知识行")
+    book_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="书籍标识（主键）")
+    knowledge_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment="所属教程")
     kind: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
@@ -239,7 +240,7 @@ class QtSource(Base):
         {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
     )
     source_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="渠道标识（主键）")
-    book_id: Mapped[str] = mapped_column(String(100), ForeignKey("qt_books.book_id"), nullable=False, comment="所属书行")
+    book_id: Mapped[str] = mapped_column(String(100), ForeignKey("qt_books.book_id"), nullable=False, comment="所属书籍")
     channel: Mapped[str] = mapped_column(
         String(24),
         nullable=False,
@@ -262,5 +263,71 @@ class QtSource(Base):
             value = getattr(self, column.name)
             if isinstance(value, datetime):
                 value = value.isoformat()
+            result[column.name] = value
+        return result
+
+
+class QtTask(Base):
+    """qt_tasks 后台任务（私有，REQ-032）：一行一个后台任务记录，替代 meta/tasks/ JSON 文件。"""
+
+    __tablename__ = "qt_tasks"
+    __table_args__ = (
+        Index("ix_qt_tasks_status", "status"),
+        Index("ix_qt_tasks_type", "type"),
+        {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
+    )
+
+    task_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="任务标识（主键）")
+    type: Mapped[str] = mapped_column(String(50), nullable=False, comment="任务类型")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, comment="状态（queued/running/succeeded/failed）")
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, comment="任务参数")
+    progress: Mapped[int] = mapped_column(Integer(), nullable=False, default=0, comment="进度（0-100）")
+    message: Mapped[str] = mapped_column(Text(), nullable=False, default="", comment="当前状态消息")
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="成功结果")
+    error: Mapped[str] = mapped_column(Text(), nullable=False, default="", comment="失败错误信息")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="最后更新时间")
+
+    def to_dict(self) -> dict[str, Any]:
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            if isinstance(value, datetime):
+                value = value.isoformat()
+            result[column.name] = value
+        return result
+
+
+class QtSelection(Base):
+    """qt_selections 论文选择报告（私有，REQ-032）：一行一个选择报告，替代 meta/selections/ JSON 文件。"""
+
+    __tablename__ = "qt_selections"
+    __table_args__ = (
+        Index("ix_qt_selections_status", "status"),
+        Index("ix_qt_selections_created_at", "created_at"),
+        {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
+    )
+
+    selection_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="选择报告标识（主键）")
+    schema_version: Mapped[int] = mapped_column(Integer(), nullable=False, comment="Schema 版本号")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, comment="状态（planning/no_candidates/completed/...）")
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False, comment="创建时间（ISO 格式）")
+    profile: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="论文档案")
+    temporary_goal: Mapped[str] = mapped_column(Text(), nullable=False, default="", comment="临时研究目标")
+    allowed_categories: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="允许的 arXiv 分类")
+    search_plan: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="搜索计划")
+    search_failures: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="搜索失败记录")
+    excluded_existing: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="已排除的已有 arXiv ID")
+    candidates: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="候选论文列表")
+    assessments: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="评估结果")
+    recommendations: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="推荐列表")
+    model: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="模型元数据")
+    downloads: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="下载记录")
+    error: Mapped[str] = mapped_column(Text(), nullable=False, default="", comment="失败错误信息（兼容 papers.py error 字段）")
+
+    def to_dict(self) -> dict[str, Any]:
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
             result[column.name] = value
         return result

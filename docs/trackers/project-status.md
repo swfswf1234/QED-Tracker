@@ -18,7 +18,7 @@
 | 能力 | 端口/形态 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 8901 HTTP 服务（`/api/v1`） | 8901 | 已服务化 | FastAPI + 后台任务轮询（并发上限 2）；只读查询同步、轻量状态迁移同步；长操作走任务。 |
-| MySQL 登记索引 | 共享 `qed` 库五层模型 `qed_domain`/`qed_course`（共享）→ `qt_knowledge`/`qt_books`/`qt_sources`（私有） | 已实现 | 知识层次重构（QED-031，Alembic 0006）：知识行/书行/渠道五层模型，qt_resources 与三表均已退役；无 `QED_DB_PASSWORD` 降级运行。课程体系只读端点（QED-033 `/courses`）。 |
+| MySQL 登记索引 | 共享 `qed` 库五层模型 `qed_domain`/`qed_course`（共享）→ `qt_knowledge`/`qt_books`/`qt_sources`（私有） | 已实现 | 知识层次重构（QED-031，Alembic 0006）：教程/书籍/渠道五层模型，qt_resources 与三表均已退役；无 `QED_DB_PASSWORD` 降级运行。课程体系只读端点（QED-033 `/courses`）。 |
 | CLI | `qed-tracker` | 已实现（未转客户端） | 命令树/退出码/机器输出；`serve`/`courses`/`mainline`/`migrate` 入口；CLI 闭环命令（catalog evaluate / resources …）未实现，属 QED-010。 |
 | 教材来源 | IA / Open Library / Google Books / libgen_li | 已实现 | libgen_li 发现专用（恒 metadata_only，人工下载后登记）；annas_archive/zlib 退役。 |
 | arXiv 与论文发现 | arXiv + 百炼 | 已实现 | 检索计划 + 可审阅评分，不写资源事实、不自动下载。 |
@@ -50,7 +50,8 @@
 - **治理对齐（QED-022）**：守护契约范本对齐已完成（8 个守护测试六字段 docstring + 守护面清单五类），回执根仓库 REQ-023 待写入。
 - **文档体系长效机制（QED-039）**：首轮固定化已完成（architecture/ 固定 + api.md + database-schema
   升级 + project-status 移入 trackers/ + design 三态清理）；已建立
-  [版本末期文档整理规范](../standards/version-cleanup.md)（ADR 0002），每次版本确认前执行一轮。
+  [文档治理规范](../standards/doc-governance.md)「版本末期文档整理」节（ADR 0002 登记、
+  ADR 0004 并入），每次版本确认前执行一轮。
 
 ## 维护规则
 

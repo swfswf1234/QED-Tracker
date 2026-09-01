@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     books_import = books_commands.add_parser(
         "import", help="手动导入本地 PDF（外部路径 → 校验 → 拷入数据根 → 登记 downloaded）"
     )
-    books_import.add_argument("book_id", help="书行标识（qt_books.book_id）")
+    books_import.add_argument("book_id", help="书籍标识（qt_books.book_id）")
     books_import.add_argument("file_path", type=Path, help="本地 PDF 路径（可在数据根外）")
     books_import.add_argument("--target", dest="target_path", default="",
                               help="期望落盘相对路径（raw/<domain>/<course>/<书名>.pdf，自动补 _<sha8>）")
@@ -173,10 +173,10 @@ def build_parser() -> argparse.ArgumentParser:
     mainline_download.add_argument("knowledge_id")
     mainline_verify = mainline_commands.add_parser("verify", help="校验已下载文件")
     mainline_verify.add_argument("knowledge_id")
-    mainline_verify.add_argument("--book", help="指定书行 book_id（缺省取首个已下载书行）")
+    mainline_verify.add_argument("--book", help="指定书籍 book_id（缺省取首个已下载书籍）")
     mainline_approve = mainline_commands.add_parser("approve", help="验收通过 → 移交根仓库")
     mainline_approve.add_argument("knowledge_id")
-    mainline_approve.add_argument("--book", help="指定书行 book_id（缺省取首个未移交的 verified 书行）")
+    mainline_approve.add_argument("--book", help="指定书籍 book_id（缺省取首个未移交的 verified 书籍）")
     mainline_reject = mainline_commands.add_parser("reject", help="验收不通过（填原因）")
     mainline_reject.add_argument("knowledge_id")
     mainline_reject.add_argument("--reason", required=True)
@@ -993,8 +993,8 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
     if args.mainline_command == "review":
         knowledge = repo.get_knowledge(args.knowledge_id)
         if knowledge is None:
-            _print({"error": f"知识行不存在：{args.knowledge_id}"}, True) if args.json else print(
-                f"ERROR: 知识行不存在：{args.knowledge_id}", file=sys.stderr
+            _print({"error": f"教程不存在：{args.knowledge_id}"}, True) if args.json else print(
+                f"ERROR: 教程不存在：{args.knowledge_id}", file=sys.stderr
             )
             return 2
         intro = args.intro or f"{knowledge.name}：教材与习题集配套资源（LLM 预填 + 人工审）。"
@@ -1028,13 +1028,13 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
     if args.mainline_command == "download":
         knowledge = repo.get_knowledge(args.knowledge_id)
         if knowledge is None:
-            _print({"error": f"知识行不存在：{args.knowledge_id}"}, True) if args.json else print(
-                f"ERROR: 知识行不存在：{args.knowledge_id}", file=sys.stderr
+            _print({"error": f"教程不存在：{args.knowledge_id}"}, True) if args.json else print(
+                f"ERROR: 教程不存在：{args.knowledge_id}", file=sys.stderr
             )
             return 2
         if knowledge.status != "confirmed":
-            _print({"error": f"只有 confirmed 知识行可下载（当前 {knowledge.status}）"}, True) if args.json else print(
-                f"ERROR: 只有 confirmed 知识行可下载（当前 {knowledge.status}）", file=sys.stderr
+            _print({"error": f"只有 confirmed 教程可下载（当前 {knowledge.status}）"}, True) if args.json else print(
+                f"ERROR: 只有 confirmed 教程可下载（当前 {knowledge.status}）", file=sys.stderr
             )
             return 2
         books = repo.list_books(knowledge.knowledge_id)
@@ -1113,28 +1113,28 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
     if args.mainline_command == "verify":
         knowledge = repo.get_knowledge(args.knowledge_id)
         if knowledge is None:
-            _print({"error": f"知识行不存在：{args.knowledge_id}"}, True) if args.json else print(
-                f"ERROR: 知识行不存在：{args.knowledge_id}", file=sys.stderr
+            _print({"error": f"教程不存在：{args.knowledge_id}"}, True) if args.json else print(
+                f"ERROR: 教程不存在：{args.knowledge_id}", file=sys.stderr
             )
             return 2
         books = repo.list_books(knowledge.knowledge_id)
         if args.book:
             book = next((b for b in books if b.book_id == args.book), None)
             if book is None:
-                _print({"error": f"书行不存在：{args.book}"}, True) if args.json else print(
-                    f"ERROR: 书行不存在：{args.book}", file=sys.stderr
+                _print({"error": f"书籍不存在：{args.book}"}, True) if args.json else print(
+                    f"ERROR: 书籍不存在：{args.book}", file=sys.stderr
                 )
                 return 2
             if book.status != "downloaded":
-                _print({"error": f"书行未下载（当前 {book.status}），无法校验"}, True) if args.json else print(
-                    f"ERROR: 书行未下载（当前 {book.status}），无法校验", file=sys.stderr
+                _print({"error": f"书籍未下载（当前 {book.status}），无法校验"}, True) if args.json else print(
+                    f"ERROR: 书籍未下载（当前 {book.status}），无法校验", file=sys.stderr
                 )
                 return 2
         else:
             book = next((b for b in books if b.status == "downloaded"), None)
             if book is None:
-                _print({"error": "没有已下载（downloaded）的书行，请先执行 download"}, True) if args.json else print(
-                    "ERROR: 没有已下载（downloaded）的书行，请先执行 download", file=sys.stderr
+                _print({"error": "没有已下载（downloaded）的书籍，请先执行 download"}, True) if args.json else print(
+                    "ERROR: 没有已下载（downloaded）的书籍，请先执行 download", file=sys.stderr
                 )
                 return 2
         path = Path(book.absolute_path or "")
@@ -1167,14 +1167,14 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
     if args.mainline_command == "approve":
         knowledge = repo.get_knowledge(args.knowledge_id)
         if knowledge is None:
-            _print({"error": f"知识行不存在：{args.knowledge_id}"}, True) if args.json else print(
-                f"ERROR: 知识行不存在：{args.knowledge_id}", file=sys.stderr
+            _print({"error": f"教程不存在：{args.knowledge_id}"}, True) if args.json else print(
+                f"ERROR: 教程不存在：{args.knowledge_id}", file=sys.stderr
             )
             return 2
         verified = [b for b in repo.list_books(knowledge.knowledge_id) if b.status == "verified"]
         if not verified:
-            _print({"error": "没有已验收（verified）的书行，请先执行 verify"}, True) if args.json else print(
-                "ERROR: 没有已验收（verified）的书行，请先执行 verify", file=sys.stderr
+            _print({"error": "没有已验收（verified）的书籍，请先执行 verify"}, True) if args.json else print(
+                "ERROR: 没有已验收（verified）的书籍，请先执行 verify", file=sys.stderr
             )
             return 2
 
@@ -1193,8 +1193,8 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
         if args.book:
             book = next((b for b in verified if b.book_id == args.book), None)
             if book is None:
-                _print({"error": f"书行不存在或未验收：{args.book}"}, True) if args.json else print(
-                    f"ERROR: 书行不存在或未验收：{args.book}", file=sys.stderr
+                _print({"error": f"书籍不存在或未验收：{args.book}"}, True) if args.json else print(
+                    f"ERROR: 书籍不存在或未验收：{args.book}", file=sys.stderr
                 )
                 return 2
         else:
@@ -1241,10 +1241,10 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
         try:
             repo.complete_knowledge(knowledge.knowledge_id)
             _print({"knowledge_status": "completed"}, True) if args.json else print(
-                f"知识行已完成：{knowledge.knowledge_id} → completed"
+                f"教程已完成：{knowledge.knowledge_id} → completed"
             )
         except InvalidTransition as exc:
-            print(f"提示：{exc}（书行全 verified 后可再次 approve 完成知识行）", file=sys.stderr)
+            print(f"提示：{exc}（书籍全 verified 后可再次 approve 完成教程）", file=sys.stderr)
         print("提示：课程 related_targets 回填待二次确认评估后人工执行（qed_course 表）", file=sys.stderr)
         return 0
 

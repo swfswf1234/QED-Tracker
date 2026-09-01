@@ -115,7 +115,7 @@ def test_tutorial_name_rule():
     assert tutorial_name("3", "数学分析", ["陈纪修", "於崇华", "金路"]) == "教程3：数学分析（陈纪修、於崇华、金路）"
     assert tutorial_name("", "延展资料", ["X"]) == "教程：延展资料（X）"  # 空 set_no 兜底
     assert tutorial_name("1", "数学分析", []) == "教程1：数学分析"  # 无作者省略
-    # 存量书行 title 已含「（作者）」后缀时不重复拼接（真实存量 套3 陈纪修）
+    # 存量书籍 title 已含「（作者）」后缀时不重复拼接（真实存量 套3 陈纪修）
     assert tutorial_name("3", "数学分析（陈纪修）", ["陈纪修"]) == "教程3：数学分析（陈纪修）"
 
 
@@ -144,7 +144,7 @@ def test_migrate_legacy_maps_selection_to_knowledge_and_books(db, tmp_path):
         assert books[1][3] == BookStatus.VERIFIED.value  # 旧 approved → verified
         sources = session.execute(text("SELECT source_id, book_id FROM qt_sources")).fetchall()
         assert len(sources) == 1
-        assert sources[0][1] == books[0][0]  # 外键改挂书行
+        assert sources[0][1] == books[0][0]  # 外键改挂书籍
     # 幂等：重跑不产生重复行
     migrate_legacy_data(factory)
     with factory() as session:

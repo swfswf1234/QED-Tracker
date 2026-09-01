@@ -18,7 +18,7 @@
 ### schema
 
 > 2026-08-29 用户裁定：`stages`/`stage` 值域统一为四档 **【基础、主干、分支、前沿】**
-> （见 [shared-tables.md](shared-tables.md)）。本示例的「本科基础/研究生基础/QE冲刺」为
+> （见 [shared-tables.md](../architecture/shared-tables.md)）。本示例的「本科基础/研究生基础/QE冲刺」为
 > 历史数据留档，实际落库值域以四档为准（QED-050 领域导入/课程梳理时迁移）。
 
 ```json
@@ -194,11 +194,11 @@ draft（LLM 预填/人工新建）
 | `qed-tracker courses list` | 列出学科课程体系（当前 math） |
 | `qed-tracker courses show <course_id>` | 查看单门课（含前置/关联 target；也接受学科名） |
 | `qed-tracker mainline list --course <course_id>` | 列出课程教材条目（五要素视图） |
-| `qed-tracker mainline new --course <id> --title ...` | 新建条目：**先参照顶尖大学课程设置（MIT/清华等指定教材）→ 再按此探索**；LLM 预填评价，需 QWEN_API_KEY；重复标题预检拦截，生成 draft 知识行 |
+| `qed-tracker mainline new --course <id> --title ...` | 新建条目：**先参照顶尖大学课程设置（MIT/清华等指定教材）→ 再按此探索**；LLM 预填评价，需 QWEN_API_KEY；重复标题预检拦截，生成 draft 教程 |
 | `qed-tracker mainline review <knowledge_id> --intro <简介> --version <版本>` | 人工评审定稿（状态迁移 draft→confirmed，`--version` 补全版本要素） |
-| `qed-tracker mainline download <knowledge_id>` | 触发渠道下载（自动源或人工下载指引；已下载书行短路提示 verify） |
+| `qed-tracker mainline download <knowledge_id>` | 触发渠道下载（自动源或人工下载指引；已下载书籍短路提示 verify） |
 | `qed-tracker mainline verify <knowledge_id> --book <book_id>` | 校验已下载文件（PDF 结构/SHA-256/页数） |
-| `qed-tracker mainline approve <knowledge_id> --book <book_id>` | 验收通过 → 复制移交根仓库 dataset/qed-tracker/（多册书逐本移交，全册验证后知识行自动 completed） |
+| `qed-tracker mainline approve <knowledge_id> --book <book_id>` | 验收通过 → 复制移交根仓库 dataset/qed-tracker/（多册书逐本移交，全册验证后教程自动 completed） |
 | `qed-tracker mainline reject <knowledge_id> --reason <原因>` | 验收不通过（原因必填，持久化 reject_reason） |
 | `qed-tracker mainline channels` | 渠道有效性汇总表（成功率视图） |
 
@@ -207,7 +207,7 @@ draft（LLM 预填/人工新建）
 1. **版本要素 CLI 闭环部分实现**：`review --version` 已可写入版本（QED-031），但
    `--edition/--language/--publisher` 细粒度参数仍未实现（QtBook 无单独版本列，存于
    `textbook_ref` 序列化版本字段）。
-2. **人工下载 register 闭环未实现**：`download` 无自动候选时输出人工指引并落 `failed` 书行
+2. **人工下载 register 闭环未实现**：`download` 无自动候选时输出人工指引并落 `failed` 书籍
    （可重试），但没有 CLI 命令把人工下载的文件登记为 `downloaded`（libgen 场景需 API
    `POST /books/{id}/register` 或后续 CLI register 命令）。
 3. **防总评高「对比评级」单本不可执行**：`prefill` 每次只呈现一本书，提示词要求的

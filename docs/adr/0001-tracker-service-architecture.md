@@ -2,7 +2,7 @@
 
 状态：Accepted
 日期：2026-08-04
-最后更新：2026-08-12
+最后更新：2026-08-31
 领域：API 与任务
 决策阶段：v0.6
 取代：—
@@ -11,7 +11,7 @@
 ## 背景
 
 QED-Tracker 是纯 CLI（不运行常驻服务、不维护数据库），配置使用本地 TOML 与 `QED_TRACKER_*`
-环境变量。QED-Engine 根仓库按 [ADR 0002](../../../docs/adr/0002-frontend-and-port-centralization.md)
+环境变量。QED-Engine 根仓库按 [ADR 0002](../../../docs/history/adr/v0.1/0002-frontend-and-port-centralization.md)
 规划了全局端口段（8900/8901/8902/8903）与统一配置：QED-Tracker 服务端口 8901、根 `.env` 的
 `QED_*` 变量为唯一事实源。前端与统一 CLI 需要经 HTTP 调用本项目的下载、校验与登记能力，
 纯 CLI 形态无法满足。
@@ -53,8 +53,16 @@ QED-Tracker 是纯 CLI（不运行常驻服务、不维护数据库），配置�
 
 ## 关联
 
-- 关联标准：[文档规范](../standards/documentation.md)、[ADR 治理](../standards/adr-governance.md)
+- 关联标准：[文档治理规范](../standards/doc-governance.md)、[ADR 治理](../standards/adr-governance.md)
 - 关联设计：[服务与外部接口设计](../design/tracker-service.md)（Accepted，需求方 QED-Engine）、
   [下载与清单](../design/acquisition-and-inventory.md)
 - 关联架构：[系统总览](../architecture/system-overview.md)（实现后更新实现状态）
-- 关联 ADR（根仓库）：[ADR 0002](../../../docs/adr/0002-frontend-and-port-centralization.md)
+- 关联 ADR（根仓库）：[ADR 0002](../../../docs/history/adr/v0.1/0002-frontend-and-port-centralization.md)
+- 固定文档落点（2026-08-31 落地审核补记）：决定①服务化与后台任务 →
+  [系统总览](../architecture/system-overview.md)（职责边界、不变量 8、架构符合度）与
+  [服务与外部接口设计](../design/tracker-service.md)（端点与任务契约）；决定②CLI 转 HTTP →
+  [服务与外部接口设计](../design/tracker-service.md)「CLI」节（契约已定，实现待 QED-010）；
+  决定③配置统一 → [系统总览](../architecture/system-overview.md)（config.py 职责、运行模式
+  配置链、「已退出的职责」）；决定④数据布局 → [系统总览](../architecture/system-overview.md)
+  「数据布局」与 [服务与外部接口设计](../design/tracker-service.md)（文件名规则）；
+  决定⑤存量不迁移 → [服务与外部接口设计](../design/tracker-service.md)。

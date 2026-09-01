@@ -1,14 +1,17 @@
-"""论文选择报告的本地原子存储。"""
+"""论文选择报告的数据库持久化（REQ-032：替代 meta/selections/ JSON 文件）。"""
 
 from __future__ import annotations
 
-import json
-import os
 import re
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
+
+import sqlalchemy as sa
+from sqlalchemy.orm import Session
+
+from qed_tracker.db.models import QtSelection
 
 SELECTION_ID_PATTERN = re.compile(r"^sel-\d{8}T\d{6}Z-[0-9a-f]{8}$")
 
@@ -18,43 +21,69 @@ class SelectionStoreError(RuntimeError):
 
 
 class SelectionStore:
-    def __init__(self, data_root: Path):
-        # ARCH-019 统一数据根：私有状态区 <data_root>/qed-tracker/meta/selections。
-        self.root = data_root.resolve() / "qed-tracker" / "meta" / "selections"
+    """qt_selections 数据库表的读写层（REQ-032：替代 meta/selections/ JSON 文件）。"""
+
+    def __init__(self, session_factory: Callable[[], Session]):
+        self._session_factory = session_factory
+
+    def _new_session(self) -> Session:
+        return self._session_factory()
 
     @staticmethod
     def new_id(now: datetime | None = None) -> str:
         moment = now or datetime.now(UTC)
         return f"sel-{moment.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
 
-    def save(self, report: dict[str, Any]) -> Path:
+    def save(self, report: dict[str, Any]) -> str:
         selection_id = str(report.get("selection_id") or "")
         if not SELECTION_ID_PATTERN.fullmatch(selection_id):
             raise ValueError("非法论文选择报告 ID")
-        target = self.root / f"{selection_id}.json"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_suffix(".json.tmp")
-        payload = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-        temporary.write_text(payload, encoding="utf-8")
-        os.replace(temporary, target)
-        return target
+        with self._new_session() as session:
+            existing = session.get(QtSelection, selection_id)
+            if existing is not None:
+                # Update existing record
+                for key in (
+                    "schema_version", "status", "created_at", "profile", "temporary_goal",
+                    "allowed_categories", "search_plan", "search_failures", "excluded_existing",
+                    "candidates", "assessments", "recommendations", "model", "downloads", "error",
+                ):
+                    if key in report:
+                        setattr(existing, key, report[key])
+            else:
+                row = QtSelection(
+                    selection_id=selection_id,
+                    schema_version=report.get("schema_version", 1),
+                    status=report.get("status", ""),
+                    created_at=report.get("created_at", datetime.now(UTC).isoformat()),
+                    profile=report.get("profile"),
+                    temporary_goal=report.get("temporary_goal", ""),
+                    allowed_categories=report.get("allowed_categories"),
+                    search_plan=report.get("search_plan"),
+                    search_failures=report.get("search_failures"),
+                    excluded_existing=report.get("excluded_existing"),
+                    candidates=report.get("candidates"),
+                    assessments=report.get("assessments"),
+                    recommendations=report.get("recommendations"),
+                    model=report.get("model"),
+                    downloads=report.get("downloads"),
+                    error=report.get("error", ""),
+                )
+                session.add(row)
+            session.commit()
+        return selection_id
 
     def load(self, selection_id: str) -> dict[str, Any]:
         if not SELECTION_ID_PATTERN.fullmatch(selection_id):
             raise ValueError("非法论文选择报告 ID")
-        target = self.root / f"{selection_id}.json"
-        if not target.is_file():
-            raise SelectionStoreError(f"论文选择报告不存在：{selection_id}")
-        try:
-            value = json.loads(target.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise SelectionStoreError(f"论文选择报告损坏：{selection_id}") from exc
-        if value.get("selection_id") != selection_id or value.get("schema_version") != 1:
-            raise SelectionStoreError(f"论文选择报告损坏：{selection_id}")
-        return value
+        with self._new_session() as session:
+            row = session.get(QtSelection, selection_id)
+            if row is None:
+                raise SelectionStoreError(f"论文选择报告不存在：{selection_id}")
+            return row.to_dict()
 
     def list(self) -> list[dict[str, Any]]:
-        if not self.root.exists():
-            return []
-        reports = [self.load(path.stem) for path in self.root.glob("sel-*.json")]
-        return sorted(reports, key=lambda item: (str(item.get("created_at", "")), item["selection_id"]), reverse=True)
+        with self._new_session() as session:
+            rows = session.execute(
+                sa.select(QtSelection).order_by(QtSelection.created_at.desc())
+            ).scalars().all()
+            return [row.to_dict() for row in rows]

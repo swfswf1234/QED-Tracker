@@ -11,9 +11,9 @@
 模型视图与 API 契约：根仓库 [downloads-three-table-model.md](../../../docs/design/downloads-three-table-model.md)
 
 > **取代声明（2026-08-16）**：本文描述的 qt_selections/qt_downloads/qt_sources 三表模型已被
-> [database-schema.md](database-schema.md)（领域 → 课程 → 知识行 → 书行 → 渠道五层模型）取代：
+> [database-schema.md](database-schema.md)（领域 → 课程 → 教程 → 书籍 → 渠道五层模型）取代：
 > qt_selections → qt_knowledge + qt_books，qt_downloads → qt_books（一册一行，title+part），
-> qt_sources 外键改挂书行。**本文仅作历史留档（QED-028/029 时代），不再作为实现依据。**
+> qt_sources 外键改挂书籍。**本文仅作历史留档（QED-028/029 时代），不再作为实现依据。**
 
 ## 背景与动机
 
