@@ -1,12 +1,13 @@
 # 完成台账
 
 状态：Current
-最后更新：2026-08-31
+最后更新：2026-09-01
 
 本文件只追加已关闭任务的简短结果、提交或本地验证证据。
 
 | ID | 关闭日期 | 结果 | 验证证据 |
 | --- | --- | --- | --- |
+| REQ-032 (Phase 1+2) | 2026-09-01 | meta/ JSON 退役（部分完成）：Phase 1 TaskStore→qt_tasks（迁移 0016）+ Phase 2 SelectionStore→qt_selections（迁移 0017）+ tasks/selections 目录归档。Phase 3（Inventory→qt_books）暂缓（用户确认 qt 系列表非当前范围），详见根仓库 [2026-09-01-req032-meta-json-retirement.md](../../docs/plans/2026-09-01-req032-meta-json-retirement.md)。 | QtTask + QtSelection ORM 模型创建；TaskStore/SelectionStore 从 JSON 文件重构为 SQLAlchemy；迁移 0016/0017 脚本就绪；test_api/test_profiles_and_selections/test_paper_application 全通过；meta/tasks/（5 文件）归档至 meta/archive/2026-09-01-req032/；全量测试仅 1 个 pre-existing 文档链接失败。 |
 | QED-052 | 2026-08-31 | architecture 文档域梳理轮（2026-08-31 用户裁决）：① 共享表文档 `design/shared-tables.md` → `architecture/shared-tables.md`（ADR 0005 归属裁决）；② database-schema.md 分共享（qed_*）/专用（qt_*）两区 + qed_llm_calls 存根节；③ system-overview 运行模式补「独立运行能力面」（CLI 覆盖矩阵/仅 API 能力/降级行为）；④ api.md 重构为「QED-Tracker API 设计文档（8901）」暂定版（42 条路由八组分组）；⑤ 守护白名单迁移（DESIGN_DOCS 含 api/code-map/shared-tables）。回执根仓库 REQ-064。 | 共享表文档已迁移至 architecture/；database-schema.md 已分两区；system-overview 含「独立运行能力面」节；api.md 暂定版（42 条路由八组）；DESIGN_DOCS 已更新；全库无 design/shared-tables 断链；Python 3.10.9 环境限制无法运行门禁测试，待 Python 3.12+ 环境验证。 |
 | QED-024 | 2026-08-31 | [跨项目] catalog target 套标记字段 set_no 完成（REQ-028）：CatalogTarget.set_no 可选字段（"1"~"4" 中文套 / "en" 英文对照套 / 留空无配套）+ catalog.py 解析 + math-qe.json 54 目标补齐 + API 透出；设计文档已归档 docs/history/baselines/catalog-set-field.md（Historical）。回执根仓库 REQ-028。 | 代码层完成（CatalogTarget.set_no + catalog.py 解析 + 契约测试 2 passed + API 透出测试 1 passed）；math-qe.json 全 54 目标 set_no 已补齐（01 数学分析 13 目标已定套，其余 41 目标留空）；前端两套判定已先行实现（tests 185 passed）；全量门禁全绿。 |
 | QED-049 | 2026-08-29 | [跨项目] dashscope API 适配（REQ-066）以**误判关闭**：REQ-066 三点归因与本仓事实不符——① 代码与全量服务日志（8/24~8/29）证明 local 直连一直是 OpenAI 兼容端点 `compatible-mode/v1/chat/completions`，从未调用旧 `/api/v1/services/aigc/text-generation/generation`；② 日志中 dashscope 调用全部 HTTP 200，无 400 `url error` 记录（8/29 仅两次调用均 200）；③ 实际生效模型来自根 `.env` `QED_MODEL`（现 qwen3.8-27b，非报告所写 qwen3.7-plus）。真实存在的现象是 8/29 14:46 `courses/01_math_analysis/prompt-explores/dry-run` 在两次 HTTP 200 后 502——失败发生在响应内容处理层，且 dry-run `engine=None` 不落 `qed_llm_calls`、错误体被吞成「格式无效」，当时无法确诊。**附带最小修复（LLM 错误透明化）**：`llm_client.py` 新增 `_response_detail()`——HTTP 4xx / 错误形状响应体 / finish_reason≠stop 三类失败全部透出 dashscope 原始 code+message（截断 200 字符），direct 失败统一打 warning 日志；`api/main.py` 两个 dry-run 端点 PipelineError 分支加 warning。误判分析文档 docs/design/dashscope-api-adaptation.md 已删除（该文件尚未入库，删除后无 Git 痕迹）。真实 dry-run 修复依赖根仓库侧动作：对齐 `QED_MODEL`（P15a 纪律：探索管线用 qwen3.7-plus 级非思考型）并自查 8900 网关 direct 分支的 dashscope 端点格式；复测仍失败时新错误信息可直接确诊。 | 新增 4 个 MockTransport 测试（400 错误体透出 / 200 错误形状带片段 / finish_reason=length 透出 / 失败 warning 日志）先红后绿；test_llm_client.py 16 passed；全量门禁 pytest + ruff 全绿；回执根仓库 REQ-066 已写入根仓库 todo 行。 |
