@@ -101,39 +101,39 @@ def validate_domain(data: Any) -> dict[str, Any]:
 
     courses = data.get("courses", [])
     _require(isinstance(courses, list) and courses, "courses 必须为非空数组")
-    slug_set: set[str] = set()
+    id_set: set[str] = set()
     graph: dict[str, list[str]] = {}
     for i, course in enumerate(courses):
         _require(isinstance(course, dict), "courses[i] 必须是对象")
-        slug = _slug(course.get("slug"), f"courses[{i}].slug")
-        _require(slug not in slug_set, f"courses slug 重复：{slug}")
-        slug_set.add(slug)
-        _text(course.get("name"), 100, f"{slug}.name")
-        track = _text(course.get("track", ""), 50, f"{slug}.track", nonempty=False)
+        course_id = _slug(course.get("course_id"), f"courses[{i}].course_id")
+        _require(course_id not in id_set, f"courses course_id 重复：{course_id}")
+        id_set.add(course_id)
+        _text(course.get("name"), 100, f"{course_id}.name")
+        track = _text(course.get("track", ""), 50, f"{course_id}.track", nonempty=False)
         _require(track == "" or track in main_names,
-                 f"{slug}.track 必须逐字取自 classic_tracks 的 main 方向（{main_names}）：{track}")
-        stage = _text(course.get("stage"), 32, f"{slug}.stage")
-        _require(stage in stages, f"{slug}.stage 必须是 stages（{stages}）之一：{stage}")
+                 f"{course_id}.track 必须逐字取自 classic_tracks 的 main 方向（{main_names}）：{track}")
+        stage = _text(course.get("stage"), 32, f"{course_id}.stage")
+        _require(stage in stages, f"{course_id}.stage 必须是 stages（{stages}）之一：{stage}")
         if "aliases" in course:
-            _str_list(course.get("aliases", []), f"{slug}.aliases")
-        _text(course.get("summary"), 400, f"{slug}.summary")
+            _str_list(course.get("aliases", []), f"{course_id}.aliases")
+        _text(course.get("summary"), 400, f"{course_id}.summary")
         pres_raw = course.get("prerequisites", [])
         _require(isinstance(pres_raw, list) and all(isinstance(p, str) for p in pres_raw),
-                 f"{slug}.prerequisites 必须是字符串数组")
+                 f"{course_id}.prerequisites 必须是字符串数组")
         pres: list[str] = []
         for pre in pres_raw:
-            _require(pre != slug, f"{slug} 不允许自环前置")
+            _require(pre != course_id, f"{course_id} 不允许自环前置")
             if pre not in pres:
                 pres.append(pre)
-        graph[slug] = pres
+        graph[course_id] = pres
 
-    # 前置关系引用合法（仅允许本批课程 slug）
-    for slug, pres in graph.items():
+    # 前置关系引用合法（仅允许本批课程 course_id）
+    for cid, pres in graph.items():
         for pre in pres:
-            _require(pre in slug_set, f"{slug}.prerequisites 引用不在本批课程：{pre}")
+            _require(pre in id_set, f"{cid}.prerequisites 引用不在本批课程：{pre}")
     # 无环检测（DFS 三色标记，与 prompt_lab path validate 同构）
     WHITE, GRAY, BLACK = 0, 1, 2
-    color = {s: WHITE for s in slug_set}
+    color = {s: WHITE for s in id_set}
 
     def visit(node: str) -> None:
         color[node] = GRAY
@@ -144,7 +144,7 @@ def validate_domain(data: Any) -> dict[str, Any]:
                 visit(nxt)
         color[node] = BLACK
 
-    for s in slug_set:
+    for s in id_set:
         if color[s] == WHITE:
             visit(s)
 
