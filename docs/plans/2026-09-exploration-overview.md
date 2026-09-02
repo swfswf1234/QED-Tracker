@@ -39,7 +39,7 @@ QED-Tracker 的探索功能是 QED 知识体系构建的核心能力——通过
 step1: domain@v1（名称校验 + 描述 ≤200字 + classic_tracks + entry_requirements）
   ↓  → name_check.valid=false 时抛 NameConfirmationRequired，人工确认后带
   ↓     confirm_name_override 重发
-step2: courses@v3（课程发现：每方向 2~6 门，总数 6~16；slug/name/track/summary 60~200字）
+step2: courses@v3（课程发现：每方向 2~6 门，总数 6~16；course_id/name/track/summary 60~200字）
   ↓  → track 必须逐字 ∈ classic_tracks；summary 长度校验
 step3: path@v3（路线编排：四档 tier + prerequisites DAG + 无环校验）
   ↓  → graph_td 由服务端 Mermaid 渲染
@@ -143,7 +143,7 @@ step1: tutorials@v1（教程方案：2~4 套，每套=教材+习题集+推荐理
 {
   "kind": "review_results",
   "courses": [
-    {"course_id": "mathematical_analysis", "name": "数学分析", "track": "分析学", "tier": "基础"}
+    {"course_id": "01_math_analysis", "name": "数学分析", "track": "分析学", "tier": "基础"}
   ],
   "domain_report": {"scope": {...}, "path": {"stages": [...], "edges": [...]}}
 }

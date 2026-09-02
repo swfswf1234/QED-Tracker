@@ -174,7 +174,7 @@ docs/knowledge/
   "stages": ["基础", "主干", "分支", "前沿"],
   "anchor_courses": ["数学分析", "高等代数", "概率论与数理统计"],
   "courses": [
-    {"slug": "mathematical_analysis", "name": "数学分析", "track": "分析学",
+    {"course_id": "01_math_analysis", "name": "数学分析", "track": "分析学",
      "stage": "基础", "aliases": ["微积分", "Analysis"], "summary": "…", "prerequisites": []}
   ],
   "extensions_planned": []
@@ -221,11 +221,11 @@ docs/knowledge/
 
 对 `docs/knowledge/math-advanced.json` 12 门课按 stage 四档逐门定档（2026-08-29 用户确认按建议表执行）：
 
-| 课程（slug） | 原 stage | 定档 |
+| 课程（course_id） | 原 stage | 定档 |
 |---|---|---|
-| mathematical_analysis | 基础 | 基础 |
-| advanced_algebra | 基础 | 基础 |
-| probability_and_mathematical_statistics | 基础 | 基础 |
+| 01_math_analysis | 基础 | 基础 |
+| 02_linear_algebra | 基础 | 基础 |
+| 11_probability | 基础 | 基础 |
 | abstract_algebra | 进阶 | 主干 |
 | ordinary_differential_equations | 进阶 | 主干 |
 | complex_analysis | 进阶 | 主干 |
@@ -245,7 +245,7 @@ docs/knowledge/
 **`POST /api/v1/domains/import`**（body：`{"domain": {...}}` 或 `{"file_path": "..."}`）
 - 校验：轻量校验器（manual@v1 schema）——检查 domain/name/classic_tracks(kind)/stages/courses(stage∈stages, track∈main)；
 - 落库：domain 存在→更新维护字段（description/level/scope/stages/classic_tracks/entry_requirements 对应列）；不存在→创建；
-  courses 逐条 upsert（slug→course_id）；`exploration_stage=已完成`（D8）；courses=未开始；
+  courses 逐条 upsert（course_id）；`exploration_stage=已完成`（D8）；courses=未开始；
 - 冲突：course 已存在且关键字段异 → 409；幂等：同键同值 → 更新（no-op）返回既有；
 - **字段映射缺口（2026-08-29 落实）**：`entry_requirements`/`anchor_courses`/`extensions_planned`
   为文件侧知识，qed_domain **无对应列**（共享表不加列，避免跨项目迁移）→ 校验通过但不落库，
@@ -338,11 +338,7 @@ AI 自主判断课程数量。
 前端测试 payload 示例：
 `POST /api/v1/prompt-explores/dry-run` `{"domain_name": "计算机科学与技术", "mode": "text", "ref_text": "现在是AI时代，需要基于最新的科技状况来学习，首先是计算机基础要打牢，其次是LLM相关知识要追逐前沿，现在开始探索，假设是大学开始学习的这个阶段"}`
 
-> **O1 开放问题（本批不修，待裁决）**：`docs/knowledge/math-advanced.json` 课程 slug
-> （mathematical_analysis 等）与既有 `qed_course.course_id`（01_math_analysis 等，catalog NN_slug
-> 对齐）不一致——`domains import` 时 slug 直作 course_id 会另建 13 行重复课程。处置选项：
-> ① 知识文件 courses[] 增 `course_id` 字段（与 catalog 对齐，导入优先用它）；② 导入时按
-> aliases/命名映射表复用既有行；③ 数学领域不接受导入、计算机领域（无冲突）先行。
+> **O1 已关闭（2026-09-01）**：`docs/knowledge/math-advanced.json` 课程已统一使用 `course_id`（如 `01_math_analysis`）与 catalog 对齐，slug 字段已移除。
 
 ## 九、边界事项与待办（用户知会）
 

@@ -40,7 +40,7 @@
 
   "courses": [
     {
-      "slug": "01_math_analysis",
+      "course_id": "01_math_analysis",
       "name": "数学分析",
       "track": "分析学",
       "stage": "基础",
@@ -49,7 +49,7 @@
       "prerequisites": []
     },
     {
-      "slug": "02_linear_algebra",
+      "course_id": "02_linear_algebra",
       "name": "高等代数",
       "track": "代数学",
       "stage": "基础",
@@ -58,7 +58,7 @@
       "prerequisites": []
     },
     {
-      "slug": "11_probability",
+      "course_id": "11_probability",
       "name": "概率论与数理统计",
       "track": "概率与统计",
       "stage": "基础",
@@ -67,7 +67,7 @@
       "prerequisites": []
     },
     {
-      "slug": "abstract_algebra",
+      "course_id": "abstract_algebra",
       "name": "抽象代数",
       "track": "代数学",
       "stage": "主干",
@@ -76,7 +76,7 @@
       "prerequisites": ["02_linear_algebra"]
     },
     {
-      "slug": "ordinary_differential_equations",
+      "course_id": "ordinary_differential_equations",
       "name": "常微分方程",
       "track": "分析学",
       "stage": "主干",
@@ -85,7 +85,7 @@
       "prerequisites": ["01_math_analysis"]
     },
     {
-      "slug": "complex_analysis",
+      "course_id": "complex_analysis",
       "name": "复变函数",
       "track": "分析学",
       "stage": "主干",
@@ -94,7 +94,7 @@
       "prerequisites": ["01_math_analysis"]
     },
     {
-      "slug": "real_analysis",
+      "course_id": "real_analysis",
       "name": "实变函数",
       "track": "分析学",
       "stage": "主干",
@@ -103,7 +103,7 @@
       "prerequisites": ["01_math_analysis"]
     },
     {
-      "slug": "partial_differential_equations",
+      "course_id": "partial_differential_equations",
       "name": "偏微分方程",
       "track": "分析学",
       "stage": "分支",
@@ -112,7 +112,7 @@
       "prerequisites": ["ordinary_differential_equations", "01_math_analysis"]
     },
     {
-      "slug": "functional_analysis",
+      "course_id": "functional_analysis",
       "name": "泛函分析",
       "track": "分析学",
       "stage": "分支",
@@ -121,7 +121,7 @@
       "prerequisites": ["real_analysis", "02_linear_algebra"]
     },
     {
-      "slug": "stochastic_processes",
+      "course_id": "stochastic_processes",
       "name": "随机过程",
       "track": "概率与统计",
       "stage": "分支",
@@ -130,7 +130,7 @@
       "prerequisites": ["11_probability"]
     },
     {
-      "slug": "point_set_topology",
+      "course_id": "point_set_topology",
       "name": "点集拓扑",
       "track": "几何与拓扑",
       "stage": "主干",
@@ -139,7 +139,7 @@
       "prerequisites": ["01_math_analysis"]
     },
     {
-      "slug": "differential_geometry",
+      "course_id": "differential_geometry",
       "name": "微分几何",
       "track": "几何与拓扑",
       "stage": "分支",

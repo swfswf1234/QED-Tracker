@@ -1,7 +1,7 @@
 {
   "domain": "computer-science",
 
-  "name": "计算机科学与技术",
+  "name": "计算机",
 
   "scope": "大学计算机专业核心课程体系，以计算机系本科教学计划为准",
 
@@ -35,7 +35,7 @@
 
   "courses": [
     {
-      "slug": "c_programming",
+      "course_id": "c_programming",
       "name": "程序设计基础",
       "track": "程序设计与算法",
       "stage": "基础",
@@ -44,7 +44,7 @@
       "prerequisites": []
     },
     {
-      "slug": "data_structures_and_algorithms",
+      "course_id": "data_structures_and_algorithms",
       "name": "数据结构与算法",
       "track": "程序设计与算法",
       "stage": "基础",
@@ -53,7 +53,7 @@
       "prerequisites": ["c_programming"]
     },
     {
-      "slug": "computer_architecture",
+      "course_id": "computer_architecture",
       "name": "计算机组成与体系结构",
       "track": "计算机系统",
       "stage": "基础",
@@ -62,7 +62,7 @@
       "prerequisites": ["c_programming"]
     },
     {
-      "slug": "operating_systems",
+      "course_id": "operating_systems",
       "name": "操作系统",
       "track": "计算机系统",
       "stage": "主干",
@@ -71,7 +71,7 @@
       "prerequisites": ["computer_architecture"]
     },
     {
-      "slug": "machine_learning_basics",
+      "course_id": "machine_learning_basics",
       "name": "机器学习基础",
       "track": "人工智能与机器学习",
       "stage": "主干",

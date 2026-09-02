@@ -37,7 +37,7 @@ QED-050 设计了手动+自动双轨知识获取：
   "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}],
   "courses": [
     {
-      "slug": "mathematical_analysis",
+      "course_id": "01_math_analysis",
       "name": "数学分析",
       "track": "分析学",
       "stage": "基础",
@@ -102,7 +102,7 @@ docs/knowledge/
 
 - validate_domain：参数化校验器，检查 name/description/stages/classic_tracks/courses 结构
 - A2 source 扩展：source 字段接受 "manual" 值，roles 强制包含 textbook
-- slug vs course_id 映射：当前 math-advanced.json 使用 slug（如 mathematical_analysis），catalog 使用 course_id（如 01_math_analysis），**O1 待裁决**
+- source 字段值域：`explore`（默认，自动探索采纳）/ `manual`（人工录入），仅作来源标记
 
 ## 优化目标
 
@@ -110,7 +110,7 @@ docs/knowledge/
 |---|---|---|
 | 三种导入全链路测试 | 领域/课程/书籍导入各场景覆盖 | QED-050-C |
 | schema 契约冻结 | manual@v1 + course-knowledge/manual@v1 最终确定 | QED-050-C |
-| slug/course_id 映射解决 | O1 待裁决项关闭 | QED-050-C |
+| source 参数文档补充 | 明确 source 字段值域和使用场景 | QED-050-C |
 | G2 回写验证 | complete_knowledge 回写逻辑端到端验证 | QED-050-C |
 
 ## 测试覆盖

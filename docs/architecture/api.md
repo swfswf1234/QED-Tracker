@@ -65,10 +65,10 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 ### `POST /api/v1/domains`
 
-创建领域（201；`domain_id` 缺省服务端生成——规范名 slug 直用，否则 `d_<md5[:10]>`）。
+创建领域（201；`domain_id` 缺省服务端生成——规范名 course_id 格式直用，否则 `d_<md5[:10]>`）。
 
 **请求体：** `{name 必填, domain_id?, description?, stages?, level?, scope?, classic_tracks?}`
-（显式 `domain_id` 须匹配 slug 规则 `^[a-z0-9][a-z0-9_-]{1,62}$`）。
+（显式 `domain_id` 须匹配 course_id 格式规则 `^[a-z0-9][a-z0-9_-]{1,62}$`）。
 
 **错误：** 409 DOMAIN_NAME_CONFLICT（name 或 domain_id 已存在）、422 INVALID_PARAMS。
 
@@ -87,7 +87,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 ### `POST /api/v1/domains/{domain_id}/courses`
 
-创建课程（201；`course_id` 缺省服务端生成 `c_<md5[:10]>`，显式指定须匹配 slug 规则）。
+创建课程（201；`course_id` 缺省服务端生成 `c_<md5[:10]>`，显式指定须匹配 course_id 格式规则）。
 
 **请求体：** `{name 必填, course_id?, stage?, sort_order?, description?, aliases?, track?, prerequisites?}`。
 
@@ -114,8 +114,10 @@ domain.exploration_stage=已完成（人工探索定稿）；courses 保持既�
 
 **请求体：**
 ```json
-{"domain": {"domain": "math-advanced", "name": "数学（高等数学）", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}], "stages": ["基础", "主干", "分支", "前沿"], "courses": [{"slug": "01_math_analysis", "name": "数学分析", "track": "分析学", "stage": "基础", "summary": "..."}]}}
+{"domain": {"domain": "math-advanced", "name": "数学（高等数学）", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}], "stages": ["基础", "主干", "分支", "前沿"], "courses": [{"course_id": "01_math_analysis", "name": "数学分析", "track": "分析学", "stage": "基础", "summary": "..."}]}, "source": "manual"}
 ```
+
+**参数：** `source`（可选，默认 `manual`）— 来源标记，值域 `manual`（人工录入）/ `explore`（自动探索），仅作来源记录不落列。
 
 **返回：** `{"domain_id": "math-advanced", "courses_created": N, "courses_updated": N, "exploration_stage": "已完成"}`
 
@@ -417,7 +419,7 @@ tests/test_knowledge_import.py）。
 领域知识探索**评估模式**（同步执行，非 202）：不入任务队列；不写任何表，唯一痕迹是
 `qed_llm_calls` 的 LLM 日志（模板 domain-explore/`domain@v3` → `courses@v6` → `path@v5`）。
 
-**body：** `{domain_name 必填（非空且 ≤100 字符）, scope_hint?（默认 DEFAULT_SCOPE 本科-硕士）, mode? direct/text/doc 默认 direct, ref_text?, ref_doc_path?, confirm_name_override?}`
+**body：** `{domain_name 必填（非空且 ≤100 字符）, source?（默认 explore，值域 explore/manual）, scope_hint?（默认 DEFAULT_SCOPE 本科-硕士）, mode? direct/text/doc 默认 direct, ref_text?, ref_doc_path?, confirm_name_override?}`
 
 **返回：**
 ```json
