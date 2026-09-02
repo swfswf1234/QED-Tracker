@@ -600,15 +600,37 @@ def create_app(
                 domain_id, description=data["description"], stages=data["stages"],
                 level=data["level"], scope=data["scope"], classic_tracks=data["classic_tracks"],
             )
-        repo.update_domain(domain_id, exploration_stage="已完成")
+        source = str(payload.get("source", "")).strip()
+
+        courses_summary = [
+            {"course_id": c["course_id"], "name": c["name"],
+             "track": c.get("track", ""), "stage": c["stage"]}
+            for c in data["courses"]
+        ]
+
+        if source == "cli":
+            repo.update_domain(domain_id, exploration_stage="已完成")
+            final_stage = "已完成"
+        else:
+            explore_pending = {
+                "kind": "review_results",
+                "courses": courses_summary,
+                "domain_report": {
+                    "description": data["description"],
+                    "stages": data["stages"],
+                    "classic_tracks": data["classic_tracks"],
+                },
+            }
+            repo.update_domain(domain_id, exploration_stage="已生成", explore_pending=explore_pending)
+            final_stage = "已生成"
 
         created = 0
         updated = 0
         for index, course in enumerate(data["courses"]):
-            slug = str(course["slug"])
-            if repo.get_course(slug) is None:
+            cid = str(course["course_id"])
+            if repo.get_course(cid) is None:
                 repo.create_course(
-                    course_id=slug, domain_id=domain_id, name=course["name"],
+                    course_id=cid, domain_id=domain_id, name=course["name"],
                     stage=course["stage"], sort_order=index,
                     prerequisites=course.get("prerequisites", []),
                     aliases=course.get("aliases", []),
@@ -617,13 +639,13 @@ def create_app(
                 created += 1
             else:
                 repo.update_course(
-                    slug, stage=course["stage"], description=course["summary"],
+                    cid, stage=course["stage"], description=course["summary"],
                     aliases=course.get("aliases", []), track=course.get("track", ""),
                     prerequisites=course.get("prerequisites", []),
                 )
                 updated += 1
         return {"domain_id": domain_id, "courses_created": created,
-                "courses_updated": updated, "exploration_stage": "已完成"}
+                "courses_updated": updated, "exploration_stage": final_stage}
 
     def _book_transition(book_id: str, op) -> dict[str, Any]:
         repo = _kn(app)
