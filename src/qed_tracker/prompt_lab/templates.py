@@ -217,26 +217,26 @@ def _validate_courses(value: object) -> dict[str, Any]:
     if not isinstance(raw, list) or not (3 <= len(raw) <= 16):
         raise ValueError("courses 数量必须为 3~16（按领域规模覆盖核心课程；3 用于精炼探索）")
     norm: list[dict[str, Any]] = []
-    seen_slugs: set[str] = set()
+    seen_ids: set[str] = set()
     for course in raw:
         if not isinstance(course, dict):
             raise ValueError("courses[i] 必须是对象")
-        slug = _slug(course.get("slug"), "courses[i].slug")
-        if slug in seen_slugs:
-            raise ValueError(f"courses slug 重复：{slug}")
-        seen_slugs.add(slug)
-        name = _text(course.get("name"), 100, f"{slug}.name")
+        course_id = _slug(course.get("course_id"), "courses[i].course_id")
+        if course_id in seen_ids:
+            raise ValueError(f"courses course_id 重复：{course_id}")
+        seen_ids.add(course_id)
+        name = _text(course.get("name"), 100, f"{course_id}.name")
         if _SEMESTER_SUFFIX.search(name):
             raise ValueError(
-                f"{slug}.name 禁止拆分学期命名（不得以数字/序号结尾，如「课程名1」「课程名（一）」）：{name}"
+                f"{course_id}.name 禁止拆分学期命名（不得以数字/序号结尾，如「课程名1」「课程名（一）」）：{name}"
             )
-        aliases = _str_list(course.get("aliases", []), f"{slug}.aliases")
-        track = _text(course.get("track", ""), 50, f"{slug}.track", nonempty=False)
-        summary = _text(course.get("summary"), 400, f"{slug}.summary")
+        aliases = _str_list(course.get("aliases", []), f"{course_id}.aliases")
+        track = _text(course.get("track", ""), 50, f"{course_id}.track", nonempty=False)
+        summary = _text(course.get("summary"), 400, f"{course_id}.summary")
         if len(summary) < 20:
-            raise ValueError(f"{slug}.summary 过短（至少 20 字）")
-        basis = _str_list(course.get("university_basis", []), f"{slug}.university_basis")
-        norm.append({"slug": slug, "name": name, "aliases": aliases, "track": track,
+            raise ValueError(f"{course_id}.summary 过短（至少 20 字）")
+        basis = _str_list(course.get("university_basis", []), f"{course_id}.university_basis")
+        norm.append({"course_id": course_id, "name": name, "aliases": aliases, "track": track,
                      "summary": summary, "university_basis": basis})
     return {"courses": norm}
 
@@ -258,14 +258,14 @@ _COURSES_PROMPT = PromptTemplate(
         "（例如一门课程在不同学校/学科有不同惯称时列入）；\n"
         "- 禁止拆分学期命名（名称以数字或序号结尾的均不允许，统一为一门完整课程）；\n"
         "- 名称不得过于抽象，必须是具体可学的课程；\n"
-        "- slug 仅使用小写字母/数字/下划线（禁止连字符 -，多词以下划线连接，如 data_structures、"
-        "computer_architecture）；slug 全批唯一；\n"
+        "- course_id 仅使用小写字母/数字/下划线（禁止连字符 -，多词以下划线连接，如 data_structures、"
+        "computer_architecture）；course_id 全批唯一；\n"
         "- track 必须逐字取自 classic_tracks 中 kind=main 的主干方向名称，无归属的置空字符串；"
         "classic_tracks 附带各主干方向的简要说明，归属判断可参考其语义；\n"
         "- summary 为课程简述（60~200 字：内容定位与学习意义），不要过长；\n"
         "- university_basis 给出顶尖大学对应课程依据（课程名或代码，共 0~3 条；确无对应依据时给空数组，不要编造）；\n"
         "- prior_knowledge 是该领域的先验知识（可能为空），仅作背景参考。\n"
-        '输出格式：{"courses":[{"slug":"...","name":"...","aliases":["..."],"track":"...",'
+        '输出格式：{"courses":[{"course_id":"...","name":"...","aliases":["..."],"track":"...",'
         '"summary":"...","university_basis":["..."]}]}\n'
         + json.dumps(payload, ensure_ascii=False)
     ),
