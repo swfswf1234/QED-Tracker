@@ -650,7 +650,7 @@ def _domains(args, settings: Settings) -> int:
     try:
         response = httpx.post(
             f"{base_url}/api/v1/domains/import",
-            json={"domain": data},
+            json={"domain": data, "source": "cli"},
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
