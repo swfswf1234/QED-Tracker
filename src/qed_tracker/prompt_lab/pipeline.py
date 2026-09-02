@@ -52,12 +52,12 @@ def _apply_cross(step: str, context: dict[str, Any], value: Any) -> None:
         for course in value["courses"]:
             if course["track"] and course["track"] not in track_names:
                 raise ValueError(
-                    f"{course['slug']}.track 不在 classic_tracks 内：{course['track']}"
+                    f"{course['course_id']}.track 不在 classic_tracks 内：{course['track']}"
                 )
     elif step == "path":
-        slugs = context.get("course_slugs", set())
-        result_slugs = {a["slug"] for a in value["assignments"]}
-        if result_slugs != slugs:
+        course_ids = context.get("course_ids", set())
+        result_ids = {a["course_id"] for a in value["assignments"]}
+        if result_ids != course_ids:
             raise ValueError("path.assignments 必须与课程清单完全一致（不得新增/遗漏）")
 
 
@@ -119,25 +119,25 @@ class DomainPipeline(ExploreAdvisorBase):
              "prior_knowledge": get_prior_for_step(final_name, "courses")},
             {"track_names": {t["name"] for t in tracks if t.get("kind") == "main"}},
         )
-        course_slugs = {c["slug"] for c in courses["courses"]}
+        course_ids = {c["course_id"] for c in courses["courses"]}
 
         # step3 学习顺序与层级（课程清单带 summary 作为前置判断依据）
         path = self._run(
             path_template,
             {"domain": {"name": final_name, "description": domain["description"],
                         "classic_tracks": tracks},
-             "courses": [{"slug": c["slug"], "name": c["name"], "track": c["track"],
+             "courses": [{"course_id": c["course_id"], "name": c["name"], "track": c["track"],
                           "summary": c["summary"]} for c in courses["courses"]],
              "scope_hint": scope_hint,
              "prior_knowledge": get_prior_for_step(final_name, "path")},
-            {"course_slugs": course_slugs},
+            {"course_ids": course_ids},
         )
-        tiers = {a["slug"]: a["tier"] for a in path["assignments"]}
-        pres = {a["slug"]: a["prerequisites"] for a in path["assignments"]}
-        edges = [{"from": pre, "to": slug} for slug, pres_list in pres.items() for pre in pres_list]
+        tiers = {a["course_id"]: a["tier"] for a in path["assignments"]}
+        pres = {a["course_id"]: a["prerequisites"] for a in path["assignments"]}
+        edges = [{"from": pre, "to": cid} for cid, pres_list in pres.items() for pre in pres_list]
 
         merged_courses = [
-            {**course, "tier": tiers[course["slug"]], "prerequisites": pres[course["slug"]]}
+            {**course, "tier": tiers[course["course_id"]], "prerequisites": pres[course["course_id"]]}
             for course in courses["courses"]
         ]
         return {
