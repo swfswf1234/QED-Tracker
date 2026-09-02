@@ -282,37 +282,37 @@ def _validate_path(value: object) -> dict[str, Any]:
     assignments = value.get("assignments")
     if not isinstance(assignments, list) or not assignments:
         raise ValueError("path.assignments 必须为非空数组")
-    slugs: list[str] = []
+    ids: list[str] = []
     for item in assignments:
         if not isinstance(item, dict):
             raise ValueError("path.assignments[i] 必须是对象")
-        slugs.append(_slug(item.get("slug"), "path.assignments[i].slug"))
-    if len(slugs) != len(set(slugs)):
-        raise ValueError("path.assignments slug 重复")
-    slug_set = set(slugs)
+        ids.append(_slug(item.get("course_id"), "path.assignments[i].course_id"))
+    if len(ids) != len(set(ids)):
+        raise ValueError("path.assignments course_id 重复")
+    id_set = set(ids)
     graph: dict[str, list[str]] = {}
     norm: list[dict[str, Any]] = []
     for item in assignments:
-        slug = str(item.get("slug"))
-        tier = _text(item.get("tier"), 20, f"{slug}.tier")
+        course_id = str(item.get("course_id"))
+        tier = _text(item.get("tier"), 20, f"{course_id}.tier")
         if tier not in TIERS:
-            raise ValueError(f"{slug}.tier 必须是 {TIERS} 之一：{tier}")
+            raise ValueError(f"{course_id}.tier 必须是 {TIERS} 之一：{tier}")
         pres_raw = item.get("prerequisites", [])
         if not isinstance(pres_raw, list) or not all(isinstance(p, str) for p in pres_raw):
-            raise ValueError(f"{slug}.prerequisites 必须是字符串数组")
+            raise ValueError(f"{course_id}.prerequisites 必须是字符串数组")
         pres: list[str] = []
         for pre in pres_raw:
-            if pre == slug:
-                raise ValueError(f"{slug} 不允许自环前置")
-            if pre not in slug_set:
-                raise ValueError(f"{slug}.prerequisites 引用不在本批课程：{pre}")
+            if pre == course_id:
+                raise ValueError(f"{course_id} 不允许自环前置")
+            if pre not in id_set:
+                raise ValueError(f"{course_id}.prerequisites 引用不在本批课程：{pre}")
             if pre not in pres:
                 pres.append(pre)
-        graph[slug] = pres
-        norm.append({"slug": slug, "tier": tier, "prerequisites": pres})
+        graph[course_id] = pres
+        norm.append({"course_id": course_id, "tier": tier, "prerequisites": pres})
     # 前置关系无环检测（DFS 三色标记）
     WHITE, GRAY, BLACK = 0, 1, 2
-    color = {s: WHITE for s in slugs}
+    color = {s: WHITE for s in ids}
 
     def visit(node: str) -> None:
         color[node] = GRAY
@@ -323,7 +323,7 @@ def _validate_path(value: object) -> dict[str, Any]:
                 visit(nxt)
         color[node] = BLACK
 
-    for s in slugs:
+    for s in ids:
         if color[s] == WHITE:
             visit(s)
     return {"assignments": norm, "notes": _text(value.get("notes", ""), 500, "path.notes", nonempty=False)}
@@ -336,18 +336,18 @@ _PATH_PROMPT = PromptTemplate(
     name="学习顺序与层级",
     system=(
         "你是课程体系设计顾问。基于领域介绍与课程清单，给出全部课程的学习顺序与层级归属。"
-        "全部输出使用中文（slug 等专有标记除外）。"
+        "全部输出使用中文（course_id 等专有标记除外）。"
         + _UNTRUSTED_NOTE + _STRICT_JSON_NOTE
     ),
     build_user=lambda payload: (
         "为下述全部课程编排学习顺序与层级。要求：\n"
         "- scope_hint 是权威范围边界，层级判断在该范围内进行；\n"
-        "- 每门课程都必须出现一次（slug 逐字复制输入课程的 slug）；\n"
+        "- 每门课程都必须出现一次（course_id 逐字复制输入课程的 course_id）；\n"
         "- tier 只能取 基础/主干/分支/前沿 之一（基础=入门基石；主干=方向主干；"
         "分支=方向细分/拓展；前沿=研究前沿/论文驱动）；\n"
-        "- prerequisites 为该课程的先修课程 slug 列表（只能引用本批课程的 slug，可为空数组，禁止自环或循环）；"
+        "- prerequisites 为该课程的先修课程 course_id 列表（只能引用本批课程的 course_id，可为空数组，禁止自环或循环）；"
         "先修关系应基于每门课 summary 所述的知识依赖来判断，而非仅凭名称联想；\n"
-        '- 输出格式：{"assignments":[{"slug":"...","tier":"基础","prerequisites":[]}],"notes":"..."}\n'
+        '- 输出格式：{"assignments":[{"course_id":"...","tier":"基础","prerequisites":[]}],"notes":"..."}\n'
         + json.dumps(payload, ensure_ascii=False)
     ),
     validate=_validate_path,
@@ -514,7 +514,7 @@ register(_TUTORIALS_PROMPT)
 def render_graph_td(courses: list[dict[str, Any]], edges: list[dict[str, str]]) -> str:
     """按 tier 阶段分组渲染 mermaid graph TD（节点 + 前置边）。"""
     lines = ["graph TD"]
-    by_slug = {c["slug"]: c for c in courses}
+    by_id = {c["course_id"]: c for c in courses}
     ordered: dict[str, list[dict[str, Any]]] = {tier: [] for tier in TIERS}
     for course in courses:
         ordered.setdefault(course.get("tier", ""), []).append(course)
@@ -524,8 +524,8 @@ def render_graph_td(courses: list[dict[str, Any]], edges: list[dict[str, str]]) 
             continue
         lines.append(f"    %% {tier}")
         for course in group:
-            name = by_slug[course["slug"]]["name"].replace("[", "（").replace("]", "）")
-            lines.append(f"    {course['slug']}[{name}]")
+            name = by_id[course["course_id"]]["name"].replace("[", "（").replace("]", "）")
+            lines.append(f"    {course['course_id']}[{name}]")
     for edge in edges:
         lines.append(f"    {edge['from']} --> {edge['to']}")
     return "\n".join(lines) + "\n"
