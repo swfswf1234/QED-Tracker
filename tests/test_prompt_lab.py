@@ -161,9 +161,9 @@ def test_domain_template_v2_contract_notes() -> None:
 # ---------------- step2 courses 校验 ----------------
 
 
-def _course(slug: str, name: str, **overrides) -> dict:
+def _course(course_id: str, name: str, **overrides) -> dict:
     base = {
-        "slug": slug, "name": name, "aliases": [],
+        "course_id": course_id, "name": name, "aliases": [],
         "track": "", "summary": "这是一门足够长的课程简介文本用于通过最短长度校验。",
         "university_basis": ["清华大学 对应课程"],
     }
@@ -201,13 +201,13 @@ def test_courses_validate_rules() -> None:
     missing = _course("crs2", "课程")
     missing.pop("university_basis")
     courses_t.validate({"courses": [missing, *_ok_rest()]})
-    # 连字符 slug
+    # 连字符 course_id
     with pytest.raises(ValueError):
         courses_t.validate({"courses": [_course("algorithms-and-ds", "课程"), *_ok_rest()]})
 
 
-def test_courses_template_forbids_hyphen_slugs() -> None:
-    """slug 规则必须显式禁止连字符并给出下划线示例（真实评估中 LLM 曾输出 algorithms-and-data-structures）。"""
+def test_courses_template_forbids_hyphen_course_ids() -> None:
+    """course_id 规则必须显式禁止连字符并给出下划线示例（真实评估中 LLM 曾输出 algorithms-and-data-structures）。"""
     courses_t = get_template("domain-explore", "courses")
     user_text = courses_t.build_user({"domain": {}, "prior_knowledge": {}})
     assert "连字符" in user_text
@@ -220,20 +220,20 @@ def test_courses_template_forbids_hyphen_slugs() -> None:
 def test_path_assignments_rules() -> None:
     path_t = get_template("domain-explore", "path")
     ok = {"assignments": [
-        {"slug": "math_analysis", "tier": "基础", "prerequisites": []},
-        {"slug": "real_analysis", "tier": "主干", "prerequisites": ["math_analysis"]},
+        {"course_id": "math_analysis", "tier": "基础", "prerequisites": []},
+        {"course_id": "real_analysis", "tier": "主干", "prerequisites": ["math_analysis"]},
     ], "notes": ""}
     assert path_t.validate(ok) == ok
     # tier 越界
     with pytest.raises(ValueError):
-        path_t.validate({"assignments": [{"slug": "a", "tier": "选修", "prerequisites": []}]})
+        path_t.validate({"assignments": [{"course_id": "a", "tier": "选修", "prerequisites": []}]})
     # 自环前置
     with pytest.raises(ValueError):
-        path_t.validate({"assignments": [{"slug": "a", "tier": "基础", "prerequisites": ["a"]}]})
+        path_t.validate({"assignments": [{"course_id": "a", "tier": "基础", "prerequisites": ["a"]}]})
     # 前置成环（a↔b）
     cyclic = {"assignments": [
-        {"slug": "a", "tier": "基础", "prerequisites": ["b"]},
-        {"slug": "b", "tier": "分支", "prerequisites": ["a"]},
+        {"course_id": "a", "tier": "基础", "prerequisites": ["b"]},
+        {"course_id": "b", "tier": "分支", "prerequisites": ["a"]},
     ], "notes": ""}
     with pytest.raises(ValueError):
         path_t.validate(cyclic)
@@ -248,9 +248,9 @@ def test_path_stage_tiers_follow_ordered_enum() -> None:
 
 def test_render_graph_td_groups_by_tier_with_edges() -> None:
     courses = [
-        {"slug": "math_analysis", "name": "数学分析", "tier": "基础"},
-        {"slug": "algebra", "name": "高等代数", "tier": "基础"},
-        {"slug": "real_analysis", "name": "实分析", "tier": "主干"},
+        {"course_id": "math_analysis", "name": "数学分析", "tier": "基础"},
+        {"course_id": "algebra", "name": "高等代数", "tier": "基础"},
+        {"course_id": "real_analysis", "name": "实分析", "tier": "主干"},
     ]
     text_out = render_graph_td(courses, [{"from": "math_analysis", "to": "real_analysis"}])
     assert text_out.startswith("graph TD")
@@ -277,10 +277,10 @@ _COURSES_RESP = {"courses": [
     _course("real_analysis", "实分析", track="分析"),
 ]}
 _PATH_RESP = {"assignments": [
-    {"slug": "math_analysis", "tier": "基础", "prerequisites": []},
-    {"slug": "algebra", "tier": "基础", "prerequisites": []},
-    {"slug": "topology", "tier": "分支", "prerequisites": ["math_analysis"]},
-    {"slug": "real_analysis", "tier": "主干", "prerequisites": ["math_analysis", "topology"]},
+    {"course_id": "math_analysis", "tier": "基础", "prerequisites": []},
+    {"course_id": "algebra", "tier": "基础", "prerequisites": []},
+    {"course_id": "topology", "tier": "分支", "prerequisites": ["math_analysis"]},
+    {"course_id": "real_analysis", "tier": "主干", "prerequisites": ["math_analysis", "topology"]},
 ], "notes": ""}
 
 
@@ -305,7 +305,7 @@ def test_domain_pipeline_runs_three_steps_and_aggregates_report() -> None:
     assert report["domain"]["final_name"] == "高等数学"
     assert report["domain"]["level"] == "本科-硕士"
     assert len(report["courses"]) == 4
-    merged = {c["slug"]: c for c in report["courses"]}
+    merged = {c["course_id"]: c for c in report["courses"]}
     assert merged["math_analysis"]["tier"] == "基础"
     assert merged["math_analysis"]["prerequisites"] == []
     assert merged["real_analysis"]["prerequisites"] == ["math_analysis", "topology"]
@@ -318,7 +318,7 @@ def test_domain_pipeline_runs_three_steps_and_aggregates_report() -> None:
     ]
 
 
-def test_pipeline_payload_carries_prior_and_slugs() -> None:
+def test_pipeline_payload_carries_prior_and_course_ids() -> None:
     captured: list[dict] = []
     queue = [json.dumps(_DOMAIN_RESP), json.dumps(_COURSES_RESP), json.dumps(_PATH_RESP)]
 
@@ -341,8 +341,8 @@ def test_pipeline_payload_carries_prior_and_slugs() -> None:
     # step2 携带权威范围、主线全量对象（含 summary）
     assert '"scope_hint"' in courses_user
     assert '"summary"' in courses_user
-    # step3 注入课程清单（slug+name+track+summary，作为前置判断依据）
-    assert '"slug": "math_analysis"' in path_user
+    # step3 注入课程清单（course_id+name+track+summary，作为前置判断依据）
+    assert '"course_id": "math_analysis"' in path_user
     assert '"summary"' in path_user
     assert '"track": "分析"' in path_user
 
@@ -388,7 +388,7 @@ def test_pipeline_rejects_track_outside_classic_tracks() -> None:
 
 
 def test_pipeline_rejects_incomplete_assignments() -> None:
-    bad_path = {"assignments": [{"slug": "ghost", "tier": "基础", "prerequisites": []}], "notes": ""}
+    bad_path = {"assignments": [{"course_id": "ghost", "tier": "基础", "prerequisites": []}], "notes": ""}
     pipeline = _pipeline([json.dumps(_DOMAIN_RESP), json.dumps(_COURSES_RESP),
                           json.dumps(bad_path), json.dumps(bad_path)])
     with pytest.raises(PipelineError):
