@@ -1,8 +1,8 @@
 """手动知识导入链路（QED-050）：领域 JSON 校验器 + POST /domains/import 契约。
 
 守护面：
-- validate_domain manual@v1：slug/方向 kind/stages 值域/track=main/前置引用与无环/一句话；
-- /domains/import：内联与 file_path 两模式、幂等 upsert、exploration_stage=已完成、错误码；
+- validate_domain manual@v1：course_id/方向 kind/stages 值域/track=main/前置引用与无环/一句话；
+- /domains/import：内联与 file_path 两模式、幂等 upsert、exploration_stage 由 source 控制、错误码；
 - 知识正本合规：docs/knowledge/math-advanced.json 及其课程 JSON 均通过对应校验器（正本=契约守护）。
 """
 
@@ -42,9 +42,9 @@ def _domain_ok(**overrides) -> dict:
         "stages": ["基础", "主干", "分支", "前沿"],
         "anchor_courses": ["数学分析"],
         "courses": [
-            {"slug": "test_analysis", "name": "数学分析", "track": "分析学", "stage": "基础",
+            {"course_id": "test_analysis", "name": "数学分析", "track": "分析学", "stage": "基础",
              "aliases": ["微积分"], "summary": "测试课程简介。", "prerequisites": []},
-            {"slug": "test_advanced", "name": "高等数学", "track": "", "stage": "主干",
+            {"course_id": "test_advanced", "name": "高等数学", "track": "", "stage": "主干",
              "aliases": [], "summary": "测试课程简介之二。", "prerequisites": ["test_analysis"]},
         ],
         "extensions_planned": [],
@@ -70,18 +70,18 @@ def test_validate_domain_happy_path() -> None:
         ({"stages": ["本科基础"]}, "stages 值域"),
         ({"stages": ["基础", "基础"]}, "stages 存在重复值"),
         ({"courses": []}, "courses 必须为非空数组"),
-        ({"courses": [{"slug": "course_x", "name": "n", "track": "", "stage": "主", "summary": "简介",
+        ({"courses": [{"course_id": "course_x", "name": "n", "track": "", "stage": "主", "summary": "简介",
                        "prerequisites": []}]}, "stage 必须是 stages"),
-        ({"courses": [{"slug": "course_y", "name": "n", "track": "不存在的方向", "stage": "基础",
+        ({"courses": [{"course_id": "course_y", "name": "n", "track": "不存在的方向", "stage": "基础",
                        "summary": "简介", "prerequisites": []}]}, "track 必须逐字取自 classic_tracks"),
-        ({"courses": [{"slug": "a1", "name": "n", "track": "", "stage": "基础", "summary": "s",
-                      "prerequisites": ["ghost"]},
-                      {"slug": "a2", "name": "n2", "track": "", "stage": "基础", "summary": "s",
-                       "prerequisites": []}]}, "引用不在本批课程"),
-        ({"courses": [{"slug": "a1", "name": "n", "track": "", "stage": "基础", "summary": "s",
-                      "prerequisites": ["a2"]},
-                      {"slug": "a2", "name": "n2", "track": "", "stage": "基础", "summary": "s",
-                       "prerequisites": ["a1"]}]}, "存在循环"),
+        ({"courses": [{"course_id": "a1", "name": "n", "track": "", "stage": "基础", "summary": "s",
+                       "prerequisites": ["ghost"]},
+                       {"course_id": "a2", "name": "n2", "track": "", "stage": "基础", "summary": "s",
+                        "prerequisites": []}]}, "引用不在本批课程"),
+        ({"courses": [{"course_id": "a1", "name": "n", "track": "", "stage": "基础", "summary": "s",
+                       "prerequisites": ["a2"]},
+                       {"course_id": "a2", "name": "n2", "track": "", "stage": "基础", "summary": "s",
+                        "prerequisites": ["a1"]}]}, "存在循环"),
     ],
 )
 def test_validate_domain_rejects(overrides, needle: str) -> None:
@@ -194,9 +194,9 @@ def test_domain_import_creates_domain_and_courses(client, repo) -> None:
 
 def test_domain_import_is_idempotent_upsert(client, repo) -> None:
     payload = _domain_ok()
-    assert client.post("/api/v1/domains/import", json={"domain": payload}).status_code == 200
+    assert client.post("/api/v1/domains/import", json={"domain": payload, "source": "cli"}).status_code == 200
     payload["description"] = "更新后的描述。"
-    response = client.post("/api/v1/domains/import", json={"domain": payload})
+    response = client.post("/api/v1/domains/import", json={"domain": payload, "source": "cli"})
     assert response.status_code == 200
     body = response.json()
     assert body["courses_created"] == 0
@@ -213,7 +213,7 @@ def test_domain_import_accepts_file_path_mode(client, tmp_path) -> None:
 
 
 def test_domain_import_rejects_invalid_payload(client) -> None:
-    payload = _domain_ok(courses=[{"slug": "x", "name": "n", "track": "", "stage": "坏档",
+    payload = _domain_ok(courses=[{"course_id": "x", "name": "n", "track": "", "stage": "坏档",
                                    "summary": "s", "prerequisites": []}])
     response = client.post("/api/v1/domains/import", json={"domain": payload})
     assert response.status_code == 400
@@ -238,6 +238,28 @@ def test_domain_import_no_db_409(tmp_path) -> None:
     with TestClient(app) as test_client:
         response = test_client.post("/api/v1/domains/import", json={"domain": _domain_ok()})
         assert response.status_code == 409
+
+
+def test_domain_import_source_cli_direct_to_completed(client, repo) -> None:
+    response = client.post("/api/v1/domains/import", json={"domain": _domain_ok(), "source": "cli"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["domain_id"] == "test-math"
+    assert body["exploration_stage"] == "已完成"
+    domain = repo.get_domain("test-math")
+    assert domain.exploration_stage == "已完成"
+
+
+def test_domain_import_no_source_stays_at_generated(client, repo) -> None:
+    response = client.post("/api/v1/domains/import", json={"domain": _domain_ok()})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["domain_id"] == "test-math"
+    assert body["exploration_stage"] == "已生成"
+    domain = repo.get_domain("test-math")
+    assert domain.exploration_stage == "已生成"
+    assert domain.explore_pending is not None
+    assert domain.explore_pending["kind"] == "review_results"
 
 
 # ---------------- API：A2 source=manual 扩展（QED-050 M5） ----------------
