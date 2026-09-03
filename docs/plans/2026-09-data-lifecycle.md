@@ -129,8 +129,8 @@ DATA_ROOT/
 
 | 文档 | 关系 |
 |---|---|
-| [exploration-pipeline.md](2026-09-exploration-pipeline.md) | 探索管线（探索生命周期的驱动方） |
-| [knowledge-import.md](2026-09-knowledge-import.md) | 手动导入（知识生命周期的手动入口） |
+| [探索管线设计](../design/exploration-pipeline.md) | 探索管线（探索生命周期的驱动方） |
+| [知识录入设计](../design/knowledge-import.md) | 手动导入（知识生命周期的手动入口） |
 | [download-registration.md](2026-09-download-registration.md) | 下载登记（书籍生命周期的驱动方） |
 | `architecture/shared-tables.md` | 共享表契约（状态机定义） |
 | `architecture/database-schema.md` | 数据库 DDL（字段定义） |

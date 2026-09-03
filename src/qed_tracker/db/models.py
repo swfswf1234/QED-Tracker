@@ -1,7 +1,7 @@
-"""MySQL qed_*/qt_* 登记表（qed 库）的 ORM 模型与状态枚举（五层模型，QED-031）。
+"""MySQL qed_*/qt_* 登记表（qed 库）的 ORM 模型与状态枚举。
 
 共享表（qed_*）：qed_domain / qed_course，所有权 QED-Tracker，其他项目只读；
-私有表（qt_*）：qt_knowledge（一套教程/一组延展资料归类）→ qt_books（一册/一卷/一个快照）
+私有表（qt_*）：qt_knowledge（一套教程/一组延展资料归类）→ qt_books（书库：域级书库）
 → qt_sources（渠道尝试）。旧三表模型（qt_selections/qt_downloads）已随 QED-031 退役。
 qt_explore_runs / qt_prompt_runs 已随共享表重构（2026-08-27）退役。
 
@@ -15,31 +15,24 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class KnowledgeStatus(StrEnum):
-    """qt_knowledge 教程生命周期：draft（探索中）→ confirmed（定稿）→ completed；终态 rejected/superseded。"""
+    """qt_knowledge 教程状态（两态）：draft（探索中）→ confirmed（定稿）。"""
 
     DRAFT = "draft"
     CONFIRMED = "confirmed"
-    COMPLETED = "completed"
-    REJECTED = "rejected"
-    SUPERSEDED = "superseded"
 
 
 class BookStatus(StrEnum):
-    """qt_books 书籍四段状态机：candidate → decided → downloading → downloaded → verified；failed 可重试。"""
+    """qt_books 选用状态：decided（已入选）/ parallel（平行读物）/ candidate（候选）/ retired（退役）。"""
 
-    CANDIDATE = "candidate"
     DECIDED = "decided"
-    DOWNLOADING = "downloading"
-    DOWNLOADED = "downloaded"
-    VERIFIED = "verified"
-    FAILED = "failed"
-    REJECTED = "rejected"
-    SUPERSEDED = "superseded"
+    PARALLEL = "parallel"
+    CANDIDATE = "candidate"
+    RETIRED = "retired"
 
 
 class Base(DeclarativeBase):
@@ -118,38 +111,35 @@ class QtKnowledge(Base):
     __tablename__ = "qt_knowledge"
     __table_args__ = ({"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},)
 
-    knowledge_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="教程标识（主键）")
-    domain_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="所属领域")
-    course_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="所属课程")
+    knowledge_id: Mapped[str] = mapped_column(String(32), primary_key=True, comment="教程标识（主键）：kt-{课程缩写}-{set_no}，服务端生成")
+    course_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="所属课程标识")
     kind: Mapped[str] = mapped_column(
-        String(24), nullable=False, comment="类型（tutorial=教程套系；other_material=延展资料归类）"
+        String(24), nullable=False, comment="教程类型：tutorial=一套教程；other_material=课程延展资料归类"
     )
-    set_no: Mapped[str] = mapped_column(
-        String(4), nullable=False, default="", comment="套标记（1~4=中文套；en=英文套；空=无配套）"
+    set_no: Mapped[str] = mapped_column(String(4), nullable=False, default="", comment="套标记：1~4=中文套号；en=英文对照；空串=资料行")
+    name: Mapped[str] = mapped_column(String(128), nullable=False, default="", comment="教程名：格式「教程N：作者《书名》」")
+    position: Mapped[str] = mapped_column(
+        String(24), nullable=False,
+        comment="学习阶段（套级）：beginner/intermediate/advanced/comprehensive/elective",
     )
-    name: Mapped[str] = mapped_column(String(200), nullable=False, default="", comment="名称")
-    textbook_ref: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="教材决定引用")
-    exercise_ref: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="习题集决定引用")
-    textbook_intro: Mapped[str] = mapped_column(Text(), nullable=False, comment="教材简介")
-    exercise_intro: Mapped[str] = mapped_column(Text(), nullable=False, comment="习题集简介")
-    materials_intro: Mapped[str] = mapped_column(Text(), nullable=False, comment="延展资料简介")
+    intro: Mapped[str] = mapped_column(Text(), nullable=False, comment="套级简介（散文，120~350字）")
+    textbook_ref: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list, comment="教材引用数组"
+    )
+    exercise_ref: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True, comment="习题集引用数组；NULL=教材含习题"
+    )
+    parallel_ref: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True, comment="平行读物引用数组"
+    )
     status: Mapped[str] = mapped_column(
-        String(24),
-        nullable=False,
-        default=KnowledgeStatus.DRAFT.value,
-        index=True,
-        comment="状态（draft=探索中；confirmed=已定稿；completed=已完成；rejected=已否决；superseded=已替代）",
+        String(24), nullable=False, default=KnowledgeStatus.DRAFT.value,
+        index=True, comment="审阅状态：draft=探索中；confirmed=定稿",
     )
-    reject_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="否决原因")
-    supersede_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="替代原因")
-    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="创建人")
-    updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="最后更新人")
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="人工定稿时间")
+    notes: Mapped[str | None] = mapped_column(Text(), nullable=True, comment="审阅备注或退役说明")
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
-    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="定稿时间")
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="完成时间")
-    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="否决时间")
-    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="替代时间")
-    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="最后更新时间")
 
     def to_dict(self) -> dict[str, Any]:
         result = {}
@@ -162,63 +152,41 @@ class QtKnowledge(Base):
 
 
 class QtBook(Base):
-    """qt_books 书籍（私有）：一行 = 一册/一卷/一个快照（论文/博客）；候选→决定→下载→验证全生命周期。"""
+    """qt_books 书库（私有）：域级书库，一行 = 一册/一本书的选用状态与持有状态。"""
 
     __tablename__ = "qt_books"
-    __table_args__ = (
-        UniqueConstraint("knowledge_id", "title", "part", name="uq_qt_books_knowledge_title_part"),
-        UniqueConstraint("sha256", name="uq_qt_books_sha256"),
-        {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
-    )
+    __table_args__ = ({"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},)
 
-    book_id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="书籍标识（主键）")
-    knowledge_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment="所属教程")
-    kind: Mapped[str] = mapped_column(
-        String(16),
-        nullable=False,
-        comment="类型（textbook=教材；exercise=习题集；supplement=补充；paper=论文；blog=博客；other=其他）",
+    book_id: Mapped[str] = mapped_column(String(32), primary_key=True, comment="书籍标识（主键）：{课程缩写}-b{NN}，服务端生成")
+    title: Mapped[str] = mapped_column(String(256), nullable=False, comment="书名（真实名称，支持 zh/en）")
+    part: Mapped[str] = mapped_column(String(8), nullable=False, default="", comment="卷标识：空串=单卷本；上册/下册/Vol.1~3")
+    authors: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list,
+        comment='作者列表：[{name, role:"author|translator"}]',
     )
+    publisher: Mapped[str] = mapped_column(String(128), nullable=False, default="", comment="出版社名称")
+    edition: Mapped[str] = mapped_column(String(64), nullable=False, default="", comment="版本/版次")
+    year: Mapped[int | None] = mapped_column(Integer(), nullable=True, comment="出版年份（未知填 NULL）")
+    language: Mapped[str] = mapped_column(String(8), nullable=False, comment="主要语言：zh/en")
     roles: Mapped[list[str]] = mapped_column(
-        JSON, nullable=False, default=list, comment="角色（textbook=教材；exercise=习题集；solutions=解答）"
+        JSON, nullable=False, default=list,
+        comment='书籍角色：textbook/exercises/solutions',
     )
-    title: Mapped[str] = mapped_column(String(500), nullable=False, comment="书名（不含卷）")
-    part: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="", comment="卷标识（空=整本；第一册/上册/博文序号）"
-    )
-    display_title: Mapped[str] = mapped_column(String(500), nullable=False, comment="展示名")
-    file_name: Mapped[str] = mapped_column(String(500), nullable=False, default="", comment="落盘文件名")
-    authors: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="作者")
-    language: Mapped[str] = mapped_column(String(8), nullable=False, default="", comment="语言")
-    version: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, comment="版本信息")
-    source: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, comment="候选来源方案")
-    original_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="原始来源链接")
-    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="文件哈希")
-    relative_path: Mapped[str] = mapped_column(String(500), nullable=False, default="", comment="相对数据根路径")
-    absolute_path: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="dataset 绝对路径")
-    page_count: Mapped[int | None] = mapped_column(Integer(), nullable=True, comment="页数")
     status: Mapped[str] = mapped_column(
-        String(24),
-        nullable=False,
-        default=BookStatus.CANDIDATE.value,
-        index=True,
-        comment=(
-            "状态（candidate=候选；decided=已决定；downloading=下载中；downloaded=已下载；"
-            "verified=已验证；failed=失败；rejected=已否决；superseded=已替代）"
-        ),
+        String(24), nullable=False, default=BookStatus.CANDIDATE.value,
+        index=True, comment="选用状态：decided/parallel/candidate/retired",
     )
-    reject_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="否决原因")
-    rejected_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="否决人")
-    supersede_reason: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="替代原因")
-    review_note: Mapped[str] = mapped_column(String(1000), nullable=False, default="", comment="审理备注")
-    created_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="创建人")
-    updated_by: Mapped[str] = mapped_column(String(16), nullable=False, default="", comment="最后更新人")
+    retire_reason: Mapped[str] = mapped_column(String(500), nullable=False, default="", comment="退役原因（retired 时必填）")
+    holding: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="missing",
+        index=True, comment="持有状态：owned=已到手；missing=未持有",
+    )
+    file_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="PDF 文件路径（数据根相对）")
+    priority: Mapped[int | None] = mapped_column(Integer(), nullable=True, comment="补书优先级：0=P0/1=P1/2=P2/NULL")
+    notes: Mapped[str | None] = mapped_column(Text(), nullable=True, comment="备注")
+    domain_id: Mapped[str] = mapped_column(String(32), nullable=False, default="", index=True, comment="所属领域标识")
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
-    decided_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="决定下载时间")
-    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="下载完成时间")
-    verified_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="验证通过时间")
-    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="否决时间")
-    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True, comment="替代时间")
-    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="最后更新时间")
 
     def to_dict(self) -> dict[str, Any]:
         result = {}

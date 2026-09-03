@@ -1,7 +1,7 @@
 # 设计索引
 
 状态：Current
-最后更新：2026-08-31
+最后更新：2026-09-03
 
 文档类别固定：设计文档按下列类别维护，不随意增加；新能力先入 [待办列表](../trackers/todo.md)
 为 Plan，方案确定后再进入设计文档（如套标记字段 set_no，见
@@ -28,6 +28,12 @@
 - [主链路设计](main-line-curriculum.md)（Accepted，QED-026 实现完成）：课程体系数据模型
   （courses/math.json）、教材条目五要素（版本/评价/建议/渠道/状态）、渠道记录与 CLI 流程；
   与 evaluate 平行。
+- [探索管线设计](exploration-pipeline.md)（Accepted，QED-050-A/B）：LLM 探索管线（领域两步
+  domain@v4+courses@v8、课程单步 tutorials@v2）、模板版本化与审核、direct/text/doc 模式、
+  dry-run/run 语义（统一两轮审阅）、CLI domains explore；与知识录入共用同一状态机。
+- [知识录入设计](knowledge-import.md)（Accepted，QED-050-C）：手动入口（领域/课程 JSON +
+  PDF 书籍导入→下载链）、数据文件版课程契约、ID 生成规则、A2 采纳与 confirm 简化、
+  六步手动流程、docs/knowledge 标准答案目录（正本契约）。
 
 ## 评审与来源
 
@@ -58,4 +64,4 @@
 - [治理契约范本对齐](../history/baselines/2026-08-governance-contract-alignment.md)（Implemented，QED-022，已归档）：守护契约测试的
   契约头六字段、守护面清单与编写约定对齐根仓库范本。
 
-用户命令查[日常操作](../guides/operations.md)，系统级边界查[系统总览](../architecture/system-overview.md)。跨项目契约（端口、环境变量、dataset 布局）以 QED-Engine 根仓库 `docs/` 为准。
+用户命令查[操作指南](../guides/operations.md)，系统级边界查[系统总览](../architecture/system-overview.md)。跨项目契约（端口、环境变量、dataset 布局）以 QED-Engine 根仓库 `docs/` 为准。

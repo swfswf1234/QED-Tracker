@@ -63,10 +63,10 @@ flowchart TB
         SCRIPTS2["scripts/：服务托管、表注释应用"]
     end
     subgraph APP["应用层"]
-        EXP["探索线 prompt_lab/：DomainPipeline / CoursePipeline<br/>+ templates.py（domain@v3/courses@v6/path@v5/tutorials@v1）<br/>+ priors.py + providers/explore_advisor.py"]
+        EXP["探索线 prompt_lab/：DomainPipeline / CoursePipeline<br/>+ templates.py（domain@v4/courses@v8/tutorials@v2）<br/>+ priors.py + providers/explore_advisor.py"]
         DWN["下载线：application/books.py、papers.py、resources.py、<br/>book_fetch.py（自动取书任务）+ providers/（books 四来源/<br/>arxiv/bailian/book_advisor）+ downloader.py + inventory.py"]
         MLN["主链路：courses.py（qed_course 课程体系）<br/>+ main_line/（教材条目五要素）+ main_line/advisor.py（LLM 预填）"]
-        IMP["导入与迁移：application/knowledge_import.py（manual@v1 校验）<br/>+ migrate_knowledge.py（存量迁移）"]
+        IMP["导入与迁移：application/knowledge_import.py（manual@v1 领域 + 数据文件版课程校验）<br/>+ migrate_knowledge.py（存量迁移）"]
     end
     subgraph INFRA["基础设施层"]
         LC["llm_client.py 模型调用兼容层<br/>（local 直连 / qed-engine 网关）"]
@@ -84,7 +84,7 @@ flowchart TB
 
 | 设计模块线 | 手动轨（人工确认/录入） | 自动轨（LLM/后台任务） |
 | --- | --- | --- |
-| 探索线 | `POST /domains/import`（manual@v1 校验落库）+ 课程采纳 `source=manual` | 探索 dry-run（领域/课程，模型只产报告不写库） |
+| 探索线 | `POST /domains/import`（manual@v1 校验落库，API 走六步流程、CLI 直接定稿）+ 课程采纳 `source=manual` | 探索 dry-run（领域/课程，模型只产报告不写库） |
 | 下载线 | `POST /books/{id}/register` + `POST /books/{id}/import`（人工路径登记/导入） | `POST /books/{id}/fetch`（book_download 后台任务：搜索→逐候选限时下载） |
 | 主链路 | CLI `mainline` 评审闭环（new/review/download/verify/approve） | `main_line/advisor.py` LLM 预填（可审阅，不写资源事实） |
 
@@ -124,7 +124,7 @@ QED-Tracker 可**独立运行**，也可作为 QED-Engine 体系的**组件运�
 | 下载与清单 | 有：`books`（get/fetch-url/import）、`papers`（search/get/recommend、selections、profiles）、`catalog`（list/show/run）、`inventory`（scan/list/verify）、`axiom push` | 否（文件系统 + 外部 HTTP） |
 | 主链路与课程 | 有：`courses`（list/show）、`mainline` 全生命周期（new/review/download/verify/approve/reject/channels）、`domains import`、`knowledge import` | 是（课程体系读 `qed_course` 共享表，教材条目状态机落 `qt_*`） |
 | 服务启动 | 有：`serve` | 可选（未配置时按上表「MySQL 登记」行降级） |
-| 探索管线 dry-run（领域/课程） | 无（仅 8901 API） | — |
+| 探索管线 dry-run（领域/课程） | 有：`domains explore`（经 8901 dry-run 同步执行）；课程 dry-run 仅 8901 API | — |
 | prompt 优化评估 | 无（仅 8901 API） | — |
 
 - 未配置 `QED_DB_*` 时服务与 CLI 仍可启动；依赖 MySQL 的命令与登记/查询端点按契约返回 409，
@@ -136,7 +136,7 @@ QED-Tracker 可**独立运行**，也可作为 QED-Engine 体系的**组件运�
 
 | 模块 | 职责 |
 | --- | --- |
-| `api/` | FastAPI 服务（8901，前缀 `/api/v1`）：健康检查、领域/课程管理、教程与书籍状态机（confirm/complete/reject/supersede、register 登记）、自动取书、探索 dry-run、任务端点与后台任务执行器（并发上限 2）。 |
+| `api/` | FastAPI 服务（8901，前缀 `/api/v1`）：健康检查、领域/课程管理、教程两态（confirm；reject/supersede/complete 已删）、自动取书、探索 dry-run、任务端点与后台任务执行器（并发上限 2）。 |
 | `config.py` | 读自身 `.env` → 根 `.env`（兜底）→ 内置默认的 `QED_*` 变量与密钥（`API_KEY` 唯一密钥变量、`QED_API_SELECT`、`QED_MODEL`、`QED_AXIOM_URL`、`QED_TRACKER_PORT`、`QED_TRACKER_URL`、`QED_PROXY`、`QED_DB_*`、`QED_SOURCES` 等）；本地 TOML 与旧 `QED_TRACKER_*` 变量（LLM 密钥、来源列表等）已退役。 |
 | `llm_client.py` | 模型调用兼容层（QED-037）：`local`（直连 dashscope qwen）/ `qed-engine`（经 8900 网关 `/llm/text`，不接触密钥）；local 调用记录写 `qed_llm_calls`。 |
 | `models.py` | 定义候选、目录目标、论文目标与评分、匹配结果、资源记录与下载方案链接（`Candidate.links`）。 |
@@ -144,7 +144,7 @@ QED-Tracker 可**独立运行**，也可作为 QED-Engine 体系的**组件运�
 | `application/book_fetch.py` | 自动取书任务服务（`book_download`）：搜索→逐候选限时下载→complete，全部失败转人工下载指引（方案 A，QED_FETCH_ATTEMPT_TIMEOUT）。 |
 | `application/knowledge_import.py` | 手动领域导入校验器（manual@v1）：领域/课程知识 JSON 契约校验，供 `POST /domains/import` 端点与 CLI 复用。 |
 | `application/migrate_knowledge.py` | 一次性存量迁移脚本：三表（qt_selections/qt_downloads/qt_sources）→ 五层模型，幂等可重放。 |
-| `prompt_lab/` | 探索管线工作台：DomainPipeline（领域→课程→路径三步）/ CoursePipeline（tutorials 单步）、模板注册表（domain@v3/courses@v6/path@v5/tutorials@v1）与领域先验（priors.py）；dry-run 评估模式不写任何表。 |
+| `prompt_lab/` | 探索管线工作台：DomainPipeline（领域→课程两步，courses@v8 输出含 stage/prerequisites）/ CoursePipeline（tutorials@v2 单步）、模板注册表（domain@v4/courses@v8/tutorials@v2）与领域先验（priors.py）；dry-run 评估模式不写任何表。设计见[探索管线设计](../design/exploration-pipeline.md)。 |
 | `providers/` | 搜索外部来源并解析候选或下载地址，不写正式文件；libgen_li 为发现专用来源（恒 `metadata_only`）。 |
 | `providers/book_advisor.py` | 百炼教材评估顾问：书目结构化补全与候选评分（可审阅，不写资源事实）。 |
 | `matching.py` | 对冻结目录执行保守的标题、作者、语言和版本匹配。 |

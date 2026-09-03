@@ -1,7 +1,7 @@
 # 开发指南
 
 状态：Current
-最后更新：2026-08-28
+最后更新：2026-09-03
 
 ## 当前事实来源
 
@@ -47,6 +47,10 @@ conda run -n qed_env python -m pip install -e ".[dev]"
   LLM 预填只生成可审阅评价，不写资源事实；下载/校验/哈希仍走通用服务；验收（approve）采用
   **复制 + 登记同步**移交根仓库 `dataset/qed-tracker/`，不移动临时区文件；主链路测试必须使用
   假顾问或 `httpx.MockTransport`，不访问公网、不读取真实数据根。
+- 探索管线（`prompt_lab/`）：领域/课程 dry-run 不写任何表（engine 置 None），唯一痕迹是
+  `qed_llm_calls` 审计；LLM 输出只经模板 `validate` + 跨步一致性校验，模型不写资源事实；
+  长输出（courses@v8 / tutorials@v2）需 `max_tokens ≥ 16384`（`DomainPipeline`/`CoursePipeline`
+  已强制下限，`settings.llm_max_tokens`=4096 会 `finish_reason=length` 截断）。
 
 ## 验证门禁
 
@@ -61,6 +65,6 @@ git diff --check
 git diff --cached --check
 ```
 
-测试覆盖配置优先级、目录唯一性和匹配边界、来源归一化、可靠下载、资源登记与校验、论文推荐与报告重放、CLI 命令树和退出码，以及 Axiom 的上传与可选解析。真实来源和模型在线可用性不作为门禁；人工检查应记录运行时间、来源、模型、结果和错误摘要。
+测试覆盖配置优先级、目录唯一性和匹配边界、来源归一化、可靠下载、资源登记与校验、论文推荐与报告重放、CLI 命令树和退出码，以及 Axiom 的上传与可选解析。真实来源和模型在线可用性不作为门禁；人工检查应记录运行时间、来源、模型、结果和错误摘要（探索管线真实冒烟记录见[操作指南](operations.md)「实测记录（2026-09-03）」与共享表 `qed_llm_calls` 审计）。
 
 本地门禁为唯一门禁（不依赖远端 CI）；wheel 构建不作为门禁（项目不分发 wheel，editable 安装已覆盖入口与数据文件验证）。

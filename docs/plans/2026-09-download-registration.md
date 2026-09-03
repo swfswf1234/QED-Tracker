@@ -11,7 +11,7 @@
 
 QED-Tracker 的下载能力覆盖两条路径：
 - **自动下载**：LLM 探索推荐 → 候选评估 → 渠道下载 → PDF 校验 → 去重落盘
-- **手动导入**：用户本地 PDF → inspect → 去重 → 原子落盘（详见 [knowledge-import.md](2026-09-knowledge-import.md)）
+- **手动导入**：用户本地 PDF → inspect → 去重 → 原子落盘（详见 [知识录入设计](../design/knowledge-import.md)）
 
 两条路径最终汇入同一验收登记流程：verify → approve → 复制到根数据集 + 登记同步。
 
@@ -107,7 +107,7 @@ candidate → downloading → downloaded → verified → approved → transferr
 
 | 文档 | 关系 |
 |---|---|
-| [knowledge-import.md](2026-09-knowledge-import.md) | 手动导入（本设计的手动路径） |
+| [知识录入设计](../design/knowledge-import.md) | 手动导入（本设计的手动路径） |
 | [data-lifecycle.md](2026-09-data-lifecycle.md) | 数据生命周期（下载后的状态流转） |
 | [download-flow.md](2026-08-download-flow.md) | 下载流程现状分析（三条链路+成功率） |
 | `design/acquisition-and-inventory.md` | 资源获取与库存（Accepted） |

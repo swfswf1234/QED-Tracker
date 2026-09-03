@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-20
+最后更新：2026-09-03
 需求方：QED-Engine（根仓库 REQ-041「教程命名规范」，设计依据根仓库
 [downloads-manage-redesign.md](../../../docs/design/downloads-manage-redesign.md) §2.3 用户裁决）
 关联代码：`src/qed_tracker/db/knowledge_repository.py`（`tutorial_name` 命名函数）、
@@ -19,6 +19,10 @@
 >    `--title/--author`（缺省从规范名剥离「教程{set_no}：」前缀与（作者）后缀回退）；
 > 3. migrate 改名后幂等键兼容：按 `(course, kind, set_no)` 先查后建（knowledge_id 含 name，
 >    旧库重放不产生重复行），存量改名由一次性数据修正脚本负责（migrate 不覆盖 name）。
+
+> **决策登记（2026-09-03 tutorials@v2）**：name 格式变更为「教程{set_no}：{首作者}《{书名}》」
+> （作者在前、书名在后、书名号包裹），与新 JSON 模板对齐。旧格式「教程{set_no}：{书名}（{作者}）」
+> 退役。
 
 > **决策登记**：2026-08-18 根仓库用户裁决（ARCH-015 前端重构 D5）：教程命名由 QED-Tracker
 > 数据侧统一，前端原样展示；name 为空时前端兜底「教程{set_no}」（前端已实现）。本设计只定
@@ -42,9 +46,9 @@
 
 | set_no | 命名格式 | 示例 |
 | --- | --- | --- |
-| "1"~"4"（中文套） | `教程{set_no}：{书名}（{作者}）` | `教程1：数学分析（Rudin）` |
-| "en"（英文对照套） | `教程en：{书名}（{作者}）` | `教程en：Principles of Mathematical Analysis（Rudin）` |
-| ''（空，异常/资料行） | `教程：{书名}（{作者}）` | 兜底，不鼓励出现 |
+| "1"~"4"（中文套） | `教程{set_no}：{首作者}《{书名}》` | `教程1：Rudin《数学分析原理》` |
+| "en"（英文对照套） | `教程en：{首作者}《{书名}》` | `教程en：Rudin《Principles of Mathematical Analysis》` |
+| ''（空，异常/资料行） | `教程：{首作者}《{书名}》` | 兜底，不鼓励出现 |
 
 对 `kind=other_material`（课程延展资料归类）：**不加「教程N」前缀**，保持归类名
 （如 `01-数学分析-延展资料`），本设计不改变其命名规则。

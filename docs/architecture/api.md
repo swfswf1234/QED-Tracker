@@ -3,15 +3,18 @@
 设计状态：Accepted
 确认状态：暂定
 实现状态：Implemented
-最后更新：2026-09-01
+最后更新：2026-09-04
 关联代码：`src/qed_tracker/api/main.py`、`src/qed_tracker/api/tasks.py`
-关联测试：`tests/test_api.py`、`tests/test_knowledge_api.py`、`tests/test_knowledge_import.py`、`tests/test_prompt_lab_api.py`、`tests/test_book_fetch.py`
+关联测试：`tests/test_api.py`、`tests/test_knowledge_api.py`、`tests/test_knowledge_import.py`、`tests/test_prompt_lab_api.py`、`tests/test_book_fetch.py`、`tests/test_exploration_stage.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
 
 > **确认状态：暂定**——本版按 `src/qed_tracker/api/main.py` 代码现状整理（46 条路由全量，
 > 分组口径对齐 [API 设计 Draft](../plans/2026-08-api-design.md)），尚未走正式稿五要素
 > （接口/简介/输入/输出/范例）评审；正式稿由 QED-044 收口。DB 未配置时，五层端点按契约
 > 统一 409「数据库未配置」（下文各端点不再重复标注）。
+>
+> ②③⑧ 组按[知识录入设计](../design/knowledge-import.md)与[探索管线设计](../design/exploration-pipeline.md)
+> 目标契约登记，代码差异已注「待 Phase 2 对齐」；④ 组旧八态契约已失效，待 QED-050-D 重规划。
 
 ## 概述
 
@@ -108,25 +111,35 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 ### `POST /api/v1/domains/import`【手动导入】
 
-手动领域 JSON 导入（QED-050，2026-08-29）：校验 manual@v1 契约 → 写 qed_domain + qed_course
-（幂等 upsert）。body：`{"domain": {...}}`（内联）或 `{"file_path": "..."}`（本机可读文件）。
-domain.exploration_stage=已完成（人工探索定稿）；courses 保持既有 stage（默认未开始）。
+手动领域 JSON 导入（QED-050，2026-09-03 六步流程）：校验 manual@v1 契约。语义随 `source`：
+- `source=cli`：一次写 qed_domain + qed_course（幂等 upsert），探索立即定稿
+  `domain.exploration_stage=已完成`（跳过已生成/待确认两极）。
+- 其余（无 source / `manual`）：**只登记域（qed_domain）**，置 `exploration_stage=已生成` +
+  `explore_pending=review_results`（step=domain），进入六步流程第 1 步；课程由后续
+  `POST /domains/{id}/courses/import` 写入（见[知识录入设计](../design/knowledge-import.md)六步流程）。
 
 **请求体：**
 ```json
 {"domain": {"domain": "math-advanced", "name": "数学（高等数学）", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}], "stages": ["基础", "主干", "分支", "前沿"], "courses": [{"course_id": "01_math_analysis", "name": "数学分析", "track": "分析学", "stage": "基础", "summary": "..."}]}, "source": "manual"}
 ```
 
-**参数：** `source`（可选，默认 `manual`）— 来源标记，值域 `manual`（人工录入）/ `explore`（自动探索），仅作来源记录不落列。
+**参数：** `source`（可选）— `manual`（人工录入）/ `explore`（自动探索，仅作来源记录不落列）/ `cli`（CLI 提交，直接定稿）。
 
-**返回：** `{"domain_id": "math-advanced", "courses_created": N, "courses_updated": N, "exploration_stage": "已完成"}`
+**返回：** `{"domain_id": "math-advanced", "courses_created": N, "courses_updated": N, "exploration_stage": "已完成"}`（source=cli）或 `"已生成"`（其他）。
 
 **错误：** 400 INVALID_PARAMS（校验失败/文件不可读/JSON 解析失败）、422 缺 domain/file_path。
 
 **契约：** `src/qed_tracker/application/knowledge_import.py`（manual@v1 校验器，守护测试
 tests/test_knowledge_import.py）。
 
+> **实现差异（待 Phase 2 对齐）**：当前实现非 cli 路径仍同批写 courses（未按六步流程拆分），
+> 需改为只写 qed_domain，课程写入交由 `POST /domains/{id}/courses/import`。
+
 ## ③ 教程状态机
+
+> 两态契约（2026-09-03 D1 裁决）：`draft → confirmed`，confirmed 为终态。
+> `reject`/`supersede`/`complete` 端点**已删除**（两态后无此语义，废弃/退役改 `notes` 记录），
+> 不属于当前运行时。设计见[知识录入设计](../design/knowledge-import.md)。
 
 ### `GET /api/v1/knowledge`
 
@@ -140,55 +153,24 @@ tests/test_knowledge_import.py）。
 
 ### `GET /api/v1/knowledge/{knowledge_id}`
 
-教程详情（含关联书籍列表 `books[]`）。
+教程详情（含关联书籍列表 `books[]`；**books 由 refs 数组聚合**：从 `textbook_ref[]`/
+`exercise_ref[]`/`parallel_ref[]` 内的 `book_id` 汇总，见[知识录入设计](../design/knowledge-import.md)）。
 
 **错误：** 404 教程不存在。
 
 ### `POST /api/v1/knowledge/{knowledge_id}/confirm`
 
-确认教程（draft → confirmed）。可附带 textbook_ref、exercise_ref、简介。
-
-**请求体（可选字段）：**
-```json
-{
-  "textbook_ref": {"title": "...", "version": "...", "authors": ["..."]},
-  "exercise_ref": {"title": "..."},
-  "textbook_intro": "...",
-  "exercise_intro": "..."
-}
-```
+确认教程（draft → confirmed），无 body，回填 `confirmed_at`。
 
 **错误：** 404 不存在、409 非法状态迁移。
-
-### `POST /api/v1/knowledge/{knowledge_id}/complete`
-
-完成教程（confirmed → completed；所辖书籍全部 verified 聚合触发亦可）。
-
-**错误：** 404 不存在、409 非法状态迁移。
-
-### `POST /api/v1/knowledge/{knowledge_id}/reject`
-
-拒绝教程（需提供原因）。
-
-**请求体：**
-```json
-{"reason": "不符合课程要求"}
-```
-
-**错误：** 404 不存在、409 非法状态迁移、422 缺少原因。
-
-### `POST /api/v1/knowledge/{knowledge_id}/supersede`
-
-标记教程过时（需提供原因）。
-
-**请求体：**
-```json
-{"reason": "已有更新版本"}
-```
-
-**错误：** 404 不存在、409 非法状态迁移、422 缺少原因。
 
 ## ④ 书籍生命周期与渠道
+
+> **⚠ 契约失效，待 QED-050-D 重规划（2026-09-03）**：`qt_books` 已书库化（选用四态
+> decided/parallel/candidate/retired + holding 持有态），旧"八态下载机"端点
+> （create/decide/start/fail/retry/complete/verify/reject/supersede/cancel/register/fetch/import）
+> 不复存在，下载执行语义由 qt_sources + 资源清单承接（见[数据库设计](database-schema.md)）。
+> 本节 endpoints 仅保留历史契约描述，实际实现以 QED-050-D 下载链重规划为准。
 
 ### 书籍创建与渠道
 
@@ -417,13 +399,14 @@ tests/test_knowledge_import.py）。
 #### `POST /api/v1/prompt-explores/dry-run`
 
 领域知识探索**评估模式**（同步执行，非 202）：不入任务队列；不写任何表，唯一痕迹是
-`qed_llm_calls` 的 LLM 日志（模板 domain-explore/`domain@v3` → `courses@v6` → `path@v5`）。
+`qed_llm_calls` 的 LLM 日志（模板 domain-explore/`domain@v4` → `courses@v8` 两步管线；
+courses@v8 输出每门课 stage+prerequisites 内联，path@v5 已并入）。
 
 **body：** `{domain_name 必填（非空且 ≤100 字符）, source?（默认 explore，值域 explore/manual）, scope_hint?（默认 DEFAULT_SCOPE 本科-硕士）, mode? direct/text/doc 默认 direct, ref_text?, ref_doc_path?, confirm_name_override?}`
 
 **返回：**
 ```json
-{"dry_run": true, "confirmation_required": false, "report": {"domain": {}, "directions": [], "courses": [], "path": {"graph_td": "..."}}, "calls": [{"step": "domain", "template_id": "domain-explore/domain@v3", "duration_ms": 0}]}
+{"dry_run": true, "confirmation_required": false, "report": {"domain": {}, "courses": [{"course_id": "...", "stage": "基础", "prerequisites": []}], "path": {"notes": "", "edges": [], "graph_td": "..."}}, "calls": [{"step": "domain", "template_id": "domain-explore/domain@v4", "duration_ms": 0}, {"step": "courses", "template_id": "domain-explore/courses@v8", "duration_ms": 0}]}
 ```
 
 **名称确认分支：** `{"dry_run": true, "confirmation_required": true, "name_check": {...}}`
@@ -434,7 +417,7 @@ tests/test_knowledge_import.py）。
 
 #### `POST /api/v1/courses/{course_id}/prompt-explores/dry-run`
 
-课程教材探索 dry-run（QED-047，A1）：同步单步 tutorials@v1，不写任何表，与领域 dry-run 对称
+课程教材探索 dry-run（QED-047，A1）：同步单步 tutorials@v2，不写任何表，与领域 dry-run 对称
 （校验序 mode→key→404→管线）。
 
 **body：** `{mode? direct/text/doc, ref_text?, ref_doc_path?}`
@@ -447,17 +430,19 @@ tests/test_knowledge_import.py）。
 
 #### `POST /api/v1/courses/{course_id}/knowledge`
 
-采纳推荐建教程（QED-047 A2，201）：每套建 draft qt_knowledge 行并预填六字段；
+采纳推荐建教程（QED-047 A2，201）：新契约（tutorials@v2 输出格式，见[知识录入设计](../design/knowledge-import.md)），
+每套建 **draft** qt_knowledge 行并预填 `set_no/name/position/intro/textbook_ref/exercise_ref/parallel_ref`；
+经 textbook_ref/exercise_ref 建 `status=decided` 书行、parallel_ref 建 `status=parallel` 书行并回填 `book_id`。
 幂等/套号冲突语义见仓储（adopt_tutorials）。`source` 取 `explore`（默认，自动探索采纳）或
 `manual`（人工录入），仅作来源标记。
 
 **请求体：**
 ```json
-{"source": "explore", "tutorials": [{"set_no": "1", "set_name": "教程1", "textbook": {"title": "...", "roles": ["textbook"]}, "exercise": null}]}
+{"source": "manual", "tutorials": [{"set_no": "1", "name": "教程1：比廷杰《微积分及其应用》", "position": "beginner", "intro": "…120 字以上…", "textbook_ref": [{"title": "...", "part": "", "authors": [{"name": "...", "role": "author"}], "publisher": "...", "edition": "...", "year": 2006, "language": "zh", "roles": ["textbook"]}], "exercise_ref": null, "parallel_ref": null}]}
 ```
 
-**校验：** 1~4 套；每套 set_no（非空 ≤4 字符）/set_name（非空 ≤200 字符）/textbook.title 非空
-且 roles 含 `textbook`；exercise 可为 null（同源）或含 title 且 roles 含 `exercises`。
+**校验：** 1~6 套；每套 set_no 非空 ≤4 / name 非空 ≤128 / position 五档 / intro ≥120 字 /
+textbook_ref 非空数组 / exercise_ref、parallel_ref 为 null 或数组。
 
 **错误：** 404 COURSE_NOT_FOUND、409 SET_NO_CONFLICT、422 INVALID_PARAMS。
 
@@ -487,7 +472,7 @@ POST /api/v1/domains/math/apply-results
 
 **接口：** POST `/api/v1/domains/{domain_id}/re-explore`，路径参数 `domain_id`。
 **简介：** 重置领域探索（待确认 → 探索中）：清除 explore_pending，提交后台重新探索任务。
-**输入：** body `{description?: string, mode?: string}`（可选；description 覆盖领域描述，mode 默认 "web"）。
+**输入：** body `{description?: string, mode?: string}`（可选；description 覆盖领域描述，mode 默认 "direct"）。
 **输出：** 202 `{task_id}`；404 领域不存在；409 当前状态非「待确认」。
 **范例：**
 ```json
@@ -519,7 +504,7 @@ POST /api/v1/courses/01_math_analysis/apply-results
 
 **接口：** POST `/api/v1/courses/{course_id}/re-explore`，路径参数 `course_id`。
 **简介：** 重置课程探索（待确认 → 探索中）：清除 explore_pending，提交后台重新探索任务。
-**输入：** body `{description?: string, mode?: string}`（可选；description 覆盖课程描述，mode 默认 "web"）。
+**输入：** body `{description?: string, mode?: string}`（可选；description 覆盖课程描述，mode 默认 "direct"）。
 **输出：** 202 `{task_id}`；404 课程不存在；409 当前状态非「待确认」。
 **范例：**
 ```json

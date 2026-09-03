@@ -3,7 +3,7 @@
 状态：Active（正式稿动笔被门禁阻塞：QED-010/011/014/026 全部完成前只维护不重构；2026-08-26 用户裁决立项）
 最后更新：2026-09-01
 关联任务：todo [QED-044（长期任务）](../trackers/todo.md)；承接 [QED-039](../trackers/todo.md) 待优化项之「API 文档内容完善」
-首批子集：[prompt 优化模块设计](2026-08-prompt-optimization.md) Phase 3/4（三公共表 qed_llm_calls/qed_domain/qed_course + 相关 API 的 design/ 正式确认文档）
+首批子集：[探索管线设计](../design/exploration-pipeline.md) Phase 3/4（三公共表 qed_llm_calls/qed_domain/qed_course + 相关 API 的 design/ 正式确认文档）
 执行依据：[文档治理规范](../standards/doc-governance.md)「版本末期文档整理」节（版本内修复事实准确性，版本末期门禁通过后正式稿升级）
 
 ## 1. 目标

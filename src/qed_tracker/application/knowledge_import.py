@@ -78,7 +78,6 @@ def validate_domain(data: Any) -> dict[str, Any]:
     _require(isinstance(tracks, list) and len(tracks) <= 4,
              "classic_tracks 必须为 0~4 个方向")
     track_names: list[str] = []
-    main_names: list[str] = []
     for i, track in enumerate(tracks):
         _require(isinstance(track, dict), "classic_tracks[i] 必须是对象")
         name = _text(track.get("name"), 50, f"classic_tracks[{i}].name")
@@ -88,8 +87,6 @@ def validate_domain(data: Any) -> dict[str, Any]:
                  f"classic_tracks[{i}].kind 必须是 main（主干方向）或 branch（分支方向）：{kind}")
         _require(name not in track_names, f"classic_tracks 方向名重复：{name}")
         track_names.append(name)
-        if kind == "main":
-            main_names.append(name)
 
     stages = _str_list(data.get("stages", []), "stages", nonempty=True)
     _require(len(stages) == len(set(stages)), "stages 存在重复值")
@@ -110,8 +107,8 @@ def validate_domain(data: Any) -> dict[str, Any]:
         id_set.add(course_id)
         _text(course.get("name"), 100, f"{course_id}.name")
         track = _text(course.get("track", ""), 50, f"{course_id}.track", nonempty=False)
-        _require(track == "" or track in main_names,
-                 f"{course_id}.track 必须逐字取自 classic_tracks 的 main 方向（{main_names}）：{track}")
+        _require(track == "" or track in track_names,
+                 f"{course_id}.track 必须逐字取自 classic_tracks 中已列出的方向（main 或 branch，{track_names}）：{track}")
         stage = _text(course.get("stage"), 32, f"{course_id}.stage")
         _require(stage in stages, f"{course_id}.stage 必须是 stages（{stages}）之一：{stage}")
         if "aliases" in course:
@@ -165,54 +162,86 @@ def validate_domain(data: Any) -> dict[str, Any]:
     return data  # 校验通过原样返回（端点/CLI 直接落库）
 
 
+_POSITIONS_5 = ("beginner", "intermediate", "advanced", "comprehensive", "elective")
+_ALLOWED_AUTHOR_ROLES = ("author", "translator")
+_ALLOWED_PARTS = ("", "上册", "下册", "Vol.1", "Vol.2", "Vol.3")
+_ALLOWED_LANGUAGES = ("zh", "en")
+_ROLES_VALUES = ("textbook", "exercises", "solutions")
+
+
+def _validate_ref_entry(ref: Any, label: str) -> None:
+    """校验单个 ref 条目（textbook_ref/exercise_ref/parallel_ref 元素）。"""
+    _require(isinstance(ref, dict), f"{label} 必须是对象")
+    _text(ref.get("title"), 256, f"{label}.title")
+    part = _text(ref.get("part", ""), 8, f"{label}.part", nonempty=False)
+    _require(part in _ALLOWED_PARTS, f"{label}.part 值域错误：{part}")
+    authors = ref.get("authors", [])
+    _require(isinstance(authors, list) and authors, f"{label}.authors 必须是非空数组")
+    for k, a in enumerate(authors):
+        _require(isinstance(a, dict), f"{label}.authors[{k}] 必须是对象")
+        _text(a.get("name"), 100, f"{label}.authors[{k}].name")
+        role = str(a.get("role", "")).strip()
+        _require(role in _ALLOWED_AUTHOR_ROLES, f"{label}.authors[{k}].role 值域错误：{role}")
+    _text(ref.get("publisher", ""), 128, f"{label}.publisher", nonempty=False)
+    _text(ref.get("edition", ""), 64, f"{label}.edition", nonempty=False)
+    year = ref.get("year")
+    if year is not None:
+        _require(isinstance(year, int), f"{label}.year 必须是整数或 null")
+    language = str(ref.get("language", "")).strip()
+    _require(language in _ALLOWED_LANGUAGES, f"{label}.language 值域错误：{language}")
+    roles = ref.get("roles", [])
+    _require(isinstance(roles, list) and roles, f"{label}.roles 必须是非空数组")
+    for r in roles:
+        _require(r in _ROLES_VALUES, f"{label}.roles 值域错误：{r}")
+
+
 def validate_course(data: Any) -> dict[str, Any]:
     """校验课程标准答案 JSON（docs/knowledge/<domain>/<course_id>.json 同构）。
 
-    tutorials 套直接可转换为 A2（POST /courses/{course_id}/knowledge）的 tutorials 数组；
-    meta 等信息校验宽松（知识文件元数据），核心校验针对 tutorials 契约。
+    新契约（tutorials@v2）：tutorials 数组，每套含 set_no/name/position/intro/
+    textbook_ref[]/exercise_ref[]/parallel_ref[]。
     """
     _require(isinstance(data, dict), "课程 JSON 必须是对象")
-    _slug(data.get("domain"), "domain")
+    _slug(data.get("domain"), "domain")  # 或 _text(data.get("domain_id"), 32, "domain_id")
     course = data.get("course", {})
     _require(isinstance(course, dict), "course 必须是对象")
     _slug(course.get("course_id"), "course.course_id")
     _text(course.get("name"), 100, "course.name")
 
     tutorials = data.get("tutorials", [])
-    _require(isinstance(tutorials, list) and 1 <= len(tutorials) <= 4,
-             "tutorials 必须为 1~4 套（宁缺勿滥）")
+    _require(isinstance(tutorials, list) and 1 <= len(tutorials) <= 6,
+             "tutorials 必须为 1~6 套")
     set_nos: list[str] = []
-    titles: set[str] = set()
     for i, item in enumerate(tutorials):
-        _require(isinstance(item, dict), "tutorials[i] 必须是对象")
+        _require(isinstance(item, dict), f"tutorials[{i}] 必须是对象")
         set_no = _text(item.get("set_no"), 4, f"tutorials[{i}].set_no")
         _require(set_no not in set_nos, f"tutorials 套号重复：{set_no}")
         set_nos.append(set_no)
-        _text(item.get("set_name"), 60, f"tutorials[{i}].set_name")
-        textbook = item.get("textbook", {})
-        _require(isinstance(textbook, dict), "tutorials[i].textbook 必须是对象")
-        title = _text(textbook.get("title"), 200, "textbook.title")
-        _require(title not in titles, f"教科书名重复：{title}")
-        titles.add(title)
-        _str_list(textbook.get("authors", []), "textbook.authors", nonempty=True)
-        roles = textbook.get("roles", [])
-        _require(isinstance(roles, list) and "textbook" in roles,
-                 "textbook.roles 必须为数组且含 textbook")
-        _validate_target_path(textbook.get("target_path"), "textbook.target_path")
-        exercise = item.get("exercise")
-        if exercise is not None:
-            _require(isinstance(exercise, dict), "exercise 必须是对象或 null")
-            _text(exercise.get("title"), 200, "exercise.title")
-            _str_list(exercise.get("authors", []), "exercise.authors", nonempty=True)
-            _validate_target_path(exercise.get("target_path"), "exercise.target_path")
-        _text(item.get("reason"), 100, "tutorials[i].reason", nonempty=False)
-        _text(textbook.get("intro"), 2000, "textbook.intro")
+        _text(item.get("name"), 128, f"tutorials[{i}].name")
+        position = _text(item.get("position", ""), 24, f"tutorials[{i}].position")
+        _require(position in _POSITIONS_5,
+                 f"tutorials[{i}].position 值域错误：{position}")
+        intro = _text(item.get("intro"), 2000, f"tutorials[{i}].intro")
+        _require(len(intro) >= 120, f"tutorials[{i}].intro 至少 120 字")
+
+        # textbook_ref: 非空数组
+        textbook_ref = item.get("textbook_ref", [])
+        _require(isinstance(textbook_ref, list) and textbook_ref,
+                 f"tutorials[{i}].textbook_ref 必须是非空数组")
+        for j, ref in enumerate(textbook_ref):
+            _validate_ref_entry(ref, f"tutorials[{i}].textbook_ref[{j}]")
+
+        # exercise_ref: null 或数组
+        exercise_ref = item.get("exercise_ref")
+        if exercise_ref is not None:
+            _require(isinstance(exercise_ref, list), f"tutorials[{i}].exercise_ref 必须是 null 或数组")
+            for j, ref in enumerate(exercise_ref):
+                _validate_ref_entry(ref, f"tutorials[{i}].exercise_ref[{j}]")
+
+        # parallel_ref: null 或数组
+        parallel_ref = item.get("parallel_ref")
+        if parallel_ref is not None:
+            _require(isinstance(parallel_ref, list), f"tutorials[{i}].parallel_ref 必须是 null 或数组")
+            for j, ref in enumerate(parallel_ref):
+                _validate_ref_entry(ref, f"tutorials[{i}].parallel_ref[{j}]")
     return data
-
-
-def _validate_target_path(value: Any, label: str) -> None:
-    if value is None or value == "":
-        return  # 目标路径可选（未定出版本的书籍可缺省）
-    _text(value, 500, label)
-    _require(not value.startswith("/") and "\\" not in value and ".." not in value,
-             f"{label} 必须是数据根相对路径（不含绝对路径/上级跳转）：{value}")

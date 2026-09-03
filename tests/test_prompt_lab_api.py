@@ -26,9 +26,8 @@ class FakePipeline:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.step_calls = [
-            {"step": "domain", "template_id": "domain-explore/domain@v1", "duration_ms": 5},
-            {"step": "courses", "template_id": "domain-explore/courses@v3", "duration_ms": 6},
-            {"step": "path", "template_id": "domain-explore/path@v3", "duration_ms": 7},
+            {"step": "domain", "template_id": "domain-explore/domain@v4", "duration_ms": 5},
+            {"step": "courses", "template_id": "domain-explore/courses@v8", "duration_ms": 6},
         ]
         self.last_call: dict = {}
         FakePipeline.last_instance = self
@@ -78,7 +77,7 @@ def test_dry_run_returns_report_step_calls_and_closes(client) -> None:
     assert body["dry_run"] is True
     assert body["confirmation_required"] is False
     assert body["report"]["domain"]["final_name"] == "高等数学"
-    assert [c["template_id"] for c in body["calls"]][0] == "domain-explore/domain@v1"
+    assert [c["template_id"] for c in body["calls"]][0] == "domain-explore/domain@v4"
     instance = FakePipeline.last_instance
     assert instance is not None
     assert instance.kwargs["api_key"] == "k"

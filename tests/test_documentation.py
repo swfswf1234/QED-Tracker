@@ -43,6 +43,8 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/design/service-lifecycle-encoding-fix.md"),
     Path("docs/design/tutorial-naming.md"),
     Path("docs/design/model-mode-config.md"),
+    Path("docs/design/exploration-pipeline.md"),
+    Path("docs/design/knowledge-import.md"),
     Path("docs/standards/index.md"),
     Path("docs/standards/doc-governance.md"),
     Path("docs/standards/adr-governance.md"),
@@ -60,16 +62,9 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/guides/development.md"),
     Path("docs/plans/index.md"),
     Path("docs/plans/2026-08-main-line-curriculum.md"),
-    Path("docs/plans/2026-08-prompt-explore-baseline.md"),
-    Path("docs/plans/2026-08-prompt-optimization.md"),
-    Path("docs/plans/2026-08-prompt-optimization-progress.md"),
     Path("docs/plans/2026-08-db-api-docs-completion.md"),
     Path("docs/plans/2026-08-api-design.md"),
     Path("docs/plans/2026-08-download-flow.md"),
-    Path("docs/plans/2026-08-knowledge-dual-flow.md"),
-    Path("docs/plans/2026-09-exploration-overview.md"),
-    Path("docs/plans/2026-09-exploration-pipeline.md"),
-    Path("docs/plans/2026-09-knowledge-import.md"),
     Path("docs/plans/2026-09-download-registration.md"),
     Path("docs/plans/2026-09-data-lifecycle.md"),
     Path("docs/trackers/index.md"),
@@ -89,6 +84,8 @@ REQUIRED_HISTORY_DOCS = {
     Path("docs/history/baselines/2026-08-docs-restructure-alignment.md"),
     Path("docs/history/baselines/2026-08-governance-contract-alignment.md"),
     Path("docs/history/baselines/2026-08-engine-exploration-alignment.md"),
+    Path("docs/history/baselines/2026-08-prompt-explore-baseline.md"),
+    Path("docs/history/baselines/2026-08-knowledge-dual-flow.md"),
     Path("docs/history/qed-030-retire-qt_resources/index.md"),
     Path("docs/history/qed-036-tutorial-naming/index.md"),
     Path("docs/history/three-table-schema.md"),
@@ -120,7 +117,9 @@ DESIGN_DOCS = {
     Path("docs/design/service-lifecycle-encoding-fix.md"),
     Path("docs/design/tutorial-naming.md"),
     Path("docs/design/model-mode-config.md"),
-}
+    Path("docs/design/exploration-pipeline.md"),
+    Path("docs/design/knowledge-import.md"),
+}                 # design docs metadata check
 LINK_PATTERN = re.compile(r"\[[^]]+\]\(([^)]+)\)")
 COMMAND_PATTERN = re.compile(r"^\s*(qed-tracker(?:\s+.+)?)\s*$", re.MULTILINE)
 CODE_REFERENCE_PATTERN = re.compile(r"`((?:src|tests)/[^`]+)`")

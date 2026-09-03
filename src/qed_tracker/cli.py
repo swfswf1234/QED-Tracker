@@ -134,11 +134,27 @@ def build_parser() -> argparse.ArgumentParser:
     courses_show = courses_commands.add_parser("show", help="查看单门课（含前置/关联目标）")
     courses_show.add_argument("course_id")
 
-    domains = commands.add_parser("domains", help="领域知识手动导入")
+    domains = commands.add_parser("domains", help="领域知识导入与 LLM 探索")
     domains_commands = domains.add_subparsers(dest="domains_command", required=True)
     domains_import = domains_commands.add_parser("import", help="导入领域标准答案 JSON（docs/knowledge/<domain>.json）")
     domains_import.add_argument("path", type=Path, help="领域 JSON 文件路径")
     domains_import.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+    domains_explore = domains_commands.add_parser(
+        "explore",
+        help="LLM 领域探索（经 8901 dry-run 同步执行；不写库，唯一痕迹是 qed_llm_calls 日志）",
+    )
+    domains_explore.add_argument("name", help="领域名称（如 高等数学）")
+    domains_explore.add_argument("--scope", default="", help="范围提示（缺省用内置范围说明）")
+    domains_explore.add_argument("--mode", default="direct", choices=["direct", "text", "doc"],
+                                 help="参考输入模式（direct/text/doc）")
+    domains_explore.add_argument("--ref-text", default="", help="参考文本（mode=text 必填，超长截断）")
+    domains_explore.add_argument("--ref-doc", dest="ref_doc_path", default="",
+                                 help="参考文档路径（mode=doc 必填，UTF-8 文本）")
+    domains_explore.add_argument("--confirm-name", dest="confirm_name", default="",
+                                 help="人工确认的规范领域名（跳过名称确认，贯穿后续步骤）")
+    domains_explore.add_argument("--timeout", type=float, default=600.0,
+                                 help="同步探索超时秒数（默认 600；两步管线真实耗时约 1~3 分钟）")
+    domains_explore.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
 
     knowledge = commands.add_parser("knowledge", help="课程知识手动导入")
     knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
@@ -620,6 +636,13 @@ def _load_curriculum(subject_or_course_id: str) -> Curriculum:
 
 
 def _domains(args, settings: Settings) -> int:
+    """domains 子命令分发：import（手动 JSON 导入）/ explore（LLM dry-run 探索）。"""
+    if args.domains_command == "explore":
+        return _domains_explore(args, settings)
+    return _domains_import(args, settings)
+
+
+def _domains_import(args, settings: Settings) -> int:
     """手动领域知识导入：本地校验 → 经 8901 API 写入共享表（D4，D10：无离线直连）。"""
     import httpx
 
@@ -663,6 +686,74 @@ def _domains(args, settings: Settings) -> int:
         _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
         return 2
     _print(response.json(), args.json)
+    return 0
+
+
+def _domains_explore(args, settings: Settings) -> int:
+    """LLM 领域探索：经 8901 dry-run 端点同步执行（不写库；LLM 日志落 qed_llm_calls）。
+
+    confirmation_required（名称需人工确认）时打印 name_check 并以退出码 2 结束，
+    提示用户核对后带 --confirm-name 重跑。
+    """
+    import httpx
+
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+    payload: dict = {
+        "domain_name": args.name,
+        "mode": args.mode,
+        "ref_text": args.ref_text,
+        "ref_doc_path": args.ref_doc_path,
+        "confirm_name_override": args.confirm_name,
+    }
+    if args.scope.strip():
+        payload["scope_hint"] = args.scope.strip()
+    try:
+        response = httpx.post(
+            f"{base_url}/api/v1/prompt-explores/dry-run",
+            json=payload,
+            timeout=args.timeout,
+        )
+    except httpx.HTTPError as exc:
+        _print({"error": f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve"}, True) if args.json else print(
+            f"ERROR: 8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve", file=sys.stderr
+        )
+        return 6
+    if response.status_code >= 400:
+        detail = response.json().get("detail", response.text)
+        _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
+        return 2
+    body = response.json()
+    if body.get("confirmation_required"):
+        if args.json:
+            _print(body, True)
+        else:
+            name_check = body.get("name_check", {})
+            print("领域名称需要人工确认：")
+            print(f"  原因：{name_check.get('reason', '')}")
+            suggested = name_check.get("suggested_name") or ""
+            if suggested:
+                print(f"  建议：{suggested}")
+            print(f"  核对后带 --confirm-name \"{suggested or args.name}\" 重跑。")
+        return 2
+    if args.json:
+        _print(body, True)
+    else:
+        report = body.get("report", {})
+        domain = report.get("domain", {})
+        courses = report.get("courses", [])
+        path = report.get("path", {})
+        print(f"领域：{domain.get('final_name', args.name)}（{domain.get('level', '')}）")
+        print(f"课程数：{len(courses)}")
+        for course in courses:
+            print(f"  [{course.get('stage', '')}] {course.get('name', '')}"
+                  f"（{course.get('course_id', '')}，前置：{', '.join(course.get('prerequisites', [])) or '无'}）")
+        graph = path.get("graph_td", "")
+        if graph:
+            print("学习路径（graph TD）：")
+            print(graph)
+        print("调用明细：")
+        for call in body.get("calls", []):
+            print(f"  {call.get('step')} {call.get('template_id')} {call.get('duration_ms')}ms")
     return 0
 
 

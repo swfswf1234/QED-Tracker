@@ -49,7 +49,7 @@ CREATE TABLE qed_domain (
   description        TEXT          NOT NULL,           -- 学科介绍
   level              VARCHAR(50)   NOT NULL DEFAULT '',-- 探索范围（本科-硕士）
   scope              TEXT          NOT NULL,           -- 学科知识（管线暂不输出，置空）
-  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态（6 态契约见下文；待确认/失败未实现）
+  exploration_stage  VARCHAR(20)   NOT NULL DEFAULT '未开始', -- 流程状态（6 态契约见下文）
   classic_tracks     JSON          NOT NULL,           -- 课程方向 [{name,summary,kind}] 0~4 项
   stages             JSON          NOT NULL,           -- 学习阶段顺序（无默认值，四档）
   path_results       JSON,                            -- 学习流程（notes/edges/graph_td）
@@ -69,12 +69,12 @@ CREATE TABLE qed_domain (
 | 1 | `domain_id` | VARCHAR(32) PK | — | 领域标识，如 "math"。扩展预留，不使用自增 ID |
 | 2 | `name` | VARCHAR(100) | — | 显示名，如 "数学" |
 | 3 | `description` | TEXT | — | 学科介绍（LLM 生成，人工审） |
-| 4 | `level` | VARCHAR(50) | `""` | 探索范围标签，如 "本科-硕士"。管线 domain@v2 输出 |
+| 4 | `level` | VARCHAR(50) | `""` | 探索范围标签，如 "本科-硕士"。管线 domain@v4 输出 |
 | 5 | `scope` | TEXT | `""` | 学科知识（领域边界描述）。当前管线不输出，先置空 |
 | 6 | `exploration_stage` | VARCHAR(20) | `"未开始"` | 流程状态枚举（见下文） |
-| 7 | `classic_tracks` | JSON | `[]` | 课程方向，JSON 数组 [{name, summary, kind}]，0~4 项。`kind`：`main`=主干方向 / `branch`=分支方向（2026-08-29 语义升级）。管线 domain@v3 输出 |
+| 7 | `classic_tracks` | JSON | `[]` | 课程方向，JSON 数组 [{name, summary, kind}]，0~4 项。`kind`：`main`=主干方向 / `branch`=分支方向（2026-08-29 语义升级）。管线 domain@v4 输出 |
 | 8 | `stages` | JSON | —（无默认值） | 学习阶段顺序列表，值为四档 `["基础","主干","分支","前沿"]`（2026-08-29 用户裁定；基础=入门基石；主干=方向主干；分支=方向细分/拓展；前沿=研究前沿/论文驱动）。之后可变更 |
-| 9 | `path_results` | JSON | `null` | 学习流程，可空。管线 path@v4 输出，包含 notes/edges[{from,to}]/graph_td |
+| 9 | `path_results` | JSON | `null` | 学习流程，可空。领域探索管线输出（courses@v8 起由服务端按 prerequisites 推导），包含 notes/edges[{from,to}]/graph_td |
 | 10 | `explore_pending` | JSON | `null` | 探索待确认载荷（REQ-067-B12）：`待确认` = `{kind:"review_results", courses:[...], domain_report}`；`失败` = `{kind:"failed", error:"..."}`；其余状态 NULL |
 | 11-14 | audit | — | — | created_by/updated_by/created_at/updated_at |
 
@@ -89,15 +89,40 @@ CREATE TABLE qed_domain (
 > **实现状态标注（2026-09-01）**：6 态状态机与 `explore_pending` 载荷为 REQ-067-B12
 > **已实现**（迁移 0015、ORM 模型、Repository、API 端点、测试；设计见
 > [2026-08-31-req067-b10-b12-exploration-stage.md](../history/baselines/2026-08-31-req067-b10-b12-exploration-stage.md)）。
+> 待确认→已完成（apply-results）与 待确认→探索中（re-explore）均可用；探索异步 run 的
+> `domain_explore`/`course_explore` 后台 handler 已注册。
 
 | 值 | 触发时机 | 写主体 | explore_pending |
 |---|---|---|---|
 | 未开始 | 手动创建 | 创建方（8900 直建或本仓库 API） | NULL |
-| 已生成 | 探索会话产出报告、待用户确认 | **8900**（写权限例外，见下） | NULL |
-| 探索中 | 探索会话启动 | **8900**（同上） | NULL |
-| 待确认 | 探索完成、审阅结果待用户采纳（REQ-067-B12 新增，未实现） | **8900**（同上） | `{kind:"review_results", courses:[...], domain_report}` |
-| 已完成 | 审阅采纳落库（本仓库 `POST /domains/{id}/apply-results`，REQ-067-B12 未实现）或手动导入（8901 `/domains/import`） | **本仓库 8901** | NULL（采纳时清空） |
-| 失败 | 探索失败 / 服务重启中断（8901 lifespan 启动清理，REQ-067-B10 未实现） | **本仓库 8901** | `{kind:"failed", error:"服务重启，探索任务中断"}`（B10 固定文案） |
+| 已生成 | 领域探索**第一轮**（domain@v4 半场）报告就绪，等待用户确认（可修改） | **8900**（LLM 轨，写权限例外见下）；手动路径由本仓库 `POST /domains/{id}/confirm-domain` 驱动进入下一状态 | NULL（领域第一轮） |
+| 探索中 | 第一轮已确认，**第二轮**（courses@v8 半场）进行中 | **8900**（同上）/ 手动路径 `confirm-domain` 已生成→探索中 | NULL |
+| 待确认 | 领域探索**第二轮**报告就绪，等待用户采纳；或课程探索单轮报告就绪（REQ-067-B12） | **8900**（同上）；手动路径 课程写入 `探索中→待确认` | `{kind:"review_results", stage, courses:[...], domain_report}`（领域第二轮）或 `{kind:"review_results", tutorials:[...]}`（课程）；`stage` 标记：`domain`/`courses` |
+| 已完成 | 第二轮审阅采纳落库（本仓库 `POST /domains/{id}/apply-results`）或课程 apply-results；手动导入 CLI（`/domains/import` source=cli） | **本仓库 8901** | NULL（采纳时清空） |
+| 失败 | 探索失败 / 服务重启中断（8901 lifespan 启动清理） | **本仓库 8901** | `{kind:"failed", error:"..."}` |
+
+### 领域探索两轮审阅时序（2026-09-03 用户裁决）
+
+领域探索（LLM 自动轨与手动轨一致）按「两步管线、两轮审阅」推进；**整条链路每个状态只走
+一次**（线性），每轮语义与课程探索一致：生成 → 等待确认（可修改）→ 人工完成一轮 prompt
+结果确认。`explore_pending` 载荷增 `stage` 标记区分轮次（`domain` = domain@v4 半场 /
+`courses` = courses@v8 半场）：
+
+```
+第 1 轮（domain@v4 半场）：
+  未开始 → 已生成（domain 报告生成，等待确认，可修改；step=domain）
+  → 用户修改+确认 → 探索中（进入第 2 轮）
+第 2 轮（courses@v8 半场）：
+  探索中 → 待确认（courses 报告生成，等待确认，可修改；step=courses）
+  → 用户修改+确认 → 已完成（领域探索结束）
+```
+
+- **已生成** = 第一轮报告就绪的待确认点；**探索中** = 第一轮已确认、第二轮进行中；
+  **待确认** = 第二轮报告就绪的待确认点；**已完成** = 第二轮确认采纳，领域探索结束。
+- 第 1 轮确认（已生成→探索中）由 8900 探索会话发起第 2 步（自动轨），或经手动路径的
+  `confirm-domain`/`courses-import` 端点推进（见[知识录入设计](../design/knowledge-import.md)六步流程）。
+- 课程探索为单步、单轮：`探索中 → 待确认`（报告就绪，等待确认，可修改）→ `确认 → 已完成`。
+- dry-run 端点保持单次同步整体评估（两步跑完返回 report 预览），不拆两轮。
 
 ### 字段语义补充
 
@@ -153,7 +178,7 @@ CREATE TABLE qed_course (
 | 3 | `sort_order` | INT | 0 | 学习顺序（DAG 拓扑序） |
 | 4 | `name` | VARCHAR(200) | — | 规范名，如 "数学分析" |
 | 5 | `aliases` | JSON | `[]` | 别名列表，如 ["高等数学（工科称呼）"] |
-| 6 | `track` | VARCHAR(50) | `""` | 课程所属学术方向，如 "分析学"。管线 courses@v4 输出 |
+| 6 | `track` | VARCHAR(50) | `""` | 课程所属学术方向，如 "分析学"。管线 courses@v8 输出 |
 | 7 | `stage` | VARCHAR(32) | — | 所属学习阶段，值域来自 qed_domain.stages |
 | 8 | `prerequisites` | JSON | `[]` | 先修 course_id 数组（主知识链路 DAG） |
 | 9 | `related_targets` | JSON | `[]` | 已通过验收的关联 catalog 目标（随验收回填） |
@@ -166,23 +191,24 @@ CREATE TABLE qed_course (
 
 `stage` 的值域来自 `qed_domain.stages`（四档：`基础/主干/分支/前沿`，2026-08-29 用户裁定）。
 
-pipeline path@v5 输出的 `tier` 与 `stage` 已**统一为同一概念**（值域同为四档，
-2026-08-29 取代旧值域 基础/进阶/核心/冲刺）；tier 不落 qed_course 表，其结果已存
-qed_domain.path_results（Graph 分组用）。
+探索管线输出的层级字段已于 2026-09-03（courses@v8 裁决）由 `tier` **对齐更名为 `stage`**：
+管线报告与 explore_pending 载荷一律输出 `stage`，与 qed_course.stage 同名同值域，
+落库不再需要 tier→stage 映射；path_results（Graph 分组用）随探索结果一并写入 qed_domain。
 
 ### exploration_stage 状态机（6 态，同 qed_domain）
 
 `未开始 → 已生成 → 探索中 → 待确认 → 已完成`，`探索中/待确认 → 失败`。值域、explore_pending
-载荷与实现状态标注见上文 qed_domain 状态机节（REQ-067-B12 契约，待确认/失败未实现）。
+载荷与实现状态标注见上文 qed_domain 状态机节。**课程探索为单步、单轮**：报告生成即进入
+`待确认`（等待确认，可修改），确认后 `已完成`（语义与领域探索第二轮一致）。
 
 | 阶段 | 触发条件 | 写主体 |
 |---|---|---|
 | 未开始 | 手动创建 | 创建方（8900 直建或本仓库 API） |
-| 已生成 | course-explore tutorials@v1 完成 | **8900**（写权限例外，见下） |
+| 已生成 | 课程探索会话产出报告 | **8900**（写权限例外，见下） |
 | 探索中 | 正式探索启动（异步场景） | **8900**（同上） |
-| 待确认 | 课程探索完成、教材审阅结果待采纳（REQ-067-B12 新增，未实现） | **8900**（同上） |
-| 已完成 | 教材采纳 + 验收完成（knowledge complete 聚合时顺带回写）或课程 apply-results（REQ-067-B12 未实现） | **本仓库 8901** |
-| 失败 | 探索失败 / 服务重启中断（8901 lifespan 启动清理，REQ-067-B10 未实现） | **本仓库 8901** |
+| 待确认 | 课程探索（tutorials@v2）报告生成，等待用户确认（可修改，REQ-067-B12） | **8900**（同上） |
+| 已完成 | 用户确认教材方案（`POST /courses/{id}/apply-results`） | **本仓库 8901** |
+| 失败 | 探索失败 / 服务重启中断（8901 lifespan 启动清理） | **本仓库 8901** |
 
 > 写主体口径（2026-08-28 澄清，根仓库 REQ-064⑤；2026-08-31 按 REQ-067-B12 修订）：**8900 负责
 > 探索过程状态流转（探索中/已生成/待确认），本仓库负责验收终态（已完成）与失败清理
@@ -262,10 +288,9 @@ CREATE TABLE IF NOT EXISTS qed_llm_calls (
 
 | 模板编号 | 所属管线 | 步骤说明 |
 |---|---|---|
-| `domain-explore/domain@v2` | 领域探索 | 名称校验 + 描述生成 |
-| `domain-explore/courses@v4` | 领域探索 | 课程发现 |
-| `domain-explore/path@v4` | 领域探索 | 学习路径规划 |
-| `course-explore/tutorials@v1` | 课程探索 | 教材推荐 |
+| `domain-explore/domain@v4` | 领域探索 | 名称校验 + 描述生成 + 方向（classic_tracks） |
+| `domain-explore/courses@v8` | 领域探索 | 课程发现 + stage 层级 + prerequisites 先修（path@v5 已并入） |
+| `course-explore/tutorials@v2` | 课程探索 | 教材推荐（ref 结构化、position 五档、intro 散文、parallel_ref） |
 
 模板注册于 `src/qed_tracker/prompt_lab/templates.py`。
 

@@ -1,18 +1,13 @@
-"""五层模型（qt_knowledge / qt_books / qt_sources）数据访问与状态机（QED-031）。
+"""知识/书库/渠道（qt_knowledge / qt_books / qt_sources）数据访问与状态机。
 
 结构（docs/design/database-schema.md）：
 qed_domain → qed_course → qt_knowledge（一行=一套教程/一组延展资料归类）→ qt_books
-（一行=一册/一卷/一个快照）→ qt_sources（渠道尝试）。
+（一行=域级书库一册）→ qt_sources（渠道尝试）。
 
 状态机：
-- qt_knowledge：draft → confirmed → completed；draft/confirmed → rejected；
-  confirmed/completed → superseded。rejected/superseded 为终态（彻底隐藏）。
-- qt_books：candidate → decided → downloading → downloaded → verified；
-  candidate/decided/downloaded → rejected；downloading → failed（→downloading 重试）；
-  candidate → downloaded 仅人工 register 直转（需 sha256+path）；candidate/decided/downloaded → superseded。
-  verified/rejected/superseded 为终态；rejected/superseded 彻底隐藏（failed 可见，可重试）。
-
-彻底隐藏语义在数据层实现（列表/详情接口默认过滤），前端不依赖展示层过滤。
+- qt_knowledge：draft → confirmed。confirmed 为终态。
+- qt_books：candidate → decided / parallel；candidate/decided/parallel → retired。
+  retired 为终态。
 """
 
 from __future__ import annotations
@@ -50,36 +45,21 @@ class InvalidExplorationTransition(RuntimeError):
     """探索状态迁移非法：当前态不允许执行该操作（REQ-067-B12）。"""
 
 
-_HIDDEN_KNOWLEDGE_STATUSES = {KnowledgeStatus.REJECTED.value, KnowledgeStatus.SUPERSEDED.value}
-_HIDDEN_BOOK_STATUSES = {BookStatus.REJECTED.value, BookStatus.SUPERSEDED.value}
-
 # Sentinel to distinguish "not provided" from "explicitly set to None".
 _MISSING = object()
 # Special value to explicitly clear explore_pending to NULL.
 CLEAR = "__CLEAR__"
 
 _KNOWLEDGE_TRANSITIONS: dict[KnowledgeStatus, set[KnowledgeStatus]] = {
-    KnowledgeStatus.DRAFT: {KnowledgeStatus.CONFIRMED, KnowledgeStatus.REJECTED},
-    KnowledgeStatus.CONFIRMED: {KnowledgeStatus.COMPLETED, KnowledgeStatus.REJECTED, KnowledgeStatus.SUPERSEDED},
-    KnowledgeStatus.COMPLETED: {KnowledgeStatus.SUPERSEDED},
-    KnowledgeStatus.REJECTED: set(),
-    KnowledgeStatus.SUPERSEDED: set(),
+    KnowledgeStatus.DRAFT: {KnowledgeStatus.CONFIRMED},
+    KnowledgeStatus.CONFIRMED: set(),
 }
 
 _BOOK_TRANSITIONS: dict[BookStatus, set[BookStatus]] = {
-    BookStatus.CANDIDATE: {
-        BookStatus.DECIDED, BookStatus.DOWNLOADED, BookStatus.REJECTED, BookStatus.SUPERSEDED
-    },
-    BookStatus.DECIDED: {BookStatus.DOWNLOADING, BookStatus.REJECTED, BookStatus.SUPERSEDED},
-    # DOWNLOADING → DECIDED：取消失联下载复位（2026-08-28 联调：start 后无执行器/进程重启遗留）。
-    BookStatus.DOWNLOADING: {
-        BookStatus.DECIDED, BookStatus.DOWNLOADED, BookStatus.FAILED, BookStatus.REJECTED
-    },
-    BookStatus.DOWNLOADED: {BookStatus.VERIFIED, BookStatus.REJECTED, BookStatus.SUPERSEDED},
-    BookStatus.FAILED: {BookStatus.DOWNLOADING, BookStatus.REJECTED},
-    BookStatus.VERIFIED: set(),
-    BookStatus.REJECTED: set(),
-    BookStatus.SUPERSEDED: set(),
+    BookStatus.CANDIDATE: {BookStatus.DECIDED, BookStatus.PARALLEL, BookStatus.RETIRED},
+    BookStatus.DECIDED: {BookStatus.RETIRED},
+    BookStatus.PARALLEL: {BookStatus.RETIRED},
+    BookStatus.RETIRED: set(),
 }
 
 
@@ -393,28 +373,28 @@ class KnowledgeRepository:
     def create_knowledge(
         self,
         *,
-        domain_id: str,
         course_id: str,
-        kind: str = "tutorial",
+        course_abbr: str,
         set_no: str = "",
         name: str = "",
+        kind: str = "tutorial",
+        position: str = "",
+        intro: str = "",
         knowledge_id: str = "",
     ) -> QtKnowledge:
-        """幂等插入：候选期 knowledge_id = kn_<md5(domain, course, kind, set_no, name)>，定稿后保持稳定。"""
-        knowledge_id = knowledge_id or _id("kn", domain_id, course_id, kind, set_no, name)
+        """幂等插入：knowledge_id = kt_{course_abbr}_{set_no}，调用者负责传入 course_abbr。"""
+        knowledge_id = knowledge_id or _id("kt", course_abbr, set_no)
         with self._session_factory() as session:
             row = session.get(QtKnowledge, knowledge_id)
             if row is None:
                 row = QtKnowledge(
                     knowledge_id=knowledge_id,
-                    domain_id=domain_id,
                     course_id=course_id,
                     kind=kind,
                     set_no=set_no,
                     name=name,
-                    textbook_intro="",
-                    exercise_intro="",
-                    materials_intro="",
+                    position=position,
+                    intro=intro,
                 )
                 _touch(row, created=True)
                 session.add(row)
@@ -423,76 +403,156 @@ class KnowledgeRepository:
 
     @staticmethod
     def build_tutorial_row(
-        *, domain_id: str, course_id: str, set_no: str = "", name: str = ""
+        *, course_id: str, course_abbr: str, set_no: str = "", name: str = "",
+        position: str = "", intro: str = "",
     ) -> QtKnowledge:
         """构造未落库的 draft 教程行：探索采纳单事务复用（id 规则与 create_knowledge 一致）。"""
         row = QtKnowledge(
-            knowledge_id=_id("kn", domain_id, course_id, "tutorial", set_no, name),
-            domain_id=domain_id,
+            knowledge_id=_id("kt", course_abbr, set_no),
             course_id=course_id,
             kind="tutorial",
             set_no=set_no,
             name=name,
-            textbook_intro="",
-            exercise_intro="",
-            materials_intro="",
+            position=position,
+            intro=intro,
         )
         _touch(row, created=True)
         return row
 
     def adopt_tutorials(self, course_id: str, tutorials: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """A2 课程知识采纳：每套一条 draft 教程，预填 set_no/name/双 ref/双 intro。
+        """A2 课程知识采纳：按新契约批量建 draft 教程 + 关联书行。
 
-        幂等：同 course+set_no+name（id 规则 kn_md5(...)）命中 → 返回既有行（existing=True），
-        不改动已落库内容；同 set_no 被不同教程占用 → AdoptionConflict（端点映射 409）。
-        单事务批量提交，逐套返回 {knowledge_id, set_no, name, status, existing}。
+        输入格式：
+            tutorials 数组含 set_no/name/position/intro/textbook_ref[]/exercise_ref[]/parallel_ref[]
+
+        幂等：同 course_id+kind+set_no 命中 → 返回既有行（existing=True）；
+        同 set_no 被不同教程占用 → AdoptionConflict（端点映射 409）。
+        单事务批量提交，逐套返回 {knowledge_id, set_no, name, status, existing, books_created}。
         """
         with self._session_factory() as session:
             course = session.get(QedCourse, course_id)
             if course is None:
                 raise KeyError(f"课程不存在：{course_id}")
             domain_id = course.domain_id
+
             existing_rows = list(session.scalars(
                 select(QtKnowledge).where(
                     QtKnowledge.course_id == course_id, QtKnowledge.kind == "tutorial"
                 )
             ))
-            by_id = {r.knowledge_id: r for r in existing_rows}
             by_set = {r.set_no: r for r in existing_rows}
-            pending: list[tuple[QtKnowledge, bool]] = []
+            by_kid = {r.knowledge_id: r for r in existing_rows}
+
+            pending: list[tuple[QtKnowledge, bool, int]] = []
+
             for item in tutorials:
                 set_no = str(item.get("set_no", "")).strip()
-                name = str(item.get("set_name", "")).strip()
-                textbook = item.get("textbook") or {}
-                exercise = item.get("exercise")
-                kid = _id("kn", domain_id, course_id, "tutorial", set_no, name)
-                hit = by_id.get(kid)
+                name = str(item.get("name", "")).strip()
+
+                # 幂等：同 course_id+kind+set_no 命中
+                hit = by_set.get(set_no)
                 if hit is not None:
-                    pending.append((hit, True))
+                    pending.append((hit, True, 0))
                     continue
-                conflict = by_set.get(set_no)
-                if conflict is not None:
-                    raise AdoptionConflict(
-                        f"课程 {course_id} 套号 {set_no} 已被教程 "
-                        f"{conflict.knowledge_id}（{conflict.name}）占用"
-                    )
-                row = self.build_tutorial_row(domain_id=domain_id, course_id=course_id,
-                                              set_no=set_no, name=name)
-                row.textbook_ref = dict(textbook)
-                row.textbook_intro = str(textbook.get("intro", ""))
-                if exercise:
-                    row.exercise_ref = dict(exercise)
-                    row.exercise_intro = str(exercise.get("intro", ""))
+
+                # 构造 draft 教程行
+                course_abbr = course_id.split("-")[-1] if "-" in course_id else course_id
+                row = self.build_tutorial_row(
+                    course_id=course_id, course_abbr=course_abbr,
+                    set_no=set_no, name=name,
+                    position=str(item.get("position", "")),
+                    intro=str(item.get("intro", "")),
+                )
+                row.textbook_ref = list(item.get("textbook_ref") or [])
+                row.exercise_ref = list(item.get("exercise_ref") or [])
+                row.parallel_ref = list(item.get("parallel_ref") or [])
                 session.add(row)
                 by_set[set_no] = row
-                by_id[kid] = row
-                pending.append((row, False))
+                by_kid[row.knowledge_id] = row
+                session.flush()
+
+                books_created = 0
+
+                # textbook_ref → status=decided
+                for ref in row.textbook_ref:
+                    book_id = ref.get("book_id") or _id("bk", row.knowledge_id, ref.get("title", ""))
+                    book = QtBook(
+                        book_id=book_id,
+                        title=ref.get("title", ""),
+                        part=ref.get("part", ""),
+                        authors=ref.get("authors", []),
+                        publisher=ref.get("publisher", ""),
+                        edition=ref.get("edition", ""),
+                        year=ref.get("year"),
+                        language=ref.get("language", ""),
+                        roles=["textbook"],
+                        status=BookStatus.DECIDED.value,
+                        domain_id=domain_id,
+                        file_path=ref.get("file_path"),
+                    )
+                    _touch(book, created=True)
+                    session.add(book)
+                    ref["book_id"] = book_id
+                    books_created += 1
+
+                # exercise_ref → status=decided
+                for ref in (row.exercise_ref or []):
+                    book_id = ref.get("book_id") or _id("bk", row.knowledge_id, ref.get("title", ""))
+                    book = QtBook(
+                        book_id=book_id,
+                        title=ref.get("title", ""),
+                        part=ref.get("part", ""),
+                        authors=ref.get("authors", []),
+                        publisher=ref.get("publisher", ""),
+                        edition=ref.get("edition", ""),
+                        year=ref.get("year"),
+                        language=ref.get("language", ""),
+                        roles=["exercises"],
+                        status=BookStatus.DECIDED.value,
+                        domain_id=domain_id,
+                        file_path=ref.get("file_path"),
+                    )
+                    _touch(book, created=True)
+                    session.add(book)
+                    ref["book_id"] = book_id
+                    books_created += 1
+
+                # parallel_ref → status=parallel
+                for ref in (row.parallel_ref or []):
+                    book_id = ref.get("book_id") or _id("bk", row.knowledge_id, ref.get("title", ""))
+                    book = QtBook(
+                        book_id=book_id,
+                        title=ref.get("title", ""),
+                        part=ref.get("part", ""),
+                        authors=ref.get("authors", []),
+                        publisher=ref.get("publisher", ""),
+                        edition=ref.get("edition", ""),
+                        year=ref.get("year"),
+                        language=ref.get("language", ""),
+                        roles=[],
+                        status=BookStatus.PARALLEL.value,
+                        domain_id=domain_id,
+                        file_path=ref.get("file_path"),
+                    )
+                    _touch(book, created=True)
+                    session.add(book)
+                    ref["book_id"] = book_id
+                    books_created += 1
+
+                pending.append((row, False, books_created))
+
             session.commit()
             results: list[dict[str, Any]] = []
-            for row, existing in pending:
+            for row, existing, books_created in pending:
                 session.refresh(row)
-                results.append({"knowledge_id": row.knowledge_id, "set_no": row.set_no,
-                                "name": row.name, "status": row.status, "existing": existing})
+                results.append({
+                    "knowledge_id": row.knowledge_id,
+                    "set_no": row.set_no,
+                    "name": row.name,
+                    "status": row.status,
+                    "existing": existing,
+                    "books_created": books_created,
+                })
             return results
 
     def list_knowledge(
@@ -501,7 +561,6 @@ class KnowledgeRepository:
         course_id: str | None = None,
         kind: str | None = None,
         status: str | None = None,
-        include_hidden: bool = False,
     ) -> list[QtKnowledge]:
         with self._session_factory() as session:
             statement = select(QtKnowledge).order_by(QtKnowledge.created_at)
@@ -511,18 +570,11 @@ class KnowledgeRepository:
                 statement = statement.where(QtKnowledge.kind == kind)
             if status:
                 statement = statement.where(QtKnowledge.status == status)
-            if not include_hidden:
-                statement = statement.where(QtKnowledge.status.not_in(_HIDDEN_KNOWLEDGE_STATUSES))
             return list(session.scalars(statement))
 
-    def get_knowledge(self, knowledge_id: str, *, include_hidden: bool = False) -> QtKnowledge | None:
+    def get_knowledge(self, knowledge_id: str) -> QtKnowledge | None:
         with self._session_factory() as session:
-            row = session.get(QtKnowledge, knowledge_id)
-            if row is None:
-                return None
-            if not include_hidden and row.status in _HIDDEN_KNOWLEDGE_STATUSES:
-                return None
-            return row
+            return session.get(QtKnowledge, knowledge_id)
 
     def _transition_knowledge(self, knowledge_id: str, target: KnowledgeStatus, **fields: Any) -> QtKnowledge:
         with self._session_factory() as session:
@@ -539,155 +591,66 @@ class KnowledgeRepository:
             session.commit()
             return row
 
-    def confirm_knowledge(
-        self,
-        knowledge_id: str,
-        *,
-        textbook_ref: dict[str, Any] | None = None,
-        exercise_ref: dict[str, Any] | None = None,
-        textbook_intro: str = "",
-        exercise_intro: str = "",
-    ) -> QtKnowledge:
-        """draft → confirmed（探索定稿：决定引用 + 简介，简介 LLM 预填后人工审）。"""
+    def confirm_knowledge(self, knowledge_id: str) -> QtKnowledge:
+        """draft → confirmed（定稿：状态转换 + confirmed_at）。"""
         return self._transition_knowledge(
             knowledge_id,
             KnowledgeStatus.CONFIRMED,
             confirmed_at=utc_now(),
-            textbook_ref=textbook_ref or {},
-            exercise_ref=exercise_ref or {},
-            textbook_intro=textbook_intro.strip(),
-            exercise_intro=exercise_intro.strip(),
-        )
-
-    def complete_knowledge(self, knowledge_id: str) -> QtKnowledge:
-        """confirmed → completed（所辖非隐藏书籍全部 verified 聚合触发；无书籍或全隐藏则不允许）。"""
-        with self._session_factory() as session:
-            row = session.get(QtKnowledge, knowledge_id)
-            if row is None:
-                raise KeyError(f"教程不存在：{knowledge_id}")
-            if row.status != KnowledgeStatus.CONFIRMED.value:
-                raise InvalidTransition(f"教程状态迁移非法：{row.status} → completed")
-            visible = session.scalar(
-                select(func.count())
-                .select_from(QtBook)
-                .where(QtBook.knowledge_id == knowledge_id)
-                .where(QtBook.status.not_in(_HIDDEN_BOOK_STATUSES))
-            )
-            if not visible:
-                raise InvalidTransition("教程没有非隐藏书籍，不能完成")
-            pending = session.scalar(
-                select(func.count())
-                .select_from(QtBook)
-                .where(QtBook.knowledge_id == knowledge_id)
-                .where(QtBook.status != BookStatus.VERIFIED.value)
-                .where(QtBook.status.not_in(_HIDDEN_BOOK_STATUSES))
-            )
-            if pending:
-                raise InvalidTransition("存在未验证（verified）的书籍，不能完成教程")
-            row.status = KnowledgeStatus.COMPLETED.value
-            row.completed_at = utc_now()
-            row.updated_at = utc_now()
-            # G2 修复（QED-050）：课程下全部非隐藏教程 completed 时回写课程探索终态。
-            remaining = session.scalar(
-                select(func.count())
-                .select_from(QtKnowledge)
-                .where(QtKnowledge.course_id == row.course_id)
-                .where(QtKnowledge.status != KnowledgeStatus.COMPLETED.value)
-                .where(QtKnowledge.status.not_in(_HIDDEN_KNOWLEDGE_STATUSES))
-            )
-            if not remaining:
-                course = session.get(QedCourse, row.course_id)
-                if course is not None:
-                    course.exploration_stage = "已完成"
-                    course.updated_at = utc_now()
-            session.commit()
-            return row
-
-    def reject_knowledge(self, knowledge_id: str, *, reason: str, by: str) -> QtKnowledge:
-        if not reason.strip():
-            raise ValueError("拒绝必须提供原因（reject_reason 必填）")
-        return self._transition_knowledge(
-            knowledge_id,
-            KnowledgeStatus.REJECTED,
-            rejected_at=utc_now(),
-            reject_reason=reason.strip(),
-            updated_by=by,
-        )
-
-    def supersede_knowledge(self, knowledge_id: str, *, reason: str, by: str) -> QtKnowledge:
-        if not reason.strip():
-            raise ValueError("过时必须提供原因（supersede_reason 必填）")
-        return self._transition_knowledge(
-            knowledge_id,
-            KnowledgeStatus.SUPERSEDED,
-            superseded_at=utc_now(),
-            supersede_reason=reason.strip(),
-            updated_by=by,
         )
 
     # ---------------- qt_books ----------------
 
     def create_book(
         self,
-        knowledge_id: str,
+        book_id: str,
         *,
-        kind: str = "textbook",
-        roles: Iterable[str] = (),
         title: str,
         part: str = "",
-        display_title: str = "",
-        authors: Iterable[str] = (),
+        authors: list[dict[str, Any]] | None = None,
+        publisher: str = "",
+        edition: str = "",
+        year: int | None = None,
         language: str = "",
-        version: dict[str, Any] | None = None,
-        source: dict[str, Any] | None = None,
-        original_url: str = "",
-        book_id: str = "",
+        roles: list[str] | None = None,
+        status: str = BookStatus.CANDIDATE.value,
+        domain_id: str = "",
+        file_path: str | None = None,
+        notes: str | None = None,
     ) -> QtBook:
-        """幂等插入：book_id = bk_<md5(knowledge_id, title, part)>；同套同书同卷不重复建行。"""
-        display_title = display_title or f"{title} {part}".strip()
-        book_id = book_id or _id("bk", knowledge_id, title, part)
+        """幂等插入：book_id 由调用者传入（服务端生成 {abbr}-b{NN}）。"""
         with self._session_factory() as session:
             row = session.get(QtBook, book_id)
             if row is None:
-                knowledge = session.get(QtKnowledge, knowledge_id)
-                if knowledge is None:
-                    raise KeyError(f"教程不存在：{knowledge_id}")
                 row = QtBook(
                     book_id=book_id,
-                    knowledge_id=knowledge_id,
-                    kind=kind,
-                    roles=list(roles),
                     title=title,
                     part=part,
-                    display_title=display_title,
-                    authors=list(authors),
+                    authors=authors or [],
+                    publisher=publisher,
+                    edition=edition,
+                    year=year,
                     language=language,
-                    version=version or {},
-                    source=source,
-                    original_url=original_url,
+                    roles=roles or [],
+                    status=status,
+                    domain_id=domain_id,
+                    file_path=file_path,
                 )
                 _touch(row, created=True)
                 session.add(row)
             session.commit()
             return row
 
-    def list_books(self, knowledge_id: str | None = None, *, include_hidden: bool = False) -> list[QtBook]:
+    def list_books(self, knowledge_id: str | None = None) -> list[QtBook]:
         with self._session_factory() as session:
             statement = select(QtBook).order_by(QtBook.created_at)
             if knowledge_id:
                 statement = statement.where(QtBook.knowledge_id == knowledge_id)
-            if not include_hidden:
-                statement = statement.where(QtBook.status.not_in(_HIDDEN_BOOK_STATUSES))
             return list(session.scalars(statement))
 
-    def get_book(self, book_id: str, *, include_hidden: bool = False) -> QtBook | None:
+    def get_book(self, book_id: str) -> QtBook | None:
         with self._session_factory() as session:
-            row = session.get(QtBook, book_id)
-            if row is None:
-                return None
-            if not include_hidden and row.status in _HIDDEN_BOOK_STATUSES:
-                return None
-            return row
+            return session.get(QtBook, book_id)
 
     def _transition_book(self, book_id: str, target: BookStatus, **fields: Any) -> QtBook:
         with self._session_factory() as session:
@@ -705,106 +668,12 @@ class KnowledgeRepository:
             return row
 
     def decide_book(self, book_id: str) -> QtBook:
-        """candidate → decided（人工决定下载，录 decided_at）。"""
-        return self._transition_book(book_id, BookStatus.DECIDED, decided_at=utc_now())
+        """candidate → decided（人工决定选用）。"""
+        return self._transition_book(book_id, BookStatus.DECIDED)
 
-    def start_download(self, book_id: str) -> QtBook:
-        """decided → downloading（任务发起）；failed → downloading（重试）。"""
-        return self._transition_book(book_id, BookStatus.DOWNLOADING)
-
-    def fail_download(self, book_id: str) -> QtBook:
-        """downloading → failed（仅下载中可失败；candidate→failed 不允许）。"""
-        return self._transition_book(book_id, BookStatus.FAILED)
-
-    def retry_download(self, book_id: str) -> QtBook:
-        """failed → downloading（重试）。"""
-        return self._transition_book(book_id, BookStatus.DOWNLOADING)
-
-    def cancel_download(self, book_id: str, *, note: str = "", by: str = "web") -> QtBook:
-        """downloading → decided（取消复位：失联下载/进程重启遗留，回到待执行）。
-
-        仅 downloading 可取消：其余状态走各自语义（candidate 用 decide_book 等），
-        避免 cancel 被当作通用 decide 入口。
-        """
-        current = self.get_book(book_id, include_hidden=True)
-        if current is None:
-            raise KeyError(f"书籍不存在：{book_id}")
-        if current.status != BookStatus.DOWNLOADING:
-            raise InvalidTransition(
-                f"书籍状态迁移非法：{current.status} → {BookStatus.DECIDED.value}（仅 downloading 可取消）"
-            )
-        return self._transition_book(book_id, BookStatus.DECIDED, review_note=note.strip(), updated_by=by)
-
-    def complete_download(
-        self,
-        book_id: str,
-        *,
-        sha256: str,
-        relative_path: str,
-        page_count: int | None = None,
-        absolute_path: str = "",
-        file_name: str = "",
-    ) -> QtBook:
-        """downloading → downloaded（自动任务）或 candidate → downloaded（人工 register 直转）。
-
-        两者均要求已提供 sha256 + relative_path。同 sha256 幂等：已存在同 sha256 行则复用。
-        """
-        if not sha256 or not relative_path:
-            raise InvalidTransition("进入 downloaded 前必须已登记 sha256 + relative_path")
-        with self._session_factory() as session:
-            existing = session.scalar(select(QtBook).where(QtBook.sha256 == sha256))
-            if existing is not None and existing.book_id != book_id:
-                row = session.get(QtBook, book_id)
-                if row is not None:
-                    session.delete(row)
-                session.commit()
-                return existing
-            row = session.get(QtBook, book_id)
-            if row is None:
-                raise KeyError(f"书籍不存在：{book_id}")
-            current = BookStatus(row.status)
-            if current not in (BookStatus.DOWNLOADING, BookStatus.CANDIDATE):
-                raise InvalidTransition(f"书籍状态迁移非法：{current.value} → downloaded")
-            row.sha256 = sha256
-            row.relative_path = relative_path
-            row.absolute_path = absolute_path
-            row.file_name = file_name
-            if page_count is not None:
-                row.page_count = page_count
-            row.status = BookStatus.DOWNLOADED.value
-            row.downloaded_at = utc_now()
-            row.updated_at = utc_now()
-            session.commit()
-            return row
-
-    def verify_book(self, book_id: str) -> QtBook:
-        """downloaded → verified（人工验收确认正确）。"""
-        return self._transition_book(book_id, BookStatus.VERIFIED, verified_at=utc_now())
-
-    def reject_book(self, book_id: str, *, reason: str, by: str, note: str = "") -> QtBook:
-        """candidate/decided/downloading/downloaded → rejected（必填原因；文件硬删由调用方执行）。"""
-        if not reason.strip():
-            raise ValueError("拒绝必须提供原因（reject_reason 必填）")
-        return self._transition_book(
-            book_id,
-            BookStatus.REJECTED,
-            rejected_at=utc_now(),
-            reject_reason=reason.strip(),
-            rejected_by=by,
-            review_note=note.strip(),
-        )
-
-    def supersede_book(self, book_id: str, *, reason: str, by: str) -> QtBook:
-        """candidate/decided/downloaded → superseded（版本换代留痕，原因必填）。"""
-        if not reason.strip():
-            raise ValueError("过时必须提供原因（supersede_reason 必填）")
-        return self._transition_book(
-            book_id,
-            BookStatus.SUPERSEDED,
-            superseded_at=utc_now(),
-            supersede_reason=reason.strip(),
-            updated_by=by,
-        )
+    def retire_book(self, book_id: str, *, reason: str = "") -> QtBook:
+        """decided/parallel → retired（退役：版本换代或不再选用）。"""
+        return self._transition_book(book_id, BookStatus.RETIRED, retire_reason=reason.strip())
 
     # ---------------- qt_sources ----------------
 

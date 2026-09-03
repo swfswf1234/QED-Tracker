@@ -1,7 +1,7 @@
 """手动知识导入链路（QED-050）：领域 JSON 校验器 + POST /domains/import 契约。
 
 守护面：
-- validate_domain manual@v1：course_id/方向 kind/stages 值域/track=main/前置引用与无环/一句话；
+- validate_domain manual@v1：course_id/方向 kind/stages 值域/track∈已列方向（main 或 branch）/前置引用与无环/一句话；
 - /domains/import：内联与 file_path 两模式、幂等 upsert、exploration_stage 由 source 控制、错误码；
 - 知识正本合规：docs/knowledge/math-advanced.json 及其课程 JSON 均通过对应校验器（正本=契约守护）。
 """
@@ -181,11 +181,14 @@ def test_domain_import_creates_domain_and_courses(client, repo) -> None:
     assert body["domain_id"] == "test-math"
     assert body["courses_created"] == 2
     assert body["courses_updated"] == 0
-    assert body["exploration_stage"] == "已完成"
+    # 无 source → 已生成（待人工审核）
+    assert body["exploration_stage"] == "已生成"
 
     domain = repo.get_domain("test-math")
     assert domain.name == "测试数学"
-    assert domain.exploration_stage == "已完成"
+    assert domain.exploration_stage == "已生成"
+    assert domain.explore_pending is not None
+    assert domain.explore_pending["kind"] == "review_results"
     assert domain.classic_tracks[0]["kind"] == "main"
     course = repo.get_course("test_analysis")
     assert course.stage == "基础"
@@ -422,13 +425,13 @@ def test_knowledge_docs_domain_conforms_to_contract() -> None:
 
 
 def test_knowledge_docs_computer_science_conforms_to_contract() -> None:
-    """QED-050：计算机领域范本（3 条主干方向 + 5 门基础/主干课）契约合规。"""
+    """QED-050：计算机领域范本（3 条主干方向 + 7 门基础/主干课，LLM 时代语境）契约合规。"""
     source = ROOT / "docs" / "knowledge" / "computer-science.json"
     data = json.loads(source.read_text(encoding="utf-8"))
     validate_domain(data)
     assert len(data["classic_tracks"]) == 3
     assert all(t["kind"] == "main" for t in data["classic_tracks"])
-    assert 3 <= len(data["courses"]) <= 5
+    assert 3 <= len(data["courses"]) <= 7
     assert all(c["stage"] in ("基础", "主干") for c in data["courses"])
 
 

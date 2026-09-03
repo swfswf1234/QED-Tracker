@@ -1,7 +1,7 @@
 # 待办列表
 
 状态：Current
-最后更新：2026-08-31
+最后更新：2026-09-03
 
 ## 本期计划（全链路跑通）
 
@@ -19,10 +19,7 @@
 | ID | 类型 | 状态 | 事项 | 成功标准 | 关联计划 |
 | --- | --- | --- | --- | --- | --- |
 | QED-026 | Plan | 进行中 | 主链路第一版（CLI 跑通 3 门基础课验证）：课程体系加载、教材条目五要素存储、LLM 预填评价、mainline new/review/download/verify/approve/reject/channels、验收后复制+登记同步移交根仓库 | 00/01/02 三门课程闭环；全量门禁全绿 | [2026-08-main-line-curriculum.md](../plans/2026-08-main-line-curriculum.md)、[2026-08-download-flow.md](../plans/2026-08-download-flow.md) |
-| QED-050 | Plan | 进行中 | 教材探索与下载手动+自动双轨 + 知识体系梳理：方案 A 薄壳导入层复用现有能力；QED-043 语义升级；docs/knowledge/ 标准答案知识目录；手动探索（POST /domains/import）；手动下载（POST /books/{id}/import） | M1~M7 全部完成（prompt 模板升级、math.json 重整理、流程文档、导入链、下载链、文档同步） | [2026-08-knowledge-dual-flow.md](../plans/2026-08-knowledge-dual-flow.md) |
-| QED-050-A | Plan | 待开始 | 领域探索管线优化（domain@v3 + courses@v5 + path@v5）：模板输出质量审核 + 真实冒烟验证 + 错误处理完备（400/404/409/502） | 模板审核通过；真实 LLM 冒烟输出可用；错误码全覆盖 | [2026-09-exploration-pipeline.md](../plans/2026-09-exploration-pipeline.md) |
-| QED-050-B | Plan | 待开始 | 课程探索管线优化（tutorials@v1）：课程 dry-run 真实冒烟 + 与领域探索对称验证 | 课程 dry-run 真实 LLM 输出可用；与领域管线对称 | [2026-09-exploration-pipeline.md](../plans/2026-09-exploration-pipeline.md) |
-| QED-050-C | Plan | 待开始 | 手动导入链路优化（领域 JSON + 课程 JSON + 书籍 PDF）：三种导入全链路测试 + schema 契约冻结 + slug/course_id 映射解决 | 三种导入全链路测试通过；schema 契约冻结；O1 待裁决关闭 | [2026-09-knowledge-import.md](../plans/2026-09-knowledge-import.md) |
+| QED-050 | Plan | 进行中 | 教材探索与下载手动+自动双轨 + 知识体系梳理：方案 A 薄壳导入层复用现有能力；QED-043 语义升级；docs/knowledge/ 标准答案知识目录；手动探索（POST /domains/import）；手动下载（POST /books/{id}/import） | M1~M7 全部完成（prompt 模板升级、math.json 重整理、流程文档、导入链、下载链、文档同步） | [2026-08-knowledge-dual-flow.md](../history/baselines/2026-08-knowledge-dual-flow.md) |
 | QED-050-D | Plan | 待开始 | 下载与登记链路优化（自动下载 + 手动导入 + 验收）：三门基础课下载闭环 + 渠道记录完备 + target_path 落盘验证 | 00/01/02 课程下载→验收→登记全链路通过；渠道记录完整 | [2026-09-download-registration.md](../plans/2026-09-download-registration.md) |
 | QED-050-E | Plan | 待开始 | 数据生命周期验证（状态机全路径 + 清理策略）：知识/探索/书籍三条生命周期各状态路径测试 + 交叉点验证 + 清理策略端到端验证 | 全状态路径测试通过；交叉点联动验证；清理策略验证 | [2026-09-data-lifecycle.md](../plans/2026-09-data-lifecycle.md) |
 
@@ -54,8 +51,8 @@
 
 | ID | 类型 | 状态 | 事项 | 说明 |
 | --- | --- | --- | --- | --- |
-| QED-043 | Plan | 进行中 | prompt 优化模块（领域/课程知识探索工作台）：领域管线 v2/v4/v4 已验证（13 门）；课程 tutorials@v1 实现完成 | 长期任务，持续优化 |
-| QED-044 | Plan | 进行中 | 完整数据库设计文档与 API 设计文档：全部表族与 main.py 全部路由按五要素成文；architecture/database-schema.md 与 architecture/api.md 收敛更新 | 长期任务，前置门禁：QED-010/011/014/026 全部完成后才动笔正式稿 |
+| QED-043 | Plan | 进行中 | prompt 优化模块（领域/课程知识探索工作台）：领域管线 v2/v4/v8 已验证（13 门）；课程 tutorials@v2 实现完成 | 长期任务，持续优化 |
+| QED-044 | Plan | 进行中 | 完整数据库设计文档与 API 设计文档：全部表族与 main.py 全部路由按五要素成文；architecture/database-schema.md 与 architecture/api.md 收敛更新（[实施计划](../plans/2026-08-db-api-docs-completion.md)；前置：API 设计 [Draft](../plans/2026-08-api-design.md)） | 长期任务，前置门禁：QED-010/011/014/026 全部完成后才动笔正式稿 |
 
 ---
 
