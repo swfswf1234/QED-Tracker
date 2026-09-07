@@ -5,8 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from qed_tracker.db.models import Base
+from qed_tracker.db.selection_repository import SelectionStore, SelectionStoreError
 from qed_tracker.profiles import list_paper_profiles, load_paper_profile
-from qed_tracker.selection_store import SelectionStore, SelectionStoreError
 
 
 def _make_store():

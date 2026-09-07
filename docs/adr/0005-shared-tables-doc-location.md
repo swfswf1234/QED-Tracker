@@ -2,11 +2,11 @@
 
 状态：Accepted
 日期：2026-08-31
-最后更新：2026-08-31
+最后更新：2026-09-07
 领域：工程治理
 决策阶段：v0.1
 取代：—
-被取代：—
+被取代：[ADR 0007](0007-database-docs-split-by-table-family.md)（部分——仅决定③）
 
 ## 背景
 
@@ -33,6 +33,12 @@
    「共享表（`qed_*`）」与「项目专用表（`qt_*`）」两区，共享区与 shared-tables.md 互链
    （契约细节——写权限、状态机写主体、同步流程——以 shared-tables.md 为准）。
 
+   > 2026-09-07 勘误：本决定③已被 [ADR 0007](0007-database-docs-split-by-table-family.md)
+   > 取代——数据库设计文档已按表族拆分为
+   > [数据库共享表设计](../architecture/database-shared-tables.md) 与
+   > [数据库专用表设计](../architecture/database-private-tables.md) 两文，
+   > 不再保留全库 DDL 单文档。
+
 ## 后果
 
 - 好处：数据库设计文档在 architecture/ 一处收齐（用户设计的四项职责映射闭环）；
@@ -48,11 +54,13 @@
 - 关联标准：[文档治理规范](../standards/doc-governance.md)（文档分类表 architecture/ 行、
   冲突优先级）、[跨项目协作规范](../standards/cross-project-collaboration.md)（共享契约
   同步条款）
-- 关联文档：[共享表设计](../architecture/shared-tables.md)、
-  [数据库设计](../architecture/database-schema.md)
+- 关联文档：[共享表设计](../architecture/database-shared-tables.md)（2026-09-07 起为
+  数据库共享表设计）、[数据库设计](../architecture/database-private-tables.md)（同日起为
+  数据库专用表设计，见 [ADR 0007](0007-database-docs-split-by-table-family.md)）
 - 关联 ADR：[ADR 0004](0004-standards-governance-alignment.md)（规范体系对齐，本轮为其
   延续）、根仓库 ADR 0003/0009（共享表来源裁决，见 database-schema.md 关联）
 - 承载任务：QED-052（architecture 文档域梳理轮，todo 登记）
-- 固定文档落点：决定①②落点即迁移后的 [共享表设计](../architecture/shared-tables.md) 自身
-  与 [跨项目协作规范](../standards/cross-project-collaboration.md)；决定③落点为
-  [数据库设计](../architecture/database-schema.md) 分区结构。
+- 固定文档落点：决定①②落点即迁移后的 [共享表设计](../architecture/database-shared-tables.md) 自身
+  与 [跨项目协作规范](../standards/cross-project-collaboration.md)；决定③落点原为
+  [数据库设计](../architecture/database-private-tables.md) 分区结构（2026-09-07 起由
+  [ADR 0007](0007-database-docs-split-by-table-family.md) 拆分为两文）。

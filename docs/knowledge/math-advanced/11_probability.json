@@ -17,7 +17,7 @@
           "part": "",
           "authors": [
             { "name": "Dimitri P. Bertsekas", "role": "author" },
-            { { "name": "John N. Tsitsiklis", "role": "author" } },
+            { "name": "John N. Tsitsiklis", "role": "author" },
             { "name": "郑忠国", "role": "translator" },
             { "name": "童行伟", "role": "translator" }
           ],
@@ -36,7 +36,7 @@
       "set_no": "2",
       "name": "tutorial 2：Ross《概率论基础教程》",
       "position": "comprehensive",
-      "introduction": "Sheldon Ross 是美国本科概率课程最常用的教材：例题丰富、计算训练扎实，系统覆盖组合分析、公理化概率、条件概率、离散与连续随机变量、期望、极限定理，与国内课程大纲最接近，适合作为本课程主线全面学习。各章习题分三层（习题/理论习题/自检习题），自检习题书末附全部解答可直接自测，官方 Student Solutions Manual 流传广泛可作校验。与教程1 属同层并行而非递进：二选一作主线即可，以本套为统计推断（教程4）提供最扎实的前置。",
+      "intro": "Sheldon Ross 是美国本科概率课程最常用的教材：例题丰富、计算训练扎实，系统覆盖组合分析、公理化概率、条件概率、离散与连续随机变量、期望、极限定理，与国内课程大纲最接近，适合作为本课程主线全面学习。各章习题分三层（习题/理论习题/自检习题），自检习题书末附全部解答可直接自测，官方 Student Solutions Manual 流传广泛可作校验。与教程1 属同层并行而非递进：二选一作主线即可，以本套为统计推断（教程4）提供最扎实的前置。",
       "textbook_ref": [
         {
           "book_id": "11pb-b02",

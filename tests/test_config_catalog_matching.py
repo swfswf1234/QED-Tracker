@@ -57,6 +57,54 @@ def test_load_settings_defaults_without_environment(monkeypatch, tmp_path):
     assert settings.state_dir == (tmp_path / "dataset" / "qed-tracker" / "meta").resolve()
 
 
+def test_load_settings_book_keys_defaults(monkeypatch, tmp_path):
+    """QED-050：QED_BOOK_* 八键内置默认值（download-pipeline.md 配置表）。"""
+    monkeypatch.chdir(tmp_path)
+    settings = load_settings()
+    assert settings.book_candidate_budget == 300.0
+    assert settings.book_min_pages == 10
+    assert settings.book_min_size_bytes == 204800
+    assert settings.book_search_limit == 8
+    assert settings.book_query_variants == 3
+    assert settings.book_llm_query
+    assert settings.book_llm_confirm
+    assert settings.book_llm_budget == 8
+
+
+def test_load_settings_maps_book_keys(monkeypatch, tmp_path):
+    """QED-050：QED_BOOK_* 八键环境映射（候选预算/验收门槛/检索限额/LLM 开关与预算）。"""
+    monkeypatch.setenv("QED_BOOK_CANDIDATE_BUDGET", "120")
+    monkeypatch.setenv("QED_BOOK_MIN_PAGES", "5")
+    monkeypatch.setenv("QED_BOOK_MIN_SIZE_BYTES", "1024")
+    monkeypatch.setenv("QED_BOOK_SEARCH_LIMIT", "4")
+    monkeypatch.setenv("QED_BOOK_QUERY_VARIANTS", "2")
+    monkeypatch.setenv("QED_BOOK_LLM_QUERY", "false")
+    monkeypatch.setenv("QED_BOOK_LLM_CONFIRM", "false")
+    monkeypatch.setenv("QED_BOOK_LLM_BUDGET", "3")
+    monkeypatch.chdir(tmp_path)
+
+    settings = load_settings()
+
+    assert settings.book_candidate_budget == 120.0
+    assert settings.book_min_pages == 5
+    assert settings.book_min_size_bytes == 1024
+    assert settings.book_search_limit == 4
+    assert settings.book_query_variants == 2
+    assert not settings.book_llm_query
+    assert not settings.book_llm_confirm
+    assert settings.book_llm_budget == 3
+
+
+def test_fetch_attempt_timeout_alias_feeds_book_budget(monkeypatch, tmp_path):
+    """QED_BOOK_CANDIDATE_BUDGET 取代 QED_FETCH_ATTEMPT_TIMEOUT：旧键一版别名仍生效，新键优先。"""
+    monkeypatch.delenv("QED_BOOK_CANDIDATE_BUDGET", raising=False)
+    monkeypatch.setenv("QED_FETCH_ATTEMPT_TIMEOUT", "450")
+    monkeypatch.chdir(tmp_path)
+    assert load_settings().book_candidate_budget == 450.0
+    monkeypatch.setenv("QED_BOOK_CANDIDATE_BUDGET", "300")
+    assert load_settings().book_candidate_budget == 300.0  # 新键覆盖旧别名
+
+
 def test_load_settings_maps_qed_data_root(monkeypatch, tmp_path):
     """ARCH-019 统一数据根：QED_DATA_ROOT→data_root 映射，三项目共享同一目录树；
     私有状态区固定 <data_root>/qed-tracker/meta。"""
@@ -303,3 +351,28 @@ def test_strict_match_accepts_metadata_only_source():
     target = next(target for target in load_catalog("math-qe").targets if target.id == "03-munkres")
     exact = Candidate("libgen_li", "1", "Topology, Second Edition", ("James Munkres",), "English", edition="2nd", availability=Availability.METADATA_ONLY)
     assert match_candidate(exact, target).strict
+
+
+def test_load_settings_strips_inline_comment_in_env_value(monkeypatch, tmp_path):
+    """.env 值支持剥离内联注释（` #`）：`QED_DB_NAME=qed_test        # qed` → "qed_test"。
+
+    QED-053/ADR 0006 排障：根 .env 带 `QED_DB_NAME=qed_test        # qed` 时，
+    解析若不剥离会导致库名含注释、errno 1049 Unknown database；`#` 前无空格不剥离。
+    """
+    monkeypatch.delenv("QED_DB_NAME", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("QED_DB_NAME=qed_test        # qed\n", encoding="utf-8")
+    assert load_settings().db_name == "qed_test"
+
+
+def test_load_settings_keeps_hash_without_preceding_space(monkeypatch, tmp_path):
+    """值内 `#` 前无空格不当作注释：库名 `qed#x`、密码 `secret#pass` 原样保留。"""
+    monkeypatch.delenv("QED_DB_NAME", raising=False)
+    monkeypatch.delenv("QED_DB_PASSWORD", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "QED_DB_NAME=qed#x\nQED_DB_PASSWORD=secret#pass\n", encoding="utf-8"
+    )
+    settings = load_settings()
+    assert settings.db_name == "qed#x"
+    assert settings.db_password == "secret#pass"

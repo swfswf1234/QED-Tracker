@@ -55,7 +55,7 @@ def test_legacy_three_tables_gone() -> None:
 def test_shared_tables_exist(session) -> None:
     tables = {t.name for t in Base.metadata.sorted_tables}
     assert {QedDomain.__tablename__, QedCourse.__tablename__} <= tables
-    now = __import__("qed_tracker.database", fromlist=["utc_now"]).utc_now()
+    now = __import__("qed_tracker.db.engine", fromlist=["utc_now"]).utc_now()
     domain = QedDomain(domain_id="math", name="数学", description="d", stages=["本科基础"], created_at=now, updated_at=now)
     session.add(domain)
     session.commit()
@@ -72,7 +72,7 @@ def test_qed_domain_explore_columns(session) -> None:
 
 def test_qed_domain_explore_defaults(session) -> None:
     """新字段默认值：exploration_stage=未开始, classic_tracks=[], path_results=null, level/scope=''。"""
-    now = __import__("qed_tracker.database", fromlist=["utc_now"]).utc_now()
+    now = __import__("qed_tracker.db.engine", fromlist=["utc_now"]).utc_now()
     domain = QedDomain(
         domain_id="math", name="数学", description="d",
         stages=[], created_at=now, updated_at=now,
@@ -96,7 +96,7 @@ def test_qed_domain_stages_no_default(session) -> None:
 
 def test_qed_domain_explore_full_roundtrip(session) -> None:
     """完整写入+读出：探索字段写入后原样返回。"""
-    now = __import__("qed_tracker.database", fromlist=["utc_now"]).utc_now()
+    now = __import__("qed_tracker.db.engine", fromlist=["utc_now"]).utc_now()
     domain = QedDomain(
         domain_id="math", name="数学", description="学科介绍",
         level="本科-硕士", scope="大学以上数学专业课程",
@@ -150,7 +150,7 @@ def test_qed_course_columns(session) -> None:
 
 def test_qed_course_defaults(session) -> None:
     """新字段默认值：exploration_stage=未开始, track='', description=''。"""
-    now = __import__("qed_tracker.database", fromlist=["utc_now"]).utc_now()
+    now = __import__("qed_tracker.db.engine", fromlist=["utc_now"]).utc_now()
     domain = QedDomain(domain_id="math", name="数学", description="d",
                        stages=[], created_at=now, updated_at=now)
     session.add(domain)
@@ -170,7 +170,7 @@ def test_qed_course_defaults(session) -> None:
 
 def test_qed_course_full_roundtrip(session) -> None:
     """完整写入+读出：重构字段写入后原样返回。"""
-    now = __import__("qed_tracker.database", fromlist=["utc_now"]).utc_now()
+    now = __import__("qed_tracker.db.engine", fromlist=["utc_now"]).utc_now()
     domain = QedDomain(domain_id="math", name="数学", description="d",
                        stages=[], created_at=now, updated_at=now)
     session.add(domain)

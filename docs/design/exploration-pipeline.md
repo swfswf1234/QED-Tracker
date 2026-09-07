@@ -2,8 +2,8 @@
 
 设计状态：Accepted
 实现状态：In Progress
-确认状态：暂定
-最后更新：2026-09-03
+确认状态：已确认
+最后更新：2026-09-07
 关联代码：`src/qed_tracker/prompt_lab/`（pipeline/templates/priors）、`src/qed_tracker/providers/explore_advisor.py`、`src/qed_tracker/api/main.py`（探索段）、`src/qed_tracker/cli.py`（domains explore）
 关联测试：`tests/test_prompt_lab.py`、`tests/test_prompt_lab_course.py`、`tests/test_prompt_lab_api.py`、`tests/test_task_handlers.py`、`tests/test_cli_domains_explore.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -11,7 +11,7 @@
 > 本文档整合原 plans 中 `2026-09-exploration-pipeline.md`、`2026-09-exploration-overview.md`、
 > `2026-08-prompt-optimization.md`（Accepted 设计）的当前契约与已确认裁决，作为探索管线
 > 的**唯一设计事实源**。跨项目时序（8900 探索会话管理）、状态机 6 态写主体、explore_pending
-> 载荷、写权限例外一律以 [共享表设计](../architecture/shared-tables.md) 为准，本文档只
+> 载荷、写权限例外一律以 [数据库共享表设计](../architecture/database-shared-tables.md) 为准，本文档只
 > 链接不复制。
 
 ## 目的与边界
@@ -46,7 +46,7 @@ QED-Tracker 的探索能力基于 **LLM 模板管线**，用于自动发现领�
   ↓ step2 courses@v8：核心课程（course_id/name/aliases/track/summary/university_basis/stage/prerequisites）
   ↓     跨步校验：track ∈ classic_tracks；stage ∈ 四档；prerequisites 无自环/无环/引用合法
 输出：report = {domain{final_name, description, level, stages, classic_tracks,
-                      entry_requirements, prior_knowledge},
+                       entry_requirements, prior_knowledge},
                courses[{course_id, name, aliases, track, summary, university_basis, stage, prerequisites}],
                path{notes, edges, graph_td}}
 ```
@@ -58,6 +58,37 @@ QED-Tracker 的探索能力基于 **LLM 模板管线**，用于自动发现领�
   `settings.llm_max_tokens`(4096) 覆盖）。
 - **course_id 命名**：LLM 输出的 course_id 是**提案**（dry-run 预览），事实以领域标准答案为准
   （catalog 对齐课程编号式 `01_math_analysis`；扩展课程语义 slug，见[知识录入设计](knowledge-import.md)）。
+
+### 领域单步管线（explore_domain_only）
+
+`DomainPipeline` 新增 `explore_domain_only()` 方法，只跑 domain@v4，不跑 courses@v8。
+
+```
+输入：domain_name + scope_hint + 可选 reference + 可选 confirm_name_override
+  ↓ step1 domain@v4：名称校验 + 领域描述 + classic_tracks + entry_requirements + prior_knowledge
+输出：report = {domain{final_name, description, level, stages, classic_tracks,
+                       entry_requirements, prior_knowledge},
+               courses: null}  # 标记未跑 courses@v8
+```
+
+用于：
+- dry-run 评估（只预览领域结构，不生成课程）
+- 探索第一轮（domain_explore_handler 只跑 domain@v4）
+
+### 领域课程单步管线（explore_courses_only）
+
+`DomainPipeline` 新增 `explore_courses_only()` 方法，只跑 courses@v8，不跑 domain@v4。
+
+```
+输入：domain_name + domain_info（从 domains.json 读取）+ 可选 reference
+  ↓ step2 courses@v8：核心课程 + stage 层级 + prerequisites 先修
+输出：report = {courses[{course_id, name, aliases, track, summary, stage, prerequisites}],
+               path{notes, edges, graph_td}}
+```
+
+用于：
+- confirm-domain 后后台异步任务（domain_explore_courses_handler）
+- re-explore 第二轮
 
 ### 课程单步管线（CoursePipeline）
 
@@ -101,17 +132,99 @@ QED-Tracker 的探索能力基于 **LLM 模板管线**，用于自动发现领�
 
 | 端点 | 管线 | 响应 |
 | --- | --- | --- |
-| `POST /api/v1/prompt-explores/dry-run` | 领域两步（整体评估） | `{dry_run: true, report, calls}` |
+| `POST /api/v1/prompt-explores/dry-run` | 领域单步（只跑 domain@v4） | `{dry_run: true, report, calls}` |
 | `POST /api/v1/courses/{course_id}/prompt-explores/dry-run` | 课程单步 | `{dry_run: true, report, calls}` |
 
 - **同步执行**、不写任何表（`qt_*` 与 `qed_*` 均不写），唯一痕迹是 `qed_llm_calls` 的
   LLM 日志（engine 置 None）。
-- 领域 dry-run **整体输出两步报告预览**（两步管线都跑完），供用户评估与比对；不拆分两轮。
+- 领域 dry-run **只输出领域结构预览**（只跑 domain@v4），不生成课程列表；courses@v8
+  在 confirm-domain 后由后台异步任务执行。
 - 名称确认分支：`{"dry_run": true, "confirmation_required": true, "name_check": {...}}`，
   人工确认后以 `confirm_name_override` 重新发起。
 - 错误码：`400 INVALID_PARAMS`（参数/doc 文件不可读/非法 mode/管线 INVALID_PARAMS）、
   `404 COURSE_NOT_FOUND`（课程 dry-run）、`409 LLM_UNAVAILABLE`（未配置 API_KEY 或管线初始化失败）、
   `502 LLM_FAILURE/BUDGET_EXHAUSTED`。
+
+## 探索产物落盘机制
+
+探索管线生成的报告写入 QED_DATA_ROOT 对应目录，用户查看后确认再覆盖数据库。
+
+### 领域探索落盘
+
+| 阶段 | 文件路径 | 内容 |
+| --- | --- | --- |
+| dry-run / domain_explore | `raw/{domain_id}/domains.json` | 领域 JSON（含 classic_tracks/stages/level，courses 为空） |
+| courses@v8 完成 | `raw/{domain_id}/courses.json` | 课程列表 JSON（含 courses[]/path） |
+
+### 课程探索落盘
+
+| 阶段 | 文件路径 | 内容 |
+| --- | --- | --- |
+| tutorials@v2 完成 | `raw/{domain_id}/{course_id}/tutorials.json` | 教程列表 JSON（含 tutorials[]） |
+
+### JSON 文件格式
+
+**领域 JSON**（`raw/{domain_id}/domains.json`）：
+
+```json
+{
+  "domain": "math-advanced",
+  "name": "数学（高等数学）",
+  "description": "...",
+  "stages": ["基础", "主干", "分支", "前沿"],
+  "level": "本科",
+  "scope": "...",
+  "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}],
+  "courses": []
+}
+```
+
+**课程 JSON**（`raw/{domain_id}/courses.json`）：
+
+```json
+{
+  "domain_id": "math-advanced",
+  "courses": [
+    {
+      "course_id": "01_math_analysis",
+      "name": "数学分析",
+      "track": "分析学",
+      "stage": "基础",
+      "aliases": [],
+      "summary": "...",
+      "prerequisites": []
+    }
+  ],
+  "path": {
+    "notes": "",
+    "edges": [],
+    "graph_td": "graph TD\n..."
+  }
+}
+```
+
+**教程 JSON**（`raw/{domain_id}/{course_id}/tutorials.json`）：
+
+```json
+{
+  "domain_id": "math-advanced",
+  "course_id": "01_math_analysis",
+  "course_name": "数学分析",
+  "tutorials": [
+    {
+      "knowledge_id": "kt-01ma-1",
+      "kind": "tutorial",
+      "set_no": "1",
+      "name": "教程1：比廷杰《微积分及其应用》",
+      "position": "beginner",
+      "intro": "…120字以上…",
+      "textbook_ref": [...],
+      "exercise_ref": null,
+      "parallel_ref": null
+    }
+  ]
+}
+```
 
 ## run 语义（re-explore 后台任务，写状态机）
 
@@ -143,12 +256,12 @@ QED-Tracker 的探索能力基于 **LLM 模板管线**，用于自动发现领�
   确认采纳，领域探索结束。
 - 课程探索为单步、单轮（tutorials@v2）：`生成 → 待确认（等待确认，可修改）→ 确认 → 已完成`。
 - 写主体：（LLM 轨由 8900 驱动生成与推进，8901 提供轮次确认与采纳端点；手动轨全程经 8901
-  端点推进）详见[共享表设计](../architecture/shared-tables.md)状态机节。
+  端点推进）详见[数据库共享表设计](../architecture/database-shared-tables.md)状态机节。
 
 ## 探索状态机与载荷
 
 - 领域与课程共用 6 态状态机（`未开始 → 已生成 → 探索中 → 待确认 → 已完成`，`探索中/待确认 → 失败`），
-  写主体分工、`explore_pending` 载荷 structure 见[共享表设计](../architecture/shared-tables.md)状态机节。
+  写主体分工、`explore_pending` 载荷 structure 见[数据库共享表设计](../architecture/database-shared-tables.md)状态机节。
 - 手动导入（`/domains/import`）复用同一状态机：API 路径走 `已生成` 与 `待确认` 两极（分别对应
   第一轮/第二轮待确认点）；CLI 路径跳过两极直接 `已完成`（见[知识录入设计](knowledge-import.md)）。
 
@@ -181,7 +294,7 @@ qed-tracker domains explore 高等数学 --confirm-name 高等数学
 | 文档 | 关系 |
 | --- | --- |
 | [知识录入设计](knowledge-import.md) | 手动入口（跳过 LLM 直接落库，复用同一状态机） |
-| [共享表设计](../architecture/shared-tables.md) | 6 态状态机写主体、explore_pending 载荷、写权限例外（唯一事实源） |
-| [数据库设计](../architecture/database-schema.md) | qed_domain/qed_course 探索字段、qt_knowledge/qt_books 落库 |
+| [数据库共享表设计](../architecture/database-shared-tables.md) | 6 态状态机写主体、explore_pending 载荷、写权限例外（唯一事实源） |
+| [数据库专用表设计](../architecture/database-private-tables.md) | qt_knowledge/qt_books 落库（DDL 与状态机） |
 | [基线数据](../history/baselines/2026-08-prompt-explore-baseline.md) | 优化前后对照基线（qed_llm_calls 073~079） |
 | [架构 API](../architecture/api.md) | dry-run / apply-results / re-explore 端点定义 |

@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-21
+最后更新：2026-09-06
 关联代码：无（状态快照，不映射具体模块）
 关联测试：无
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -18,8 +18,8 @@
 | 能力 | 端口/形态 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 8901 HTTP 服务（`/api/v1`） | 8901 | 已服务化 | FastAPI + 后台任务轮询（并发上限 2）；只读查询同步、轻量状态迁移同步；长操作走任务。 |
-| MySQL 登记索引 | 共享 `qed` 库五层模型 `qed_domain`/`qed_course`（共享）→ `qt_knowledge`/`qt_books`/`qt_sources`（私有） | 已实现 | 知识层次重构（QED-031，Alembic 0006）：教程/书籍/渠道五层模型，qt_resources 与三表均已退役；无 `QED_DB_PASSWORD` 降级运行。课程体系只读端点（QED-033 `/courses`）。 |
-| CLI | `qed-tracker` | 已实现（未转客户端） | 命令树/退出码/机器输出；`serve`/`courses`/`mainline`/`migrate` 入口；CLI 闭环命令（catalog evaluate / resources …）未实现，属 QED-010。 |
+| MySQL 登记索引 | 共享 `qed` 库五层模型 `qed_domain`/`qed_course`（共享）→ `qt_knowledge`/`qt_books`/`qt_sources`（私有） | 已实现 | 知识层次重构（QED-031，Alembic 0006）+ 书库化重建（QED-050-D，0018：qt_knowledge/qt_books 无条件重建 + original_title 列）；无 `QED_DB_PASSWORD` 降级运行。课程体系只读端点（QED-033 `/courses`）。 |
+| CLI | `qed-tracker` | 已实现（未转客户端） | 命令树/退出码/机器输出；`serve`/`books`/`courses`/`domains`/`knowledge`/`mainline` 入口（`migrate` 已随旧三表退役删除）；CLI 闭环命令（catalog evaluate / resources …）未实现，属 QED-010。 |
 | 教材来源 | IA / Open Library / Google Books / libgen_li | 已实现 | libgen_li 发现专用（恒 metadata_only，人工下载后登记）；annas_archive/zlib 退役。 |
 | arXiv 与论文发现 | arXiv + 百炼 | 已实现 | 检索计划 + 可审阅评分，不写资源事实、不自动下载。 |
 | Axiom-Flow 交接 | HTTP（默认 8902） | 已实现 | 默认只上传，显式 `--parse` 才创建解析任务。 |
@@ -27,17 +27,19 @@
 
 ## 当前主线
 
-- **主链路（QED-026，实现完成待人工闭环验证）**：领域课程梳理 → 教材寻找 → 下载 → 人工验收
+- **主链路（QED-026，实现完成待人工闭环验证）**：领域课程梳理 → 教材寻找 → 取书 → 复核
   （设计 Accepted：[main-line-curriculum.md](../design/main-line-curriculum.md)；架构见
-  [main-line.md](../architecture/main-line.md)）。courses/mainline 全命令已实现；待人工闭环验证
-  （配置 API_KEY → mainline new → review → download → approve 移交根仓库，00/01/02 三门基础课）。
+  [main-line.md](../architecture/main-line.md)）。courses/mainline/books 命令已按 QED-050-D
+  重接（approve/reject 删除，取书经 8901 五阶段链）；待人工闭环验证
+  （配置 API_KEY → mainline new → review → mainline download 五阶段取书 → verify 只读复核，
+  00/01/02 三门基础课）。
 - **QED-036 教程命名规范（已完成，回执待写根仓库 REQ-041）**：`tutorial_name` 命名函数 +
-  migrate 先查后建幂等 + mainline new `--set-no`/review `--title/--author` +
-  textbook_ref 补 authors；存量 3 行已改规范名（教程1：数学分析原理（Rudin）等，证据
+  采纳路径 `adopt_tutorials` 先查后建幂等（migrate 存量迁移已随旧三表退役）+
+  mainline new `--set-no` + textbook_ref 补 authors；存量 3 行已改规范名（教程1：数学分析原理（Rudin）等，证据
   docs/history/qed-036-tutorial-naming/）。
 - **QED-037 模型模式与密钥分置（已完成，回执待写根仓库 REQ-043）**：自身 `.env` + config
   改读 + llm_client 双模式兼容层 + 三 advisor 接入 + service `--mode` + qed_llm_calls 调用
-  记录（设计 Accepted/Implemented：[model-mode-config.md](../design/model-mode-config.md)）。
+  记录（设计 Accepted/Implemented：[service-management.md](../design/service-management.md)）。
 - **QED-038 密钥收敛（已完成，回执待写根仓库 ARCH-017）**：逐厂商 key 别名全部取消，
   `llm_api_key` 只读唯一 `API_KEY`。
 - **课程收集主线（QED-019）**：01 数学分析闭环——catalog 已定稿（01 共 14 目标，54 总），

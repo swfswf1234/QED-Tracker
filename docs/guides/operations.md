@@ -1,7 +1,7 @@
 # 操作指南
 
 状态：Current
-最后更新：2026-09-03
+最后更新：2026-09-06
 
 本指南描述 QED-Tracker 的主流程操作：环境与本地配置 → 启动服务 → 健康检查 → 知识探索 → 下载（规划中）。命令均通过脚本或 `qed-tracker` CLI 执行；系统边界与契约见[系统总览](../architecture/system-overview.md)。
 
@@ -35,7 +35,14 @@ QED_TRACKER_PORT=8901
 QED_DATA_ROOT=D:\coding\QED-Engine\dataset
 ```
 
-其他常用键：`QED_LLM_TIMEOUT`（默认 300s，探索管线长生成依赖此值）、`QED_TRACKER_URL`（CLI 访问的 8901 地址）、`QED_PROXY`、`QED_TLS_VERIFY`（默认开启，仅可由用户显式关闭）、`QED_SOURCES`。
+其他常用键：`QED_LLM_TIMEOUT`（默认 300s，探索管线长生成依赖此值）、`QED_TRACKER_URL`（CLI 访问的 8901 地址）、`QED_PROXY`、`QED_TLS_VERIFY`（默认开启，仅可由用户显式关闭）、`QED_SOURCES`（渠道遍历顺序）。
+
+取书链键组（`QED_BOOK_*`，语义见[下载管线设计](../design/download-pipeline.md)）：
+`QED_BOOK_CANDIDATE_BUDGET`（候选级预算秒数，默认 300）、`QED_BOOK_MIN_PAGES`（机器验收页数下限，默认 10）、
+`QED_BOOK_MIN_SIZE_BYTES`（大小下限，默认 204800）、`QED_BOOK_SEARCH_LIMIT`（每 query 每渠道候选上限，默认 8）、
+`QED_BOOK_QUERY_VARIANTS`（LLM 检索词变体上限，默认 3）、`QED_BOOK_LLM_QUERY`/`QED_BOOK_LLM_CONFIRM`
+（LLM 检索词变体/候选确认开关，默认开）、`QED_BOOK_LLM_BUDGET`（单次取书 LLM 确认调用预算，默认 8）。
+旧键 `QED_FETCH_ATTEMPT_TIMEOUT` 已由 `QED_BOOK_CANDIDATE_BUDGET` 取代（一版别名，新键设置时被其覆盖）。
 
 安装后确认生效配置：
 
@@ -52,7 +59,7 @@ dry-run 端点返回 409 而非崩溃。数据根内的 PDF 不会被隐式扫�
 
 ### 2.1 脚本方式（推荐，后台启动，支持启停管理）
 
-仓库级启停入口统一为 `scripts/qed_tracker_service.py`（契约见[服务生命周期设计](../design/service-lifecycle.md)）：
+仓库级启停入口统一为 `scripts/qed_tracker_service.py`（契约见[服务管理中心设计](../design/service-management.md)）：
 它以**后台子进程**方式启动 8901 服务，命令立即返回，PID 与日志落 `logs/`：
 
 ```powershell
@@ -66,7 +73,14 @@ conda run -n qed_env python scripts/qed_tracker_service.py restart --wait --mode
 
 运行事实：PID 文件 `logs/qed-tracker.pid`，模式状态文件 `logs/qed-tracker-mode`，
 子进程输出落 `logs/qed-tracker-serve.log`，应用日志写 `logs/qed-tracker.log`。退出码
-`0` 成功/幂等、`1` 运行失败、`2` 参数错误。停止后确认再用 `status` 复核，避免残留进程占用端口。
+`0` 成功/幂等、`1` 运行失败、`2` 参数错误。
+
+**停止可靠性语义**（2026-09-04，与根仓库 8900/8903 脚本同构）：判活用内核句柄探测
+（探测失败不再误判为「已死」）；优雅信号（CTRL_BREAK）未生效由强杀兜底成功时回显
+`stopped (forced)`——正常现象，conda run 等跨 console 语境常见，无需处理；优雅+强杀后
+仍存活则退出码 1 显式报 `stop failed`（绝不假 stopped），按提示手动
+`taskkill /PID <pid> /T /F` 后重试 `stop` 清理 PID 文件。停止后可再用 `status` 复核，
+避免残留进程占用端口。
 
 ### 2.2 CLI 方式（前台运行，排查/临时用）
 
@@ -174,16 +188,39 @@ qed-tracker domains explore 高等数学 --confirm-name 高等数学
 
 探索结果的确认/重新探索（apply-results / re-explore）与落库流程见[探索管线设计](../design/exploration-pipeline.md)。
 
-### 3.3 下载（规划中）
+### 3.3 书籍取书与登记（QED-050-D 书库化，已实现）
 
-下载链路（渠道下载 → 校验 → 验收 → 移交登记）正在梳理中，本节暂留空；
-规划与验收标准以 `docs/plans/` 与 [下载与登记设计](../plans/2026-09-download-registration.md) 为准。
+自动取书走五阶段链（检索→LLM 确认→下载→staging 机器验收→登记 owned），全部经 8901 后台
+任务执行（CLI 只提交+轮询），设计与验收标准见
+[下载管线设计](../design/download-pipeline.md)、端点契约见
+[API 文档](../architecture/api.md)：
+
+```powershell
+qed-tracker mainline download <knowledge_id>
+qed-tracker mainline download <knowledge_id> --include-parallel --timeout 3600
+qed-tracker books fetch <book_id>
+qed-tracker mainline verify <knowledge_id>
+qed-tracker mainline channels
+```
+
+- 教程级取书（裁决 9 双入口教程级）：refs 聚合书集、排除已 owned、默认 decided（`--include-parallel`
+  纳入 parallel_ref）；书级取书为单册五阶段，已 owned no-op；`mainline verify` 只读复核
+  （inspect_pdf 重算比对，ok/missing/invalid/changed，不做状态迁移）；`mainline channels` 汇总
+  qt_books 聚合 qt_sources 的渠道有效性。
+
+- **机器验收硬门槛**（可经 `QED_BOOK_MIN_PAGES`/`QED_BOOK_MIN_SIZE_BYTES` 配置）：魔数 +
+  pypdf 可解析 + 非加密 + 页数/大小下限；未过门槛的文件留在 staging，永不进入数据根 raw/。
+- **人工导入**与自动取书汇合同一登记服务（`books import`，见 §3.2）：跳过初筛门槛，保留
+  完整性校验（魔数/pypdf/sha256），D9 内容指纹命名，登记 `channel=local_import`。
+- **并发防护**：同书同类型取书任务查重，重复提交返回 `409 TASK_ALREADY_RUNNING`。
+- 无自动候选时任务结果附人工指引（file_keywords + metadata 候选链接），用 `books import` 补书。
 
 ## 4. 退出码约定
 
-CLI 退出码：`0` 成功，`2` 参数或配置冲突，`3` 没有可用候选，`4` 批处理或完整性检查部分失败，
-`5` 下载、文件或运行错误，`6` 8901 服务不可达。机器调用应同时检查退出码和 JSON 输出，
-不应只匹配人类可读文本。全局选项放在一级命令之前：
+CLI 退出码：`0` 成功，`2` 参数或请求错误（资源不存在、服务 4xx、复核文件不可解析），`3` 任务
+失败或部分失败（取书任务失败、没有可用候选、文件缺失），`4` 批处理部分失败或 verify 检测文件
+指纹变化（changed），`5` 下载、文件或运行错误（顶层异常兜底），`6` 8901 服务不可达。机器调用应
+同时检查退出码和 JSON 输出，不应只匹配人类可读文本。全局选项放在一级命令之前：
 
 ```powershell
 qed-tracker --json domains explore 高等数学

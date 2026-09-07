@@ -21,7 +21,7 @@ def set_repository(repo: KnowledgeRepository | None) -> None:
 
 def _repo() -> KnowledgeRepository:
     if _repository is None:
-        raise ValueError("数据库未配置：课程体系读取需 qed_course 表（运行 `qed-tracker migrate` 种子或设置数据库）")
+        raise ValueError("数据库未配置：课程体系读取需 qed_course 表（运行 `qed-tracker knowledge import` 种子或设置数据库）")
     return _repository
 
 

@@ -75,9 +75,10 @@ todo 与计划直接派发写码。
 ## 执行与门禁
 
 - 涉及共享表（`qed_*`）写权限、端口或根 `.env` 变量的改动，先核对根仓库
-  `docs/design/` 契约文档与[共享表设计](../architecture/shared-tables.md)写权限表
+  `docs/design/` 契约文档与[数据库共享表设计](../architecture/database-shared-tables.md)写权限表
   （文档归属与维护方为本仓库，根仓库经 `database-design.md` 登记同步，
-  见 [ADR 0005](../adr/0005-shared-tables-doc-location.md)），不得单方面变更跨项目契约；
+  见 [ADR 0005](../adr/0005-shared-tables-doc-location.md) 与 [ADR 0007](../adr/0007-database-docs-split-by-table-family.md)），
+  不得单方面变更跨项目契约；
   契约变化由需求方发起并经用户裁决。
 - 请求被拒或改期时，本仓库 todo 条目标注原因并保持与根仓库登记一致。
 - 回执要素（提交号、门禁输出、联调结果）齐全后方可视为跨项目任务关闭。

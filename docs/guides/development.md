@@ -1,7 +1,7 @@
 # 开发指南
 
 状态：Current
-最后更新：2026-09-03
+最后更新：2026-09-06
 
 ## 当前事实来源
 
@@ -43,10 +43,12 @@ conda run -n qed_env python -m pip install -e ".[dev]"
 - 批量目录下载必须保持严格匹配；不确定候选不得自动落盘。
 - Axiom 上传默认不解析，只有显式 `--parse` 才能创建可能产生费用的任务。
 - 论文推荐测试必须使用假顾问或 `httpx.MockTransport`，CI 不读取模型密钥、不访问 arXiv，也不把模型评分写入资源事实。
-- 主链路（`courses`/`mainline`）：教材条目独立存储于 `meta/main-line/`（与资源清单解耦）；
-  LLM 预填只生成可审阅评价，不写资源事实；下载/校验/哈希仍走通用服务；验收（approve）采用
-  **复制 + 登记同步**移交根仓库 `dataset/qed-tracker/`，不移动临时区文件；主链路测试必须使用
-  假顾问或 `httpx.MockTransport`，不访问公网、不读取真实数据根。
+- 主链路（`courses`/`mainline`/`books`）：教程与书行落 `qt_knowledge`/`qt_books`（QED-050-D
+  书库化，0018 重建契约）；LLM 预填/确认只生成可审阅评估，判断不写资源事实（落 `qt_sources`
+  留痕 + `qed_llm_calls` 审计）；取书经 8901 五阶段链（CLI 只提交+轮询），下载/校验/哈希走通用
+  服务；登记唯一入口 `mark_owned`（raw/ 即下载与人工导入共用成品区，无「复制移交」语义，
+  approve/reject 已删除）；主链路测试必须使用假顾问/FakeProvider 或 `httpx.MockTransport`，
+  不访问公网、不读取真实数据根。
 - 探索管线（`prompt_lab/`）：领域/课程 dry-run 不写任何表（engine 置 None），唯一痕迹是
   `qed_llm_calls` 审计；LLM 输出只经模板 `validate` + 跨步一致性校验，模型不写资源事实；
   长输出（courses@v8 / tutorials@v2）需 `max_tokens ≥ 16384`（`DomainPipeline`/`CoursePipeline`

@@ -1,7 +1,7 @@
 # 完整数据库设计文档与 API 设计文档（QED-044）
 
 状态：Active（正式稿动笔被门禁阻塞：QED-010/011/014/026 全部完成前只维护不重构；2026-08-26 用户裁决立项）
-最后更新：2026-09-01
+最后更新：2026-09-07
 关联任务：todo [QED-044（长期任务）](../trackers/todo.md)；承接 [QED-039](../trackers/todo.md) 待优化项之「API 文档内容完善」
 首批子集：[探索管线设计](../design/exploration-pipeline.md) Phase 3/4（三公共表 qed_llm_calls/qed_domain/qed_course + 相关 API 的 design/ 正式确认文档）
 执行依据：[文档治理规范](../standards/doc-governance.md)「版本末期文档整理」节（版本内修复事实准确性，版本末期门禁通过后正式稿升级）
@@ -16,7 +16,7 @@ plans 骨架（本文件）→ design/ 分域确认文档（正式格式）→ a
 
 | 目标文档 | 现状 | 差距 |
 | --- | --- | --- |
-| `architecture/database-schema.md`（唯一事实源） | 五层模型 DDL 齐全 | 缺 ER 关系总览、逐表字段字典、迁移史（0001~0013）、qed_llm_calls 所有权边界章节 |
+| `architecture/database-private-tables.md` + `architecture/database-shared-tables.md`（按表族拆分两文，[ADR 0007](../adr/0007-database-docs-split-by-table-family.md)，2026-09-07 落地） | 五层模型 DDL 齐全（原 `database-schema.md` 单文档） | ~~缺 ER 关系总览、逐表字段字典、迁移史、qed_llm_calls 所有权边界章节~~ 拆分重写时已按共享/专用两文各自收齐（ER/列说明/Schema 自愈/写权限） |
 | `architecture/api.md` | 五类端点简介+返回要点 | 未达五要素标准（接口/简介/**输入/输出/范例**）；路由数量与 `main.py` 实现有漂移风险 |
 
 ## 2. 范围清单（立项盘点以实现为准，本清单为快照）
@@ -95,7 +95,9 @@ plans 骨架（本文件）→ design/ 分域确认文档（正式格式）→ a
 
 - **版本内**（当前）：修复 api.md 路由数 42→46 + 标记 4 端点已实现 + 迁移 0015 补入
 - **版本末期**（门禁通过后）：api.md + database-schema.md 按五要素标准重写 → 设计状态 Accepted
-- **plans 晋升**：`2026-08-api-design.md`（Draft）中的端点清单作为正式稿素材，版本末期同步到 architecture/
+- **plans 晋升 ✅（2026-09-07 完成）**：`2026-08-api-design.md`（Draft）端点清单与字段素材已
+  并入 [API 设计文档](../architecture/api.md)（六要素重写，28 主线 + 7 非主线附录），Draft 删除；
+  数据库文档按表族拆分为 database-private-tables.md / database-shared-tables.md（ADR 0007）
 
 ## 6. 开放问题
 
@@ -108,3 +110,4 @@ plans 骨架（本文件）→ design/ 分域确认文档（正式格式）→ a
 |---|---|---|
 | 2026-08-26 | 初始创建 | 用户裁决立项，门禁阻塞策略确立 |
 | 2026-09-01 | 事实准确性盘点 | 路由数 44→46（REQ-067-B12 四端点已实现）；迁移 0015 缺失；database-schema.md DDL 准确；api-design.md Draft 严重过时（19 vs 46）；执行策略更新为「版本内修事实 + 版本末期写正式稿」 |
+| 2026-09-07 | 正式稿落地 | api.md 六要素重写（主线 28 条五组 + 非主线 7 条附录，代码 35 条）；数据库文档按表族拆分为 database-private-tables.md / database-shared-tables.md（ADR 0007）；api-design.md Draft 素材并入后删除 |

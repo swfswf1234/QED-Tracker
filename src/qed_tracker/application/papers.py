@@ -9,10 +9,10 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from qed_tracker.application.resources import ResourceService
+from qed_tracker.db.selection_repository import SelectionStore
 from qed_tracker.inventory import raw_general_dir
 from qed_tracker.models import Candidate, PaperAssessment, PaperProfile, PaperSearch, ResourceKind, ResourceRecord
 from qed_tracker.profiles import CATEGORY_PATTERN
-from qed_tracker.selection_store import SelectionStore
 
 MAX_SEARCHES = 4
 MAX_CANDIDATES = 40
@@ -67,6 +67,7 @@ class PaperService:
             from sqlalchemy import create_engine as _ce
             from sqlalchemy.orm import sessionmaker as _sm
             from sqlalchemy.pool import StaticPool
+
             from qed_tracker.db.models import Base as _Base
             _engine = _ce(
                 "sqlite://", future=True,

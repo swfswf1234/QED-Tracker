@@ -32,7 +32,7 @@
 | 根 `CLAUDE.md` | Claude Code 加载入口：薄指针指向 `AGENTS.md`，不保存任何正文事实。 |
 | `docs/index.md` 与各目录 `index.md` | 只导航当前文件，不保存正文事实。 |
 | `docs/architecture/` | 当前系统边界、模块拓扑和数据不变量（含 code-map、API 文档、数据库文档）。 |
-| `docs/design/` | 当前契约与接口：下载/清单、论文发现、服务与外部接口（含 Axiom 消费面）、主链路、来源与评审、数据设计、治理。**仅收已评审确定的设计**：未定稿/待评审设计一律随计划在 `docs/plans/` 承载，用户确定后以稳定名称迁入本目录（[ADR 0003](../adr/0003-pending-design-location.md)）。 |
+| `docs/design/` | 当前能力与服务运行设计：能力设计（主链路/探索管线/知识录入/下载管线/论文发现）、服务与运行（服务管理中心）、数据设计（数据库两文链接条目）。每篇唯一职责，登记处为 [设计索引](../design/index.md)（[ADR 0008](../adr/0008-design-doc-scope-reshuffle.md)）；**仅收已评审确定的设计**：未定稿/待评审设计一律随计划在 `docs/plans/` 承载，用户确定后以稳定名称迁入本目录（[ADR 0003](../adr/0003-pending-design-location.md)）。 |
 | `docs/standards/` | 工程治理规则唯一事实源，入口 [规范索引](index.md)。 |
 | `docs/adr/` | 影响长期约束的决定、理由、后果和取代关系。 |
 | `docs/guides/` | 可重复执行的用户操作与开发门禁；为人类设计，由人类判断何时整理，agent 开发时不主动涉及。 |
@@ -160,8 +160,8 @@ version-cleanup.md 并入本节）。
    `history/` 记录前版本；ADR 正文与编号保留（编号进入主分支后永不复用）。
 2. **固定文档同步**：`plans/` 中已确定的内容必须同步到固定文档（`architecture/` 或 `design/`）——
    - API 路由/字段变更 → `architecture/api.md`；
-   - 数据库表结构/迁移 → `architecture/database-schema.md`；
-   - 写权限/状态机/跨项目契约 → `architecture/shared-tables.md`；
+   - 数据库专用表（`qt_*`）表结构 → `architecture/database-private-tables.md`；
+   - 共享表（`qed_*`）DDL/写权限/状态机/跨项目契约 → `architecture/database-shared-tables.md`；
    - 探索管线/导入流程/下载流程等设计 → 对应 `design/` 文档或新建 plans 文档待后续晋升；
    - 版本末期确认更新后落 `architecture/`，更新前旧版本进 `history/`。
 3. **design/ 三态梳理**：

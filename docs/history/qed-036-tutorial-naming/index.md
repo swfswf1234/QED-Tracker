@@ -3,7 +3,7 @@
 状态：Current
 最后更新：2026-08-20
 任务：QED-036（跨项目，需求方 QED-Engine REQ-041「教程命名规范」）
-设计：[教程命名规范设计](../../design/tutorial-naming.md)
+设计：[教程命名规范设计（已归档）](../baselines/2026-08-tutorial-naming.md)（已并入 `design/knowledge-import.md`「教程命名规范」节，ADR 0008）
 
 ## 修正内容
 

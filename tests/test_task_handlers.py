@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import patch
 
 import pytest
@@ -22,7 +21,7 @@ def repo(tmp_path):
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = factory()
-    from qed_tracker.database import utc_now
+    from qed_tracker.db.engine import utc_now
 
     now = utc_now()
     # 领域：探索中（re-explore 后台任务执行时的状态）
@@ -81,34 +80,46 @@ def _fake_domain_report():
     }
 
 
-def test_domain_explore_handler_writes_pending(client, repo):
-    """domain_explore 后台任务：LLM 探索 → explore_pending 写入 → 待确认。"""
+def test_domain_explore_handler_writes_pending(client, repo, tmp_path):
+    """domain_explore 后台任务：LLM 探索（只跑 domain@v4）→ 结果写入 domains.json → 已生成。"""
     test_client, app = client
-    # 获取真实的 handler
     real_handler = app._manager.handlers["domain_explore"]
     progress_log = []
 
     def progress(v, msg):
         progress_log.append((v, msg))
 
-    # Mock DomainPipeline.explore 返回模拟报告
+    # Mock DomainPipeline.explore_domain_only 返回模拟报告
     with patch("qed_tracker.api.main.DomainPipeline") as MockPipeline:
         mock_instance = MockPipeline.return_value
-        mock_instance.explore.return_value = _fake_domain_report()
+        mock_instance.explore_domain_only.return_value = {
+            "domain": {
+                "final_name": "数学",
+                "description": "数学领域",
+                "level": "本科",
+                "classic_tracks": [{"name": "纯数学", "kind": "main", "summary": "s"}],
+                "entry_requirements": "无",
+                "stages": ["基础", "主干", "分支", "前沿"],
+                "prior_knowledge": "",
+            },
+            "courses": None,  # 标记未跑 courses@v8
+        }
         mock_instance.step_calls = []
         result = real_handler({"domain_id": "math", "mode": "direct"}, progress)
 
     assert result["domain_id"] == "math"
-    assert result["courses_found"] == 2
-    # 验证 DB 状态
+    assert result["courses_found"] == 0
+    # 验证 DB 状态：exploration_stage 更新为已生成
     domain = repo.get_domain("math")
-    assert domain.exploration_stage == "待确认"
-    pending = domain.explore_pending
-    assert pending["kind"] == "review_results"
-    assert len(pending["courses"]) == 2
-    assert pending["courses"][0]["course_id"] == "la"
-    assert pending["domain_report"]["description"] == "数学领域"
-    assert "path" in pending
+    assert domain.exploration_stage == "已生成"
+    # 验证文件写入（tmp_path 即 data_root）
+    from qed_tracker.application.domain_file import read_domain_file
+
+    data = read_domain_file(tmp_path, "math")
+    assert data["domain"] == "math"
+    assert data["name"] == "数学"
+    assert len(data["courses"]) == 0  # courses@v8 尚未执行，留空
+    assert data["description"] == "数学领域"
 
 
 def test_domain_explore_handler_name_confirmation(client, repo):
@@ -121,7 +132,7 @@ def test_domain_explore_handler_name_confirmation(client, repo):
     with patch("qed_tracker.api.main.DomainPipeline") as MockPipeline:
         mock_instance = MockPipeline.return_value
         exc = NameConfirmationRequired({"valid": False, "suggested_name": "数学学"})
-        mock_instance.explore.side_effect = exc
+        mock_instance.explore_domain_only.side_effect = exc
         mock_instance.step_calls = []
         result = real_handler({"domain_id": "math"}, lambda v, m: None)
 
@@ -199,7 +210,6 @@ def test_course_explore_handler_not_found(client, repo):
 def _simulated_domain_explore_handler(params, progress):
     """模拟 domain_explore handler：写入 explore_pending → 待确认。"""
     domain_id = params["domain_id"]
-    from qed_tracker.db.knowledge_repository import CLEAR
     # 注意：此 handler 在后台线程中运行，无法直接访问 repo。
     # 这里只验证 handler 被调用并返回正确结构。
     return {"domain_id": domain_id, "courses_found": 2, "simulated": True}
@@ -232,7 +242,7 @@ def test_domain_re_explore_endpoint_submits_task(integration_client, repo):
     test_client, app = integration_client
     # 先将领域设为待确认（re-explore 的前置条件）
     session = repo._session_factory()
-    from qed_tracker.database import utc_now
+    from qed_tracker.db.engine import utc_now
     domain = session.get(QedDomain, "math")
     domain.exploration_stage = "待确认"
     domain.explore_pending = {"kind": "review_results", "courses": []}
@@ -266,7 +276,7 @@ def test_course_re_explore_endpoint_submits_task(integration_client, repo):
     test_client, app = integration_client
     # 先将课程设为待确认
     session = repo._session_factory()
-    from qed_tracker.database import utc_now
+    from qed_tracker.db.engine import utc_now
     course = session.get(QedCourse, "c01")
     course.exploration_stage = "待确认"
     course.explore_pending = {"kind": "review_results", "tutorials": []}

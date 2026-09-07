@@ -2,16 +2,17 @@
 
 设计状态：Accepted
 实现状态：In Progress
-确认状态：暂定
-最后更新：2026-09-03
-关联代码：`src/qed_tracker/application/knowledge_import.py`、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/api/main.py`（domains/import、courses/knowledge、knowledge/{id}/confirm）、`src/qed_tracker/cli.py`（domains/knowledge import）
-关联测试：`tests/test_knowledge_import.py`、`tests/test_cli_knowledge_import.py`、`tests/test_prompt_lab_api.py`（A2）
-关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
+确认状态：已确认
+最后更新：2026-09-07
+关联代码：`src/qed_tracker/application/knowledge_import.py`、`src/qed_tracker/db/knowledge_repository.py`（含 `tutorial_name` 命名函数与 `adopt_tutorials` 先查后建幂等）、`src/qed_tracker/api/main.py`（domains/import、courses/knowledge、knowledge/{id}/confirm）、`src/qed_tracker/cli.py`（domains/knowledge import、mainline new/review 命名路径）
+关联测试：`tests/test_knowledge_import.py`、`tests/test_cli_knowledge_import.py`、`tests/test_prompt_lab_api.py`（A2）、`tests/test_main_line_cli.py`（mainline 命名）、`tests/test_knowledge_repository.py` 与 `tests/test_knowledge_api.py`（教程命名规范）
+关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0008](../adr/0008-design-doc-scope-reshuffle.md)
 
 > 本文档承接原 plans `2026-09-knowledge-import.md`、`2026-08-knowledge-dual-flow.md` 与
 > `2026-09-qt-schema-restructure.md` 的已确认裁决，作为**手动知识入口 + docs/knowledge
-> 标准答案目录**的唯一设计事实源。表结构 DDL 见[数据库设计](../architecture/database-schema.md)，
-> 状态机写主体见[共享表设计](../architecture/shared-tables.md)，本文档只链接不复制。
+> 标准答案目录**的唯一设计事实源。qt_* 表结构 DDL 见
+> [数据库专用表设计](../architecture/database-private-tables.md)，qed_* 共享表契约与状态机
+> 写主体见[数据库共享表设计](../architecture/database-shared-tables.md)，本文档只链接不复制。
 
 ## 目的与边界
 
@@ -32,9 +33,10 @@ QED-050 设计手动+自动双轨知识获取：
 | 书籍 PDF 导入 | `POST /api/v1/books/{book_id}/import` | `qed-tracker books import <id> <path>` | qt_books + qt_sources | `channel=local_import` |
 
 > 书籍 PDF 导入属于下载链（PDF 校验、sha256 去重、拷入数据根、渠道留痕），**下载执行语义
-> 归 QED-050-D 重规划**（下载链设计见 `docs/plans/2026-09-download-registration.md`），
-> 本文档只登记其入口与登记方向；当前 `qt_books` 书库化后该组端点旧状态机已失效（见
-> [实现状态与待对齐]）。
+> 由[下载管线设计](download-pipeline.md)承载**（2026-09-04 确认晋升：
+> 五阶段下载链，检索→确认→下载→机器验收→登记；人工导入跳过下载与初筛门槛，保留
+> 完整性校验，与自动路径汇合同一登记服务）。本文档只登记其入口与登记方向；书籍组端点
+> 已按 QED-050-D 重接线（见「实现状态与待对齐」书籍组行）。
 
 ## 领域 JSON 契约（manual@v1）
 
@@ -141,6 +143,43 @@ QED-050 设计手动+自动双轨知识获取：
 - 幂等：同 course_id+kind+set_no 命中复用；单事务批量提交；
 - 错误码：404 COURSE_NOT_FOUND / 409 SET_NO_CONFLICT / 422 INVALID_PARAMS。
 
+## 教程命名规范（tutorials@v2，QED-036）
+
+> **决策登记（2026-08-20 评审定案，QED-036 实现完成）**：
+> 1. **方案 A**：`textbook_ref` 扩展为 `{title, version, authors}`，命名规则成为纯函数
+>    `tutorial_name(set_no, title, authors)`（只依赖教程自身，draft 期即可生成规范名）；
+> 2. `mainline new` 增 `--set-no`（有则规范名，否则保持原始 title）；`mainline review` 增
+>    `--title/--author`（缺省从规范名剥离「教程{set_no}：」前缀与（作者）后缀回退）；
+> 3. 改名后幂等键兼容：按 `(course, kind, set_no)` 先查后建（knowledge_id 含 name，
+>    重放不产生重复行）。幂等键现由 `adopt_tutorials` 承接；`migrate` 命令与存量迁移脚本
+>    已随旧三表路径退役删除（QED-050-D Phase 6）。
+
+> **决策登记（2026-09-03 tutorials@v2）**：name 格式变更为「教程{set_no}：{首作者}《{书名}》」
+> （作者在前、书名在后、书名号包裹），与新 JSON 模板对齐。旧格式「教程{set_no}：{书名}（{作者}）」
+> 退役。
+
+> **决策登记**：2026-08-18 根仓库用户裁决（ARCH-015 前端重构 D5）：教程命名由 QED-Tracker
+> 数据侧统一，前端原样展示；name 为空时前端兜底「教程{set_no}」（前端已实现）。本规范只定
+> 数据侧命名，不涉及前端展示逻辑。
+
+对 `kind=tutorial` 的教程（命名默认生成路径，`name` 列仍允许人工覆盖）：
+
+| set_no | 命名格式 | 示例 |
+| --- | --- | --- |
+| "1"~"4"（中文套） | `教程{set_no}：{首作者}《{书名}》` | `教程1：Rudin《数学分析原理》` |
+| "en"（英文对照套） | `教程en：{首作者}《{书名}》` | `教程en：Rudin《Principles of Mathematical Analysis》` |
+| ''（空，异常/资料行） | `教程：{首作者}《{书名}》` | 兜底，不鼓励出现 |
+
+- 对 `kind=other_material`（课程延展资料归类）：**不加「教程N」前缀**，保持归类名
+  （如 `01-数学分析-延展资料`）。
+- 书名/作者取自**教材决定引用**（`textbook_ref`）或该套教材书籍；无作者信息时省略
+  （作者部分），退化为 `教程{set_no}：{书名}`。
+- 命名落点：采纳路径（`adopt_tutorials`）经 `tutorial_name` 生成规范名幂等落行；
+  CLI `mainline new` 有 `--set-no` 时按规范生成（否则保持 title，draft 期命名人工可改名）。
+- 真实 MySQL 冒烟（2026-08-20）完成存量 01 数学分析 3 行 `name` 修正并经 8901
+  `GET /knowledge` 透出（当时格式「书名（作者）」，2026-09-03 起按 tutorials@v2 新格式
+  生成）；证据归档 [QED-036 证据目录](../history/qed-036-tutorial-naming/index.md)。
+
 ## confirm 简化
 
 `POST /api/v1/knowledge/{knowledge_id}/confirm`：自身不带 body，`draft → confirmed` +
@@ -160,18 +199,29 @@ QED-050 设计手动+自动双轨知识获取：
 
 | 步 | 触发 | 端点 | 状态转移 | 写表 |
 | --- | --- | --- | --- | --- |
-| 1 | 上传领域 JSON（只登记 domain，不含课程写入） | `POST /api/v1/domains/import`（无 source） | 无 → **已生成**（第一轮报告就绪） | 只 qed_domain |
-| 2 | 用户确认 domain（可先 PATCH 修改） | `POST /api/v1/domains/{id}/confirm-domain` | 已生成 → **探索中**（进入第二轮） | — |
-| 3 | 由领域 JSON 的 courses 写入课程 | `POST /api/v1/domains/{id}/courses/import` | 探索中 → **待确认**（第二轮报告就绪） | 只 qed_course |
+| 1 | 上传领域 JSON（只登记 domain，不含课程写入） | `POST /api/v1/domains/import`（无 source） | 无 → **已生成**（第一轮报告就绪） | 写 JSON 文件 |
+| 2 | 用户确认 domain（可先 PATCH 修改） | `POST /api/v1/domains/{id}/confirm` | 已生成 → **探索中**（异步提交 courses@v8） | — |
+| 3 | courses@v8 完成（后台任务） | `GET /api/v1/tasks/{task_id}`（轮询） | 探索中 → **待确认** | 写 courses.json |
 | 4 | 用户确认课程名单（apply 全保留语义） | `POST /api/v1/domains/{id}/apply-results` | 待确认 → **已完成** | 领域探索管线完成 |
 | 5 | 逐门课程探索（tutorials@v2） | `POST /api/v1/courses/{course_id}/prompt-explores/dry-run` + 后台 run | 课程行：→ 探索中 → 待确认 | 教程 pending |
 | 6 | 用户审阅教程（确认或修改并确认） | `POST /api/v1/courses/{course_id}/apply-results` | 待确认 → **已完成** | tutorials 落库 |
 
-- **步骤 2** 需要新增「已生成→探索中」确认端点（8900 线上写主体在手动模式不存在，由 8901 补齐）。
-- **步骤 3** 需要新增课程写入端点（`/domains/{id}/courses/import`），写入即置「待确认」。
-- 步骤 4 复用 `apply-results`：手动场景无"删除未选课程"语义，`selected_courses` 省略/为空 =
+- **步骤 1**：`POST /domains/import` 写入 `raw/{domain_id}/domains.json`，不直接写库。
+- **步骤 2**：`POST /domains/{id}/confirm` 读取 JSON → upsert domain + 异步提交 courses@v8 任务 →
+  返回 `task_id` 供轮询；状态变为 `探索中`。
+- **步骤 3**：轮询 `GET /tasks/{task_id}` 等待 courses@v8 完成；完成后写入
+  `raw/{domain_id}/courses.json`，状态变为 `待确认`。
+- **步骤 4**：复用 `apply-results`：手动场景无"删除未选课程"语义，`selected_courses` 省略/为空 =
   全部保留。
 - 步骤 5-6 复用现有课程探索 dry-run + apply-results。
+
+### 与 LLM 探索路径的差异
+
+| 维度 | LLM 探索 | 手动导入 |
+| --- | --- | --- |
+| courses@v8 来源 | LLM 生成 | 用户提供的 JSON |
+| 审阅轮数 | 两轮（domain + courses） | 两轮（同 LLM） |
+| 状态转移 | 8900 驱动 | 8901 端点驱动 |
 
 ## CLI 语义（跳过已生成/待确认）
 
@@ -209,7 +259,7 @@ docs/knowledge/
 | --- | --- | --- |
 | course 校验器契约 | `validate_course` 期望 `{domain, course{course_id,name}}` | 数据文件版（`domain_id`/`course_id`/`course_name` + 显式 `knowledge_id`/`book_id`） |
 | 手动导入的审阅链 | 导入→已生成；apply-results 需待确认（断链） | 按本文档六步流程（新增步骤 2/3 端点） |
-| 书籍组端点（register/import/decide/start/fail/retry/complete/verify/reject/supersede/cancel/fetch） | 旧八态下载机契约（qt_books 书库化后失效） | 归 QED-050-D 重规划，本文档不再描述 |
+| 书籍组端点（register/import/decide/start/fail/retry/complete/verify/reject/supersede/cancel/fetch） | 旧八态下载机契约（qt_books 书库化后失效） | **已实现（2026-09-06，QED-050-D）**：书级/教程级 fetch 与 import/register 重接线（[下载管线设计](download-pipeline.md)），9 个旧八态端点删除，契约见[架构 API](../architecture/api.md) ④ 组 |
 | `import_domain` 落地范围 | 写 domain+courses、`source` 语义 | 六步流程（步骤 1 只写 domain，courses 由步骤 3 写） |
 | template.json | 旧契约 + 文件名含零宽字符 | 数据文件版契约范本，干净文件名 |
 
@@ -218,7 +268,15 @@ docs/knowledge/
 | 文档 | 关系 |
 | --- | --- |
 | [探索管线设计](exploration-pipeline.md) | 自动轨（LLM）与手动轨共用同一状态机 |
-| [共享表设计](../architecture/shared-tables.md) | 6 态状态机写主体、写权限例外（唯一事实源） |
-| [数据库设计](../architecture/database-schema.md) | qed_domain/qed_course/qt_knowledge/qt_books DDL 与 ID 规则 |
+| [下载管线设计](download-pipeline.md) | 书籍 PDF 导入的下载执行语义（唯一事实源） |
+| [数据库共享表设计](../architecture/database-shared-tables.md) | 6 态状态机写主体、写权限例外（唯一事实源） |
+| [数据库专用表设计](../architecture/database-private-tables.md) | qt_knowledge/qt_books DDL 与 ID 规则（qed_domain/qed_course 见共享表设计） |
 | [架构 API](../architecture/api.md) | domains/import、courses/knowledge、knowledge/confirm 端点定义 |
 | [探索管线设计](exploration-pipeline.md) 基线 | 标准答案数据为探索产出对照基准 |
+| [教程命名规范设计（已归档）](../history/baselines/2026-08-tutorial-naming.md) | 已并入本文档「教程命名规范」节（2026-09-07，ADR 0008） |
+
+## 变更记录
+
+| 日期 | 变更 | 说明 |
+| --- | --- | --- |
+| 2026-09-07 | 并入教程命名规范（ADR 0008） | 自 tutorial-naming.md 并入命名格式、mainline 命名路径、前端展示边界与决策登记；书籍下载链接改指 download-pipeline.md |

@@ -143,6 +143,91 @@ class DomainPipeline(ExploreAdvisorBase):
             },
         }
 
+    def explore_domain_only(
+        self,
+        domain_name: str,
+        *,
+        scope_hint: str = _DEFAULT_SCOPE,
+        mode: str = "direct",
+        ref_text: str = "",
+        ref_doc_path: str = "",
+        confirm_name_override: str = "",
+    ) -> dict[str, Any]:
+        """只跑 domain@v4，不跑 courses@v8。用于 dry-run 评估和探索第一轮。"""
+        domain_template = templates_mod.get_template("domain-explore", "domain")
+        reference = _read_reference(mode, ref_text, ref_doc_path)
+
+        # step1 领域探索与校验
+        domain = self._run(
+            domain_template,
+            {"domain_name": domain_name, "scope_hint": scope_hint,
+             "user_input": reference,
+             "prior_knowledge": get_prior_for_step(domain_name, "domain")},
+            {},
+        )
+        final_name = (confirm_name_override or "").strip() or str(domain_name)
+        name_check = domain["name_check"]
+        suggested = (name_check.get("suggested_name") or "").strip()
+        if not confirm_name_override and (
+            not name_check.get("valid", False) or (suggested and suggested != domain_name)
+        ):
+            raise NameConfirmationRequired(name_check)
+
+        return {
+            "domain": {
+                "final_name": final_name,
+                "description": domain["description"],
+                "level": domain["level"],
+                "stages": list(STAGES),
+                "classic_tracks": domain["classic_tracks"],
+                "entry_requirements": domain["entry_requirements"],
+                "prior_knowledge": domain.get("prior_knowledge", ""),
+            },
+            "courses": None,  # 标记未跑 courses@v8
+        }
+
+    def explore_courses_only(
+        self,
+        domain_name: str,
+        domain_info: dict[str, Any],
+        *,
+        mode: str = "direct",
+        ref_text: str = "",
+        ref_doc_path: str = "",
+    ) -> dict[str, Any]:
+        """只跑 courses@v8，不跑 domain@v4。用于 confirm-domain 后的后台任务。"""
+        courses_template = templates_mod.get_template("domain-explore", "courses")
+        reference = _read_reference(mode, ref_text, ref_doc_path)
+
+        tracks = domain_info.get("classic_tracks", [])
+        courses = self._run(
+            courses_template,
+            {"domain": {
+                "name": domain_name,
+                "description": domain_info.get("description", ""),
+                "level": domain_info.get("level", ""),
+                "classic_tracks": tracks,
+                "entry_requirements": domain_info.get("entry_requirements", ""),
+            },
+             "scope_hint": domain_info.get("level", _DEFAULT_SCOPE),
+             "prior_knowledge": get_prior_for_step(domain_name, "courses")},
+            {"track_names": {t["name"] for t in tracks}},
+        )
+        edges = [
+            {"from": pre, "to": course["course_id"]}
+            for course in courses["courses"]
+            for pre in course["prerequisites"]
+        ]
+
+        return {
+            "courses": courses["courses"],
+            "path": {
+                "notes": courses.get("notes", ""),
+                "edges": edges,
+                "graph_td": templates_mod.render_graph_td(courses["courses"], edges),
+            },
+        }
+
     def _run(self, template, payload, cross_context):
         """单步执行：模板组装 → _structured（校验 + 修复重试）→ 跨步校验并入；耗时入 step_calls。"""
         started = time.monotonic()

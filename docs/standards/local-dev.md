@@ -14,8 +14,9 @@
 其他环境需复制并修改。
 
 **本地 vs 可移植边界**：本文只登记机器绑定事实（机器标识、绝对路径、conda 环境名）；
-可移植配置以仓库内文件为唯一事实源——Python 版本与依赖看 `pyproject.toml`，alembic 看
-`alembic.ini`，服务配置看根 `.env` 的 `QED_*` 变量（`src/qed_tracker/config.py` 直读）。
+可移植配置以仓库内文件为唯一事实源——Python 版本与依赖看 `pyproject.toml`，数据库
+schema 自愈看 `src/qed_tracker/db/schema.py`（ADR 0006：Alembic 已退役，无 `alembic.ini`），
+服务配置看根 `.env` 的 `QED_*` 变量（`src/qed_tracker/config.py` 直读）。
 可移植事实与本文冲突时，以仓库内文件为准并回修本文。
 
 ## 机器标识
@@ -71,6 +72,10 @@ conda run -n qed_env <命令>
   相关 dry-run 端点返回 409 而非崩溃。
 - **Windows 路径**：仓库位于 `D:\coding\QED-Engine\QED-Tracker`，shell 为 Git Bash（POSIX
   语法）；命令中使用正斜杠。
+- **`.env` 值内联注释**：值中 ` #`（空白+井号）会被视为注释并剥离（如
+  `QED_DB_NAME=qed_test        # qed` → `qed_test`）；`#` 前无空白（库名 `qed#x`、密码
+  `secret#pass`）原样保留。曾因在 `.env` 写 `QED_DB_NAME=qed_test # qed` 导致库名拼接注释、
+  服务连接 1049 失败（QED-053 排障）。带 `#` 的真实值请确保 `#` 前不留空格。
 
 ## 变更与取代
 

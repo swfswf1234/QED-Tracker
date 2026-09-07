@@ -10,7 +10,6 @@ from sqlalchemy.orm import sessionmaker
 from qed_tracker.api.main import create_app
 from qed_tracker.config import load_settings
 from qed_tracker.db.knowledge_repository import (
-    InvalidExplorationTransition,
     KnowledgeRepository,
 )
 from qed_tracker.db.models import Base, QedCourse, QedDomain
@@ -22,7 +21,7 @@ def repo(tmp_path):
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = factory()
-    from qed_tracker.database import utc_now
+    from qed_tracker.db.engine import utc_now
 
     now = utc_now()
     # 领域：待确认态（用于 apply-results / re-explore）
@@ -89,7 +88,7 @@ def client(tmp_path, repo):
 def test_domain_apply_results_success(client, repo):
     """领域 apply-results：待确认 -> 已完成，courses_kept 正确。"""
     # 创建一个待选课程
-    from qed_tracker.database import utc_now
+    from qed_tracker.db.engine import utc_now
     session = repo._session_factory()
     now = utc_now()
     session.add(QedCourse(
@@ -252,7 +251,7 @@ def test_course_re_explore_not_found(client):
 
 def test_six_state_domain_flow(client, repo):
     """领域探索 6 态完整流转：未开始 -> 已生成 -> 探索中 -> 待确认 -> 已完成。"""
-    from qed_tracker.database import utc_now
+    from qed_tracker.db.engine import utc_now
 
     # 创建新领域
     session = repo._session_factory()
@@ -296,7 +295,7 @@ def test_six_state_domain_flow(client, repo):
 
 def test_six_state_course_flow(client, repo):
     """课程探索 6 态完整流转：未开始 -> 已生成 -> 探索中 -> 待确认 -> 已完成。"""
-    from qed_tracker.database import utc_now
+    from qed_tracker.db.engine import utc_now
 
     # 创建新课程
     session = repo._session_factory()

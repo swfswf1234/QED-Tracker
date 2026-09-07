@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from qed_tracker.database import utc_now
+from qed_tracker.db.engine import utc_now
 from qed_tracker.db.knowledge_repository import InvalidTransition, KnowledgeRepository
 from qed_tracker.db.models import Base, BookStatus, KnowledgeStatus, QedCourse, QedDomain
 

@@ -153,7 +153,7 @@ def repo(tmp_path):
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = factory()
-    from qed_tracker.database import utc_now
+    from qed_tracker.db.engine import utc_now
 
     now = utc_now()
     session.add(QedDomain(domain_id="math", name="数学", description="d", stages=["本科基础"],

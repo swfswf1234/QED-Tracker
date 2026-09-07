@@ -67,6 +67,12 @@ class Candidate:
     availability: Availability = Availability.DOWNLOADABLE
     identifiers: dict[str, str] = field(default_factory=dict)
     abstract: str = ""
+    description: str = ""
+    """候选介绍（QED-050 enrich：IA description / OL subtitle+first_sentence / GB volumeInfo），LLM 确认输入。"""
+    publisher: str = ""
+    """出版社（QED-050 enrich：IA/OL/GB/libgen Publisher），确认辅助线索，不进检索词。"""
+    page_count: int | None = None
+    """声明页数（QED-050 enrich：GB pageCount / OL number_of_pages_median / libgen Pages）；验收以实际 PDF 为准。"""
     subjects: tuple[str, ...] = ()
     published_at: str = ""
     updated_at: str = ""
@@ -116,6 +122,29 @@ class BookAssessment:
     provider_id: str
     score: int  # 0-100
     verdict: str  # recommend | uncertain
+    summary: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class BookExpectation:
+    """书级期望元数据（QED-050 阶段2）：确定性预筛与 LLM 确认的输入（qt_books + refs 归一）。"""
+
+    title: str
+    original_title: str = ""
+    part: str = ""
+    authors: tuple[str, ...] = ()  # 仅 role=author 的名字（translator 排除，防检索与匹配污染）
+    language: str = ""
+    publisher: str = ""
+    edition: str = ""
+    year: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class BookConfirmation:
+    """书级候选确认（QED-050 阶段2）：LLM 只生成可审阅结论，不写资源事实、不自动下载。"""
+
+    provider_id: str
+    verdict: str  # confirmed | uncertain
     summary: str = ""
 
 

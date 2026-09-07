@@ -1,14 +1,14 @@
 # QED-Tracker 文档索引
 
 状态：Current
-最后更新：2026-08-31
+最后更新：2026-09-07
 
 本文件只负责导航。项目定位和快速使用见[根 README](../README.md)，Agent 工作入口见 [AGENTS.md](../AGENTS.md)。
 
 | 文档域 | 内容 | 入口 |
 | --- | --- | --- |
 | `architecture/` | 当前系统边界、模块拓扑、数据不变量与共享表跨项目契约 | [架构索引](architecture/index.md) |
-| `design/` | 下载、清单、Axiom-Flow 接口与服务化接口契约 | [设计索引](design/index.md) |
+| `design/` | 主链路与四条管线的能力设计（主链路/探索/知识录入/下载/论文发现）、服务运行管理中心、数据设计契约；每篇职责边界见设计索引（职责登记处，ADR 0008） | [设计索引](design/index.md) |
 | `standards/` | 工程治理规则（文档治理、ADR 治理、测试门禁、跨项目协作、本地开发环境） | [规范索引](standards/index.md) |
 | `adr/` | 影响长期约束的架构决策登记 | [ADR 索引](adr/index.md) |
 | `guides/` | 可重复执行的用户操作和开发门禁 | [指南索引](guides/index.md) |

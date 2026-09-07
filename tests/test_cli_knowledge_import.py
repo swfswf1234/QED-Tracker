@@ -18,7 +18,7 @@ from sqlalchemy.orm import sessionmaker
 
 from qed_tracker.cli import _knowledge_import
 from qed_tracker.config import load_settings
-from qed_tracker.database import utc_now
+from qed_tracker.db.engine import utc_now
 from qed_tracker.db.knowledge_repository import InvalidTransition, KnowledgeRepository
 from qed_tracker.db.models import Base, QedCourse, QedDomain
 

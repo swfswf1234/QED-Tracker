@@ -5,8 +5,10 @@
 → qt_sources（渠道尝试）。旧三表模型（qt_selections/qt_downloads）已随 QED-031 退役。
 qt_explore_runs / qt_prompt_runs 已随共享表重构（2026-08-27）退役。
 
-DDL 事实源：docs/architecture/database-schema.md（唯一当前事实源）。
-表/列中文注释事实源：migrations/data/table_comments.json（0007 迁移应用）。
+DDL 文档事实源：docs/architecture/database-shared-tables.md（共享表）与
+docs/architecture/database-private-tables.md（专用表，ADR 0007 按表族拆分）。
+表/列中文注释事实源：本模型 `comment=`（建表即带，ensure_schema 自愈后注释随模型；
+v0.1 起弃用 migrations/data/table_comments.json，ADR 0006）。
 """
 
 from __future__ import annotations
@@ -109,7 +111,10 @@ class QtKnowledge(Base):
     """qt_knowledge 教程（私有）：一行 = 一套教程（tutorial）或一组课程延展资料归类（other_material）。"""
 
     __tablename__ = "qt_knowledge"
-    __table_args__ = ({"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},)
+    __table_args__ = (
+        {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4",
+         "comment": "教程表：登记一套教程或一组课程延展资料，承载套级简介与教材/习题集/平行读物引用数组，指引资源检索与补书决策"},
+    )
 
     knowledge_id: Mapped[str] = mapped_column(String(32), primary_key=True, comment="教程标识（主键）：kt-{课程缩写}-{set_no}，服务端生成")
     course_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="所属课程标识")
@@ -155,10 +160,17 @@ class QtBook(Base):
     """qt_books 书库（私有）：域级书库，一行 = 一册/一本书的选用状态与持有状态。"""
 
     __tablename__ = "qt_books"
-    __table_args__ = ({"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},)
+    __table_args__ = (
+        {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4",
+         "comment": "书库表：域级书库，登记一册/一本书的选用状态与持有状态，承载补书优先级；下载执行由 qt_sources 承载"},
+    )
 
     book_id: Mapped[str] = mapped_column(String(32), primary_key=True, comment="书籍标识（主键）：{课程缩写}-b{NN}，服务端生成")
     title: Mapped[str] = mapped_column(String(256), nullable=False, comment="书名（真实名称，支持 zh/en）")
+    original_title: Mapped[str | None] = mapped_column(
+        String(256), nullable=True,
+        comment="原题（外文原版书名，支撑原版检索；无则 NULL）",
+    )
     part: Mapped[str] = mapped_column(String(8), nullable=False, default="", comment="卷标识：空串=单卷本；上册/下册/Vol.1~3")
     authors: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON, nullable=False, default=list,
@@ -182,7 +194,7 @@ class QtBook(Base):
         index=True, comment="持有状态：owned=已到手；missing=未持有",
     )
     file_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="PDF 文件路径（数据根相对）")
-    priority: Mapped[int | None] = mapped_column(Integer(), nullable=True, comment="补书优先级：0=P0/1=P1/2=P2/NULL")
+    priority: Mapped[int | None] = mapped_column(Integer(), nullable=True, index=True, comment="补书优先级：0=P0/1=P1/2=P2/NULL")
     notes: Mapped[str | None] = mapped_column(Text(), nullable=True, comment="备注")
     domain_id: Mapped[str] = mapped_column(String(32), nullable=False, default="", index=True, comment="所属领域标识")
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")

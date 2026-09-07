@@ -9,7 +9,7 @@
       "set_no": "1",
       "name": "教程1：比廷杰《微积分及其应用》",
       "position": "beginner",
-      "intro": "比廷杰《微积分及其应用》以应用为导向，有着大量经济、生命科学与物理背景的例题，先建立计算与建模直觉，适合零基础入门或非数学专业快速通读，目标是「会算」。教材自带习题及答案，逐章做完即可，无需额外题解。",
+      "intro": "比廷杰《微积分及其应用》以应用为导向，有着大量经济、生命科学与物理背景的例题，先建立计算与建模直觉，适合零基础入门或非数学专业快速通读，目标是「会算」。教材自带习题及答案，逐章做完即可，无需额外题解；作为整条分析路线的最前端，它不追求证明语言，定理叙述以直观与使用为主。读完即可衔接教程3 的严格化训练，把「会算」升级为「会证」。",
       "textbook_ref": [
         {
           "book_id": "01ma-b01",
@@ -60,7 +60,20 @@
           "roles": ["textbook", "exercises"]
         }
       ],
-      "exercise_ref": null
+      "exercise_ref": null,
+      "parallel_ref": [
+        {
+          "book_id": "01ma-b18",
+          "title": "高等微积分",
+          "part": "",
+          "authors": [{ "name": "Patrick M. Fitzpatrick", "role": "author" }],
+          "publisher": "",
+          "edition": "第2版",
+          "year": null,
+          "language": "zh",
+          "roles": ["textbook"]
+        }
+      ]
     },
     {
       "knowledge_id": "kt-01ma-3",
@@ -109,6 +122,17 @@
           "edition": "",
           "year": null,
           "language": "zh",
+          "roles": ["solutions"]
+        },
+        {
+          "book_id": "01ma-b17",
+          "title": "数学分析原理（英文版）习题完整答案",
+          "part": "",
+          "authors": [{ "name": "R. Phillips", "role": "author" }],
+          "publisher": "",
+          "edition": "",
+          "year": null,
+          "language": "en",
           "roles": ["solutions"]
         }
       ]
@@ -165,10 +189,21 @@
         {
           "book_id": "01ma-b15",
           "title": "数学分析习题课讲义",
-          "part": "",
+          "part": "上册",
           "authors": [{ "name": "谢惠民 等", "role": "author" }],
           "publisher": "高等教育出版社",
-          "edition": "",
+          "edition": "第2版",
+          "year": null,
+          "language": "zh",
+          "roles": ["exercises"]
+        },
+        {
+          "book_id": "01ma-b16",
+          "title": "数学分析习题课讲义",
+          "part": "下册",
+          "authors": [{ "name": "谢惠民 等", "role": "author" }],
+          "publisher": "高等教育出版社",
+          "edition": "第2版",
           "year": null,
           "language": "zh",
           "roles": ["exercises"]

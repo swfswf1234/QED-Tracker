@@ -169,6 +169,13 @@ _ALLOWED_LANGUAGES = ("zh", "en")
 _ROLES_VALUES = ("textbook", "exercises", "solutions")
 
 
+_KNOWLEDGE_ID_RE = re.compile(r"^kt-[0-9a-z]+-[0-9a-z]{1,4}$")
+"""数据文件版显式 knowledge_id 格式：kt-{abbr}-{set_no}（与仓储层规则一致）。"""
+
+_BOOK_ID_RE = re.compile(r"^[0-9a-z]+-b\d{2,}$")
+"""数据文件版显式 book_id 格式：{abbr}-b{NN}（NN 两位起）。"""
+
+
 def _validate_ref_entry(ref: Any, label: str) -> None:
     """校验单个 ref 条目（textbook_ref/exercise_ref/parallel_ref 元素）。"""
     _require(isinstance(ref, dict), f"{label} 必须是对象")
@@ -193,30 +200,49 @@ def _validate_ref_entry(ref: Any, label: str) -> None:
     _require(isinstance(roles, list) and roles, f"{label}.roles 必须是非空数组")
     for r in roles:
         _require(r in _ROLES_VALUES, f"{label}.roles 值域错误：{r}")
+    original_title = ref.get("original_title")
+    if original_title is not None:
+        _text(original_title, 256, f"{label}.original_title", nonempty=False)
+    book_id = ref.get("book_id")
+    if book_id is not None:
+        _require(isinstance(book_id, str) and _BOOK_ID_RE.match(book_id),
+                 f"{label}.book_id 格式错误（应为 {{abbr}}-b{{NN}}）：{book_id}")
 
 
 def validate_course(data: Any) -> dict[str, Any]:
     """校验课程标准答案 JSON（docs/knowledge/<domain>/<course_id>.json 同构）。
 
-    新契约（tutorials@v2）：tutorials 数组，每套含 set_no/name/position/intro/
+    数据文件版契约（2026-09-03 用户裁决）：顶层为 domain_id/course_id/course_name，
+    每套教程显式携带生成好的 knowledge_id（kt-{abbr}-{set_no}）与
+    textbook_ref[].book_id（{abbr}-b{NN}）；每套含 set_no/name/position/intro/
     textbook_ref[]/exercise_ref[]/parallel_ref[]。
     """
     _require(isinstance(data, dict), "课程 JSON 必须是对象")
-    _slug(data.get("domain"), "domain")  # 或 _text(data.get("domain_id"), 32, "domain_id")
-    course = data.get("course", {})
-    _require(isinstance(course, dict), "course 必须是对象")
-    _slug(course.get("course_id"), "course.course_id")
-    _text(course.get("name"), 100, "course.name")
+    _slug(data.get("domain_id"), "domain_id")
+    _slug(data.get("course_id"), "course_id")
+    _text(data.get("course_name"), 100, "course_name")
 
     tutorials = data.get("tutorials", [])
     _require(isinstance(tutorials, list) and 1 <= len(tutorials) <= 6,
              "tutorials 必须为 1~6 套")
     set_nos: list[str] = []
+    knowledge_ids: list[str] = []
     for i, item in enumerate(tutorials):
         _require(isinstance(item, dict), f"tutorials[{i}] 必须是对象")
         set_no = _text(item.get("set_no"), 4, f"tutorials[{i}].set_no")
         _require(set_no not in set_nos, f"tutorials 套号重复：{set_no}")
         set_nos.append(set_no)
+        knowledge_id = item.get("knowledge_id")
+        if knowledge_id is not None:
+            _require(isinstance(knowledge_id, str) and _KNOWLEDGE_ID_RE.match(knowledge_id)
+                     and knowledge_id.endswith(f"-{set_no}"),
+                     f"tutorials[{i}].knowledge_id 格式错误（应为 kt-{{abbr}}-{set_no}）：{knowledge_id}")
+            _require(knowledge_id not in knowledge_ids,
+                     f"tutorials knowledge_id 重复：{knowledge_id}")
+            knowledge_ids.append(knowledge_id)
+        kind = str(item.get("kind", "tutorial")).strip() or "tutorial"
+        _require(kind in ("tutorial", "other_material"),
+                 f"tutorials[{i}].kind 值域错误：{kind}")
         _text(item.get("name"), 128, f"tutorials[{i}].name")
         position = _text(item.get("position", ""), 24, f"tutorials[{i}].position")
         _require(position in _POSITIONS_5,

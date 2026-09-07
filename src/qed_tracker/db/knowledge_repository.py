@@ -1,6 +1,6 @@
 """知识/书库/渠道（qt_knowledge / qt_books / qt_sources）数据访问与状态机。
 
-结构（docs/design/database-schema.md）：
+结构（docs/architecture/database-private-tables.md）：
 qed_domain → qed_course → qt_knowledge（一行=一套教程/一组延展资料归类）→ qt_books
 （一行=域级书库一册）→ qt_sources（渠道尝试）。
 
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -21,7 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from qed_tracker.database import utc_now
+from qed_tracker.db.engine import utc_now
 from qed_tracker.db.models import BookStatus, KnowledgeStatus, QedCourse, QedDomain, QtBook, QtKnowledge, QtSource
 
 
@@ -66,6 +67,37 @@ _BOOK_TRANSITIONS: dict[BookStatus, set[BookStatus]] = {
 def _id(prefix: str, *parts: Any) -> str:
     key = json.dumps(parts, ensure_ascii=False, sort_keys=True)
     return f"{prefix}_{hashlib.md5(key.encode('utf-8')).hexdigest()}"
+
+
+_KNOWLEDGE_ID_RE = re.compile(r"^kt-[0-9a-z]+-[0-9a-z]{1,4}$")
+"""数据文件版 knowledge_id 格式：kt-{abbr}-{set_no}（D4，2026-09-03 裁决）。"""
+
+_BOOK_ID_RE = re.compile(r"^[0-9a-z]+-b\d{2,}$")
+"""数据文件版 book_id 格式：{abbr}-b{NN}（NN 两位起，域内全局递增）。"""
+
+
+def _tutorial_knowledge_id(course_id: str, set_no: str) -> str:
+    """LLM 采纳路径 knowledge_id：kt-{course_id 去下划线}-{set_no}（D4 裁决，不维护人工映射表）。
+
+    set_no 为空（资料归类行）时退回 md5 后缀避免同课程多行冲突。
+    """
+    if set_no:
+        return f"kt-{course_id.replace('_', '')}-{set_no}"
+    return _id("kt", course_id)
+
+
+def _refs_book_ids(*ref_lists: list[dict[str, Any]] | None) -> list[str]:
+    """从 refs 数组（textbook_ref/exercise_ref/parallel_ref）聚合 book_id，保序去重。
+
+    书库化后 QtBook 无 knowledge_id 列，教程与书的归属由 refs 承载。
+    """
+    ids: list[str] = []
+    for refs in ref_lists:
+        for ref in refs or []:
+            book_id = str(ref.get("book_id") or "")
+            if book_id and book_id not in ids:
+                ids.append(book_id)
+    return ids
 
 
 def tutorial_name(set_no: str, title: str, authors: Iterable[str] = ()) -> str:
@@ -261,6 +293,33 @@ class KnowledgeRepository:
 
     # --- REQ-067-B12: apply-results / re-explore ---
 
+    @staticmethod
+    def _delete_knowledge_rows(session: Session, rows: list[QtKnowledge]) -> None:
+        """删除教程行并级联清理失去全部引用的书（书库化：refs 反查，qt_sources 手动级联）。
+
+        书库化语义：QtBook 无 knowledge_id 列，待删书 = 被删教程 refs 引用、且不再被
+        任何存留教程 refs 引用的行；从未被 refs 引用的独立候选书不受影响。被清理的
+        已持有书仅删登记行，数据根内 PDF 不动（重导入按 sha256 复用）。
+        """
+        doomed: set[str] = set()
+        for row in rows:
+            doomed.update(_refs_book_ids(row.textbook_ref, row.exercise_ref, row.parallel_ref))
+        if doomed:
+            deleted_ids = {row.knowledge_id for row in rows}
+            still_referenced: set[str] = set()
+            for other in session.scalars(select(QtKnowledge)):
+                if other.knowledge_id in deleted_ids:
+                    continue
+                still_referenced.update(
+                    _refs_book_ids(other.textbook_ref, other.exercise_ref, other.parallel_ref)
+                )
+            orphaned = doomed - still_referenced
+            if orphaned:
+                session.execute(sa.delete(QtSource).where(QtSource.book_id.in_(orphaned)))
+                session.execute(sa.delete(QtBook).where(QtBook.book_id.in_(orphaned)))
+        for row in rows:
+            session.delete(row)
+
     def apply_domain_results(self, domain_id: str, selected_courses: list[str]) -> int:
         """确认领域探索结果：exploration_stage -> 已完成，清空 explore_pending，删除未选课程。
 
@@ -277,30 +336,21 @@ class KnowledgeRepository:
             domain.exploration_stage = "已完成"
             domain.explore_pending = None
             domain.updated_at = utc_now()
-            # 删除未选课程（QtKnowledge/QtBook/QtSource 由数据库 ON DELETE CASCADE 或手动清理）
+            # 删除未选课程及其教程行（书按 refs 反查级联，见 _delete_knowledge_rows）
             all_courses = list(session.scalars(
                 select(QedCourse).where(QedCourse.domain_id == domain_id)
             ))
             kept = 0
+            doomed_rows: list[QtKnowledge] = []
             for course in all_courses:
                 if course.course_id in selected_courses:
                     kept += 1
-                else:
-                    # 手动级联删除子表
-                    kn_ids = [
-                        kn.knowledge_id for kn in session.scalars(
-                            select(QtKnowledge).where(QtKnowledge.course_id == course.course_id)
-                        )
-                    ]
-                    for kid in kn_ids:
-                        session.execute(
-                            sa.delete(QtSource).where(QtSource.book_id.in_(
-                                sa.select(QtBook.book_id).where(QtBook.knowledge_id == kid)
-                            ))
-                        )
-                        session.execute(sa.delete(QtBook).where(QtBook.knowledge_id == kid))
-                    session.execute(sa.delete(QtKnowledge).where(QtKnowledge.course_id == course.course_id))
-                    session.delete(course)
+                    continue
+                doomed_rows.extend(session.scalars(
+                    select(QtKnowledge).where(QtKnowledge.course_id == course.course_id)
+                ))
+                session.delete(course)
+            self._delete_knowledge_rows(session, doomed_rows)
             session.commit()
             return kept
 
@@ -320,23 +370,14 @@ class KnowledgeRepository:
             course.exploration_stage = "已完成"
             course.explore_pending = None
             course.updated_at = utc_now()
-            # 删除未选教程
+            # 删除未选教程（书按 refs 反查级联，见 _delete_knowledge_rows）
             all_kn = list(session.scalars(
                 select(QtKnowledge).where(QtKnowledge.course_id == course_id)
             ))
-            kept = 0
-            for kn in all_kn:
-                if kn.knowledge_id in selected_tutorials:
-                    kept += 1
-                else:
-                    # 手动级联删除子表
-                    session.execute(
-                        sa.delete(QtSource).where(QtSource.book_id.in_(
-                            sa.select(QtBook.book_id).where(QtBook.knowledge_id == kn.knowledge_id)
-                        ))
-                    )
-                    session.execute(sa.delete(QtBook).where(QtBook.knowledge_id == kn.knowledge_id))
-                    session.delete(kn)
+            kept = len(all_kn)
+            doomed_rows = [kn for kn in all_kn if kn.knowledge_id not in set(selected_tutorials)]
+            kept -= len(doomed_rows)
+            self._delete_knowledge_rows(session, doomed_rows)
             session.commit()
             return kept
 
@@ -374,7 +415,6 @@ class KnowledgeRepository:
         self,
         *,
         course_id: str,
-        course_abbr: str,
         set_no: str = "",
         name: str = "",
         kind: str = "tutorial",
@@ -382,8 +422,8 @@ class KnowledgeRepository:
         intro: str = "",
         knowledge_id: str = "",
     ) -> QtKnowledge:
-        """幂等插入：knowledge_id = kt_{course_abbr}_{set_no}，调用者负责传入 course_abbr。"""
-        knowledge_id = knowledge_id or _id("kt", course_abbr, set_no)
+        """幂等插入：knowledge_id = kt-{course_id 去下划线}-{set_no}（D4 裁决，服务端机械生成）。"""
+        knowledge_id = knowledge_id or _tutorial_knowledge_id(course_id, set_no)
         with self._session_factory() as session:
             row = session.get(QtKnowledge, knowledge_id)
             if row is None:
@@ -403,12 +443,12 @@ class KnowledgeRepository:
 
     @staticmethod
     def build_tutorial_row(
-        *, course_id: str, course_abbr: str, set_no: str = "", name: str = "",
-        position: str = "", intro: str = "",
+        *, course_id: str, set_no: str = "", name: str = "",
+        position: str = "", intro: str = "", knowledge_id: str = "",
     ) -> QtKnowledge:
         """构造未落库的 draft 教程行：探索采纳单事务复用（id 规则与 create_knowledge 一致）。"""
         row = QtKnowledge(
-            knowledge_id=_id("kt", course_abbr, set_no),
+            knowledge_id=knowledge_id or _tutorial_knowledge_id(course_id, set_no),
             course_id=course_id,
             kind="tutorial",
             set_no=set_no,
@@ -420,20 +460,25 @@ class KnowledgeRepository:
         return row
 
     def adopt_tutorials(self, course_id: str, tutorials: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """A2 课程知识采纳：按新契约批量建 draft 教程 + 关联书行。
+        """A2 课程知识采纳：按新契约批量建 draft 教程 + 域级书库书行（书库化语义）。
 
-        输入格式：
-            tutorials 数组含 set_no/name/position/intro/textbook_ref[]/exercise_ref[]/parallel_ref[]
+        输入格式：tutorials 数组含 set_no/name/position/intro/textbook_ref[]/exercise_ref[]/
+        parallel_ref[]；数据文件版可显式携带 knowledge_id（kt-{abbr}-{set_no}）与
+        ref.book_id（{abbr}-b{NN}），服务端校验格式并做重复检测。
 
-        幂等：同 course_id+kind+set_no 命中 → 返回既有行（existing=True）；
-        同 set_no 被不同教程占用 → AdoptionConflict（端点映射 409）。
-        单事务批量提交，逐套返回 {knowledge_id, set_no, name, status, existing, books_created}。
+        幂等（2026-09-03 裁决）：教程 = (course_id, kind=tutorial, set_no) 命中复用；
+        书 = (title, part, language, edition) 域内命中复用。同 set_no 被不同教程占用
+        → AdoptionConflict（端点映射 409）；显式 id 格式错误 → ValueError（端点映射 422）。
+        textbook_ref/exercise_ref → status=decided；parallel_ref → status=parallel；
+        ref 可选 original_title 随建行回填。单事务批量提交，逐套返回
+        {knowledge_id, set_no, name, status, existing, books_created}。
         """
         with self._session_factory() as session:
             course = session.get(QedCourse, course_id)
             if course is None:
                 raise KeyError(f"课程不存在：{course_id}")
             domain_id = course.domain_id
+            course_abbr = course_id.replace("_", "")
 
             existing_rows = list(session.scalars(
                 select(QtKnowledge).where(
@@ -443,101 +488,110 @@ class KnowledgeRepository:
             by_set = {r.set_no: r for r in existing_rows}
             by_kid = {r.knowledge_id: r for r in existing_rows}
 
+            # 域级书库既有行索引：书幂等键 (title, part, language, edition) → 行；NN 取域内最大值
+            book_index: dict[tuple[str, str, str, str], QtBook] = {}
+            max_nn = 0
+            for book in session.scalars(select(QtBook).where(QtBook.domain_id == domain_id)):
+                book_index.setdefault(
+                    (book.title, book.part, book.language or "", book.edition or ""), book
+                )
+                match = re.search(r"-b(\d+)$", book.book_id)
+                if match:
+                    max_nn = max(max_nn, int(match.group(1)))
+
+            def _ensure_book(ref: dict[str, Any], *, roles: list[str], status: str) -> tuple[QtBook | None, bool]:
+                """按书幂等键复用或新建书行；显式 book_id 优先按 id 幂等。返回 (书行, 是否新建)。"""
+                nonlocal max_nn
+                title = str(ref.get("title", "")).strip()
+                if not title:
+                    raise ValueError(f"ref 缺 title：{ref}")
+                key = (title, str(ref.get("part", "")), str(ref.get("language", "")), str(ref.get("edition", "")))
+                book: QtBook | None = book_index.get(key)
+                if book is not None:
+                    return book, False
+                explicit_id = str(ref.get("book_id") or "").strip()
+                if explicit_id:
+                    if not _BOOK_ID_RE.match(explicit_id):
+                        raise ValueError(f"book_id 格式错误（应为 {{abbr}}-b{{NN}}）：{explicit_id}")
+                    book = session.get(QtBook, explicit_id)
+                    if book is not None:
+                        book_index.setdefault(key, book)
+                        return book, False
+                max_nn += 1
+                book = QtBook(
+                    book_id=explicit_id or f"{course_abbr}-b{max_nn:02d}",
+                    title=title,
+                    part=str(ref.get("part", "")),
+                    original_title=str(ref.get("original_title", "") or "") or None,
+                    authors=list(ref.get("authors") or []),
+                    publisher=str(ref.get("publisher", "")),
+                    edition=str(ref.get("edition", "")),
+                    year=ref.get("year"),
+                    language=str(ref.get("language", "")),
+                    roles=list(roles),
+                    status=status,
+                    domain_id=domain_id,
+                )
+                _touch(book, created=True)
+                session.add(book)
+                book_index[key] = book
+                return book, True
+
             pending: list[tuple[QtKnowledge, bool, int]] = []
 
             for item in tutorials:
                 set_no = str(item.get("set_no", "")).strip()
                 name = str(item.get("name", "")).strip()
 
-                # 幂等：同 course_id+kind+set_no 命中
+                # 幂等：同 course_id+kind+set_no 且同名命中复用；
+                # 同 set_no 被不同教程（不同 name）占用 → AdoptionConflict（API 409）
                 hit = by_set.get(set_no)
                 if hit is not None:
+                    if name != hit.name:
+                        raise AdoptionConflict(
+                            f"set_no 已被其他教程占用：{set_no}（既有：{hit.name}）"
+                        )
                     pending.append((hit, True, 0))
                     continue
 
-                # 构造 draft 教程行
-                course_abbr = course_id.split("-")[-1] if "-" in course_id else course_id
+                knowledge_id = str(item.get("knowledge_id") or "").strip()
+                if knowledge_id:
+                    if not _KNOWLEDGE_ID_RE.match(knowledge_id) or not knowledge_id.endswith(f"-{set_no}"):
+                        raise ValueError(
+                            f"knowledge_id 格式错误（应为 kt-{{abbr}}-{set_no}）：{knowledge_id}"
+                        )
+                    if knowledge_id in by_kid:
+                        raise AdoptionConflict(f"knowledge_id 已被其他教程占用：{knowledge_id}")
                 row = self.build_tutorial_row(
-                    course_id=course_id, course_abbr=course_abbr,
-                    set_no=set_no, name=name,
+                    course_id=course_id, set_no=set_no, name=name,
                     position=str(item.get("position", "")),
                     intro=str(item.get("intro", "")),
+                    knowledge_id=knowledge_id,
                 )
                 row.textbook_ref = list(item.get("textbook_ref") or [])
                 row.exercise_ref = list(item.get("exercise_ref") or [])
                 row.parallel_ref = list(item.get("parallel_ref") or [])
+
+                # 先建书并回填 book_id，行再入 session：JSON 列原地变更不会被 UPDATE，
+                # 必须保证首次 INSERT 即携带回填后的 refs。
+                books_created = 0
+                plan = (
+                    [(ref, ["textbook"], BookStatus.DECIDED.value) for ref in row.textbook_ref]
+                    + [(ref, ["exercises"], BookStatus.DECIDED.value) for ref in (row.exercise_ref or [])]
+                    + [(ref, [], BookStatus.PARALLEL.value) for ref in (row.parallel_ref or [])]
+                )
+                for ref, roles, status in plan:
+                    book, created = _ensure_book(ref, roles=roles, status=status)
+                    ref["book_id"] = book.book_id  # type: ignore[union-attr]
+                    if created:
+                        books_created += 1
+                row.textbook_ref = list(row.textbook_ref)
+                row.exercise_ref = list(row.exercise_ref) if row.exercise_ref is not None else None
+                row.parallel_ref = list(row.parallel_ref) if row.parallel_ref is not None else None
+
                 session.add(row)
                 by_set[set_no] = row
                 by_kid[row.knowledge_id] = row
-                session.flush()
-
-                books_created = 0
-
-                # textbook_ref → status=decided
-                for ref in row.textbook_ref:
-                    book_id = ref.get("book_id") or _id("bk", row.knowledge_id, ref.get("title", ""))
-                    book = QtBook(
-                        book_id=book_id,
-                        title=ref.get("title", ""),
-                        part=ref.get("part", ""),
-                        authors=ref.get("authors", []),
-                        publisher=ref.get("publisher", ""),
-                        edition=ref.get("edition", ""),
-                        year=ref.get("year"),
-                        language=ref.get("language", ""),
-                        roles=["textbook"],
-                        status=BookStatus.DECIDED.value,
-                        domain_id=domain_id,
-                        file_path=ref.get("file_path"),
-                    )
-                    _touch(book, created=True)
-                    session.add(book)
-                    ref["book_id"] = book_id
-                    books_created += 1
-
-                # exercise_ref → status=decided
-                for ref in (row.exercise_ref or []):
-                    book_id = ref.get("book_id") or _id("bk", row.knowledge_id, ref.get("title", ""))
-                    book = QtBook(
-                        book_id=book_id,
-                        title=ref.get("title", ""),
-                        part=ref.get("part", ""),
-                        authors=ref.get("authors", []),
-                        publisher=ref.get("publisher", ""),
-                        edition=ref.get("edition", ""),
-                        year=ref.get("year"),
-                        language=ref.get("language", ""),
-                        roles=["exercises"],
-                        status=BookStatus.DECIDED.value,
-                        domain_id=domain_id,
-                        file_path=ref.get("file_path"),
-                    )
-                    _touch(book, created=True)
-                    session.add(book)
-                    ref["book_id"] = book_id
-                    books_created += 1
-
-                # parallel_ref → status=parallel
-                for ref in (row.parallel_ref or []):
-                    book_id = ref.get("book_id") or _id("bk", row.knowledge_id, ref.get("title", ""))
-                    book = QtBook(
-                        book_id=book_id,
-                        title=ref.get("title", ""),
-                        part=ref.get("part", ""),
-                        authors=ref.get("authors", []),
-                        publisher=ref.get("publisher", ""),
-                        edition=ref.get("edition", ""),
-                        year=ref.get("year"),
-                        language=ref.get("language", ""),
-                        roles=[],
-                        status=BookStatus.PARALLEL.value,
-                        domain_id=domain_id,
-                        file_path=ref.get("file_path"),
-                    )
-                    _touch(book, created=True)
-                    session.add(book)
-                    ref["book_id"] = book_id
-                    books_created += 1
 
                 pending.append((row, False, books_created))
 
@@ -607,6 +661,7 @@ class KnowledgeRepository:
         *,
         title: str,
         part: str = "",
+        original_title: str | None = None,
         authors: list[dict[str, Any]] | None = None,
         publisher: str = "",
         edition: str = "",
@@ -615,10 +670,9 @@ class KnowledgeRepository:
         roles: list[str] | None = None,
         status: str = BookStatus.CANDIDATE.value,
         domain_id: str = "",
-        file_path: str | None = None,
         notes: str | None = None,
     ) -> QtBook:
-        """幂等插入：book_id 由调用者传入（服务端生成 {abbr}-b{NN}）。"""
+        """幂等插入：book_id 由调用者传入（服务端生成 {abbr}-b{NN}，域内递增）。"""
         with self._session_factory() as session:
             row = session.get(QtBook, book_id)
             if row is None:
@@ -626,6 +680,7 @@ class KnowledgeRepository:
                     book_id=book_id,
                     title=title,
                     part=part,
+                    original_title=original_title or None,
                     authors=authors or [],
                     publisher=publisher,
                     edition=edition,
@@ -634,18 +689,28 @@ class KnowledgeRepository:
                     roles=roles or [],
                     status=status,
                     domain_id=domain_id,
-                    file_path=file_path,
                 )
+                if notes:
+                    row.notes = notes
                 _touch(row, created=True)
                 session.add(row)
             session.commit()
             return row
 
     def list_books(self, knowledge_id: str | None = None) -> list[QtBook]:
+        """列书库行：无 knowledge_id → 域级书库全量；给定 → 该教程 refs 聚合的书
+        （textbook_ref/exercise_ref/parallel_ref 的 book_id 去重；书库化多对多，
+        归属由 refs 承载，QtBook 无 knowledge_id 列）。"""
         with self._session_factory() as session:
             statement = select(QtBook).order_by(QtBook.created_at)
             if knowledge_id:
-                statement = statement.where(QtBook.knowledge_id == knowledge_id)
+                row = session.get(QtKnowledge, knowledge_id)
+                if row is None:
+                    return []
+                book_ids = _refs_book_ids(row.textbook_ref, row.exercise_ref, row.parallel_ref)
+                if not book_ids:
+                    return []
+                statement = statement.where(QtBook.book_id.in_(book_ids))
             return list(session.scalars(statement))
 
     def get_book(self, book_id: str) -> QtBook | None:
@@ -674,6 +739,72 @@ class KnowledgeRepository:
     def retire_book(self, book_id: str, *, reason: str = "") -> QtBook:
         """decided/parallel → retired（退役：版本换代或不再选用）。"""
         return self._transition_book(book_id, BookStatus.RETIRED, retire_reason=reason.strip())
+
+    # ---------------- 登记服务（QED-050 阶段5：唯一写 holding/file_path 入口） ----------------
+
+    def mark_owned(self, book_id: str, *, file_path: str) -> QtBook:
+        """登记持有：holding=owned + file_path 回填（数据根相对路径）。
+
+        下载成功（机器验收通过落盘）与人工导入共用此唯一写入口；LLM 判断不参与任何
+        字段取值（download-pipeline.md 事实落点表）。幂等：同路径重复登记
+        直接返回；已 owned 换路径按重新登记处理（人工替换文件）。
+        """
+        file_path = file_path.strip()
+        if not file_path:
+            raise ValueError("file_path 必填（数据根相对路径）")
+        with self._session_factory() as session:
+            row = session.get(QtBook, book_id)
+            if row is None:
+                raise KeyError(f"书籍不存在：{book_id}")
+            if row.holding == "owned" and row.file_path == file_path:
+                return row
+            row.holding = "owned"
+            row.file_path = file_path
+            row.updated_at = utc_now()
+            session.commit()
+            return row
+
+    def first_course_for_book(self, book_id: str) -> str:
+        """refs 反查归属课程（书库化 QtBook 无 course_id 列）：引用该书的教程的课程。
+
+        多教程引用取 course_id 最小者（确定性）；独立登记书返回空串。
+        """
+        with self._session_factory() as session:
+            rows = session.scalars(
+                select(QtKnowledge).order_by(QtKnowledge.course_id, QtKnowledge.set_no)
+            )
+            for row in rows:
+                if book_id in _refs_book_ids(row.textbook_ref, row.exercise_ref, row.parallel_ref):
+                    return row.course_id
+        return ""
+
+    def course_closure(self, course_id: str) -> dict[str, Any]:
+        """课程闭环派生查询（只读，不写任何表）：该课程 refs 聚合书集中 decided 全 owned。
+
+        parallel/candidate/retired 书不参与判定（download-pipeline.md 阶段5）；
+        exploration_stage 不动。
+        """
+        with self._session_factory() as session:
+            rows = list(session.scalars(
+                select(QtKnowledge).where(QtKnowledge.course_id == course_id)
+            ))
+            book_ids: list[str] = []
+            for row in rows:
+                for book_id in _refs_book_ids(row.textbook_ref, row.exercise_ref, row.parallel_ref):
+                    if book_id not in book_ids:
+                        book_ids.append(book_id)
+            books = [session.get(QtBook, book_id) for book_id in book_ids]
+            books = [book for book in books if book is not None]
+        decided = [book for book in books if book.status == BookStatus.DECIDED.value]
+        missing = [book.book_id for book in decided if book.holding != "owned"]
+        return {
+            "course_id": course_id,
+            "total_books": len(book_ids),
+            "decided_count": len(decided),
+            "owned_count": len(decided) - len(missing),
+            "missing_book_ids": missing,
+            "closed": not missing,
+        }
 
     # ---------------- qt_sources ----------------
 

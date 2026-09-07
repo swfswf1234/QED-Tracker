@@ -7,6 +7,12 @@
 目标项目：QED-Tracker
 评审方：用户
 
+> **⚠ 前提失效（2026-09-06）**：本文档起草时的旧八态知识/书籍状态机已随 QED-050-D 书库化
+> 重构（qt_knowledge 两态 draft/confirmed、qt_books 四选用态 + holding、approve/reject 删除、
+> mark_owned 唯一登记）。执行 QED-050-E 前需先按
+> [下载管线设计](../design/download-pipeline.md)重写「当前实现」一节，
+> 下文旧状态机描述仅作起草时背景。
+
 ## 背景
 
 QED-Tracker 管理三类核心数据实体，各自有独立的生命周期：
@@ -131,10 +137,10 @@ DATA_ROOT/
 |---|---|
 | [探索管线设计](../design/exploration-pipeline.md) | 探索管线（探索生命周期的驱动方） |
 | [知识录入设计](../design/knowledge-import.md) | 手动导入（知识生命周期的手动入口） |
-| [download-registration.md](2026-09-download-registration.md) | 下载登记（书籍生命周期的驱动方） |
-| `architecture/shared-tables.md` | 共享表契约（状态机定义） |
-| `architecture/database-schema.md` | 数据库 DDL（字段定义） |
-| `design/service-lifecycle.md` | 服务生命周期（服务层，非数据层） |
+| [下载管线设计](../design/download-pipeline.md) | 下载登记（书籍生命周期的驱动方） |
+| `architecture/database-shared-tables.md` | 共享表契约（状态机定义） |
+| `architecture/database-private-tables.md` | 专用表 DDL（字段定义） |
+| `design/service-management.md` | 服务生命周期（服务层，非数据层） |
 
 ## 变更记录
 
