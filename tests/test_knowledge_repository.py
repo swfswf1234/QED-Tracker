@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from qed_tracker.database import utc_now
+from qed_tracker.db.engine import utc_now
 from qed_tracker.db.knowledge_repository import InvalidTransition, KnowledgeRepository
 from qed_tracker.db.models import Base, BookStatus, KnowledgeStatus, QedCourse, QedDomain
 
@@ -44,7 +44,7 @@ def _book(repo: KnowledgeRepository, knowledge_id: str, *, title: str = "微积�
     )
 
 
-# --- 知识行状态机 ---
+# --- 教程状态机 ---
 
 
 def test_knowledge_default_status_draft(repo):
@@ -92,7 +92,7 @@ def test_knowledge_invalid_transition(repo):
     row = _knowledge(repo)
     repo.confirm_knowledge(row.knowledge_id, textbook_ref={}, exercise_ref={})
     with pytest.raises(InvalidTransition):
-        repo.complete_knowledge(row.knowledge_id)  # completed 需所辖书行全 verified，此处无书行
+        repo.complete_knowledge(row.knowledge_id)  # completed 需所辖书籍全 verified，此处无书籍
 
 
 def test_knowledge_supersede_from_confirmed(repo):
@@ -103,7 +103,7 @@ def test_knowledge_supersede_from_confirmed(repo):
     assert updated.superseded_at is not None
 
 
-# --- 书行状态机 ---
+# --- 书籍状态机 ---
 
 
 def test_book_default_status_candidate(repo):
@@ -170,7 +170,7 @@ def test_book_hidden_default(repo):
     assert len(repo.list_books(knowledge.knowledge_id, include_hidden=True)) == 1
 
 
-# --- 知识行 completed 聚合 ---
+# --- 教程 completed 聚合 ---
 
 
 def test_knowledge_completed_when_all_books_verified(repo):

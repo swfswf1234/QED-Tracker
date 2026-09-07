@@ -1,0 +1,30 @@
+{
+  "domain_id": "<domain_id>",
+  "course_id": "<course_id>",
+  "course_name": "<课程名>",
+  "tutorials": [
+    {
+      "knowledge_id": "kt-<course_abbr>-<set_no>",
+      "kind": "tutorial",
+      "set_no": "<1/2/3/4|en|''>",
+      "name": "教程<set_no>：首作者《书名》",
+      "position": "beginner",
+      "intro": "120 字以上套级散文：是什么（作者/学派/地位）、为何选、学什么、怎么学（用法与配套关系）、平行读物提及。",
+      "textbook_ref": [
+        {
+          "book_id": "<course_abbr>-b<NN>",
+          "title": "书名",
+          "part": "",
+          "authors": [{ "name": "作者名", "role": "author" }],
+          "publisher": "出版社",
+          "edition": "版次",
+          "year": null,
+          "language": "zh",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": null,
+      "parallel_ref": null
+    }
+  ]
+}

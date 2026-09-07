@@ -2,7 +2,7 @@
 
 状态：Accepted
 日期：2026-08-04
-最后更新：2026-08-12
+最后更新：2026-08-31
 领域：API 与任务
 决策阶段：v0.6
 取代：—
@@ -11,7 +11,7 @@
 ## 背景
 
 QED-Tracker 是纯 CLI（不运行常驻服务、不维护数据库），配置使用本地 TOML 与 `QED_TRACKER_*`
-环境变量。QED-Engine 根仓库按 [ADR 0002](../../../docs/adr/0002-frontend-and-port-centralization.md)
+环境变量。QED-Engine 根仓库按 [ADR 0002](../../../docs/history/adr/v0.1/0002-frontend-and-port-centralization.md)
 规划了全局端口段（8900/8901/8902/8903）与统一配置：QED-Tracker 服务端口 8901、根 `.env` 的
 `QED_*` 变量为唯一事实源。前端与统一 CLI 需要经 HTTP 调用本项目的下载、校验与登记能力，
 纯 CLI 形态无法满足。
@@ -29,7 +29,8 @@ QED-Tracker 是纯 CLI（不运行常驻服务、不维护数据库），配置�
    > 勘误（2026-08-12，W3 文档一致性深扫）：决定原文「写操作一律创建后台任务」过强。
    > 已实现事实为——**长操作**（下载、评估、推荐、目录批处理、扫描、Axiom 推送）走后台任务；
    > **轻量状态迁移**（`confirm` / `backup` / `approve` / `reject` / `register`）同步执行
-   > （见 [服务与外部接口设计](../design/tracker-service.md) 端点表的「同步轻写」与
+   > （见 [服务与外部接口设计（已归档）](../history/baselines/2026-08-tracker-service.md)
+   > 端点表的「同步轻写」，端点契约现由[架构 API](../architecture/api.md) 承载）与
    > [系统总览](../architecture/system-overview.md) 不变量 8）。
 2. **CLI 转 HTTP 客户端**：`qed-tracker` 命令改为调用本地 8901 服务（默认等待完成，
    `--no-wait` 输出 task_id 供前端场景）；独立脚本入口保留至统一 CLI `qed` 承接后退役。
@@ -53,8 +54,19 @@ QED-Tracker 是纯 CLI（不运行常驻服务、不维护数据库），配置�
 
 ## 关联
 
-- 关联标准：[文档规范](../standards/documentation.md)、[ADR 治理](../standards/adr-governance.md)
-- 关联设计：[服务与外部接口设计](../design/tracker-service.md)（Accepted，需求方 QED-Engine）、
-  [下载与清单](../design/acquisition-and-inventory.md)
+- 关联标准：[文档治理规范](../standards/doc-governance.md)、[ADR 治理](../standards/adr-governance.md)
+- 关联设计：[服务与外部接口设计（已归档）](../history/baselines/2026-08-tracker-service.md)（2026-09-07 按
+  ADR 0008 拆散退役，端点契约由[架构 API](../architecture/api.md) 承载）、
+  [下载与清单（已归档）](../history/baselines/2026-07-acquisition-and-inventory.md)（已并入[下载管线设计](../design/download-pipeline.md)）
 - 关联架构：[系统总览](../architecture/system-overview.md)（实现后更新实现状态）
-- 关联 ADR（根仓库）：[ADR 0002](../../../docs/adr/0002-frontend-and-port-centralization.md)
+- 关联 ADR（根仓库）：[ADR 0002](../../../docs/history/adr/v0.1/0002-frontend-and-port-centralization.md)
+- 固定文档落点（2026-08-31 落地审核补记；2026-09-07 链接改指，见 ADR 0008）：决定①服务化与后台任务 →
+  [系统总览](../architecture/system-overview.md)（职责边界、不变量 8、架构符合度）与
+  [架构 API](../architecture/api.md)（端点与任务契约）；决定②CLI 转 HTTP →
+  [系统总览](../architecture/system-overview.md)「CLI」节（契约已定，实现待 QED-010，跟踪于
+  [待办列表](../trackers/todo.md)）；
+  决定③配置统一 → [系统总览](../architecture/system-overview.md)（config.py 职责、运行模式
+  配置链、「已退出的职责」）与[服务管理中心设计](../design/service-management.md)；
+  决定④数据布局 → [系统总览](../architecture/system-overview.md)
+  「数据布局」（文件名规则见[下载管线设计](../design/download-pipeline.md)落盘节）；
+  决定⑤存量不迁移 → [服务与外部接口设计（已归档）](../history/baselines/2026-08-tracker-service.md)。

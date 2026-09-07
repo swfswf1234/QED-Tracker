@@ -1,8 +1,11 @@
 """scripts/qed_tracker_service.py 生命周期脚本契约测试。
 
 脚本是 8901 服务的启停封装（承接根仓库 REQ-017①，设计见
-docs/design/service-lifecycle.md）。测试用 tmp 目录与 monkeypatch 隔离
+docs/design/service-management.md）。测试用 tmp 目录与 monkeypatch 隔离
 PID/日志路径与系统调用，不访问公网、不读写真实数据根。
+停止可靠性（2026-09-04，与根仓库脚本同构）：stop 路径判活用 _proc_alive
+（ctypes），_kill_tree 返回 bool 并可见失败，优雅+强杀后仍存活必须退 1
+（绝不假 stopped）。
 """
 
 from __future__ import annotations
@@ -219,7 +222,7 @@ def test_stop_no_pid_file(module, isolated, monkeypatch):
 
 def test_stop_stale_pid_file_cleaned(module, isolated, monkeypatch):
     (isolated / "qed-tracker.pid").write_text("4242", encoding="utf-8")
-    monkeypatch.setattr(module, "_pid_is_alive", lambda pid: False)
+    monkeypatch.setattr(module, "_proc_alive", lambda pid: False)
     args = module.build_parser().parse_args(["stop"])
     assert module.cmd_stop(args) == 0
     assert not (isolated / "qed-tracker.pid").exists()
@@ -235,11 +238,11 @@ def test_stop_graceful_no_force(module, isolated, monkeypatch):
         alive_calls["n"] += 1
         return alive_calls["n"] == 1  # os.kill 前存活，之后立即消失
 
-    monkeypatch.setattr(module, "_pid_is_alive", fake_alive)
+    monkeypatch.setattr(module, "_proc_alive", fake_alive)
     break_sent = []
     monkeypatch.setattr(module.os, "kill", lambda pid, sig: break_sent.append(pid))
     tree_calls = []
-    monkeypatch.setattr(module, "_kill_tree", lambda pid: tree_calls.append(pid))
+    monkeypatch.setattr(module, "_kill_tree", lambda pid: tree_calls.append(pid) or True)
     args = module.build_parser().parse_args(["stop"])
     assert module.cmd_stop(args) == 0
     assert break_sent == [4242]
@@ -247,19 +250,26 @@ def test_stop_graceful_no_force(module, isolated, monkeypatch):
     assert not (isolated / "qed-tracker.pid").exists()
 
 
-def test_stop_force_kill_fallback(module, isolated, monkeypatch):
+def test_stop_force_kill_fallback(module, isolated, monkeypatch, capsys):
+    """优雅信号未生效：宽限后 taskkill 强杀生效 → stopped (forced) + PID 文件清理。"""
     (isolated / "qed-tracker.pid").write_text("4242", encoding="utf-8")
     monkeypatch.setattr(module, "STOP_GRACE_SECONDS", 0.05)
     monkeypatch.setattr(module.time, "sleep", lambda s: None)
-    monkeypatch.setattr(module, "_pid_is_alive", lambda pid: True)  # 永不退出
-    break_sent = []
-    monkeypatch.setattr(module.os, "kill", lambda pid, sig: break_sent.append(pid))
+    monkeypatch.setattr(module.os, "kill", lambda pid, sig: None)  # 信号发出但被忽略
+    alive = {"flag": True}
+    monkeypatch.setattr(module, "_proc_alive", lambda pid: alive["flag"])
     tree_calls = []
-    monkeypatch.setattr(module, "_kill_tree", lambda pid: tree_calls.append(pid))
+
+    def fake_kill_tree(pid):
+        tree_calls.append(pid)
+        alive["flag"] = False
+        return True
+
+    monkeypatch.setattr(module, "_kill_tree", fake_kill_tree)
     args = module.build_parser().parse_args(["stop"])
     assert module.cmd_stop(args) == 0
-    assert break_sent == [4242]
     assert tree_calls == [4242]
+    assert "stopped (forced)" in capsys.readouterr().out
     assert not (isolated / "qed-tracker.pid").exists()
 
 
@@ -280,9 +290,9 @@ def test_stop_systemerror_from_kill_falls_back_to_force(module, isolated, monkey
         alive_state["n"] += 1
         return alive_state["n"] == 1  # os.kill 前存活，之后视为已退出
 
-    monkeypatch.setattr(module, "_pid_is_alive", fake_alive)
+    monkeypatch.setattr(module, "_proc_alive", fake_alive)
     tree_calls = []
-    monkeypatch.setattr(module, "_kill_tree", lambda pid: tree_calls.append(pid))
+    monkeypatch.setattr(module, "_kill_tree", lambda pid: tree_calls.append(pid) or True)
     args = module.build_parser().parse_args(["stop"])
     assert module.cmd_stop(args) == 0
     assert tree_calls == [4242]
@@ -358,3 +368,79 @@ def test_pid_is_alive_tolerates_non_utf8_stdout(module, monkeypatch):
 
     monkeypatch.setattr(module.subprocess, "run", fake_run_ok)
     assert module._pid_is_alive(9999) is True
+
+
+# --- 停止可靠性（2026-09-04 假 stopped 根因修复，与根仓库脚本同构） ---
+
+
+def test_proc_alive_real_process_liveness(module):
+    """_proc_alive 真实判定：当前进程 True；已退出子进程 False；pid<=0 False。"""
+    import os
+    import subprocess
+
+    assert module._proc_alive(os.getpid()) is True, "当前进程应判定存活"
+    victim = subprocess.Popen([sys.executable, "-c", "pass"])
+    victim.wait()
+    assert module._proc_alive(victim.pid) is False, "已退出进程应判定死亡"
+    assert module._proc_alive(0) is False and module._proc_alive(-1) is False
+
+
+def test_kill_tree_visible_failure_and_success(module, monkeypatch):
+    """_kill_tree 返回 bool：成功 True；taskkill 失败/异常打印诊断返回 False（不静默吞错）。"""
+    captured: dict = {}
+
+    def fake_run_ok(cmd, **kwargs):
+        captured.update(cmd=cmd, **kwargs)
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run_ok)
+    assert module._kill_tree(123) is True
+    assert captured["cmd"] == ["taskkill", "/PID", "123", "/T", "/F"], "必须 /T /F 强杀整树"
+
+    monkeypatch.setattr(
+        module.subprocess, "run",
+        lambda cmd, **kw: type("R", (), {"returncode": 128, "stdout": "错误: 拒绝访问。", "stderr": ""})(),
+    )
+    assert module._kill_tree(123) is False
+
+    def fake_run_boom(cmd, **kwargs):
+        raise module.subprocess.SubprocessError("taskkill vanished")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run_boom)
+    assert module._kill_tree(123) is False, "taskkill 异常不得抛出、必须返回 False"
+
+
+def test_cmd_stop_never_fakes_success(module, isolated, monkeypatch, capsys):
+    """缺陷回归：优雅+强杀两腿都失效时，stop 必须退出码 1 报错，绝不打印假 stopped。"""
+    (isolated / "qed-tracker.pid").write_text("4242", encoding="utf-8")
+    monkeypatch.setattr(module, "_proc_alive", lambda pid: True)  # 模拟目标始终存活
+    monkeypatch.setattr(module, "_kill_tree", lambda pid: False)  # 模拟强杀失效
+    monkeypatch.setattr(module, "STOP_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr(module.time, "sleep", lambda s: None)
+    monkeypatch.setattr(module.os, "kill", lambda pid, sig: None)
+    args = module.build_parser().parse_args(["stop"])
+    assert module.cmd_stop(args) == 1
+    out = capsys.readouterr().out
+    assert "stop failed" in out, "两腿失效必须显式报错"
+    assert "stopped" not in out.replace("stop failed", ""), "绝不打印假 stopped"
+    assert (isolated / "qed-tracker.pid").exists(), "失败时不清理 PID 文件（保留现场供手动恢复）"
+
+
+def test_cmd_stop_forced_when_graceful_signal_ignored(module, isolated, monkeypatch, capsys):
+    """CTRL_BREAK 空放场景：宽限后 taskkill 强杀生效 → stopped (forced) + 清理 PID 文件。"""
+    (isolated / "qed-tracker.pid").write_text("4242", encoding="utf-8")
+    monkeypatch.setattr(module, "STOP_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr(module.time, "sleep", lambda s: None)
+    monkeypatch.setattr(module.os, "kill", lambda pid, sig: None)  # 信号发出但被忽略
+    alive = {"flag": True}
+
+    def fake_kill_tree(pid):
+        alive["flag"] = False
+        return True
+
+    monkeypatch.setattr(module, "_proc_alive", lambda pid: alive["flag"])
+    monkeypatch.setattr(module, "_kill_tree", fake_kill_tree)
+    args = module.build_parser().parse_args(["stop"])
+    assert module.cmd_stop(args) == 0
+    assert "stopped (forced)" in capsys.readouterr().out
+    assert not (isolated / "qed-tracker.pid").exists()

@@ -17,20 +17,60 @@ DOMAIN_PRIORS: dict[str, dict[str, str]] = {
             "宁缺勿滥，必须是历经教学检验的经典（如 Rudin、Zorich 级别），不选讲义式或应试类图书"
         ),
         "tracks_hint": (
-            "经典学习路线为 分析、代数、概率统计 三条主线；"
-            "另有跨主线分支课程（点集拓扑、数值分析/科学计算、凸优化、图论、组合数学等）可归入相应主线或单列"
+            "经典学习方向为三条主干（kind=main）：分析学、代数学、概率与统计；"
+            "课程按知识归属归入相应主干方向。几何与拓扑为分支方向（kind=branch），细分/拓展方向"
         ),
         "naming_convention": (
             "以国内数学系命名为准：数学分析（微积分为其工科普称/别名）、"
-            "高等代数（线性代数为其别名）、概率论与数理统计"
+            "高等代数（线性代数为其别名）、概率论与数理统计；"
+            "「数学」「数学（高等数学）」均为本领域的合法称呼，规范化名为「高等数学」，"
+            "带括号的学科限定名（如「数学（高等数学）」）是合法的领域名称"
         ),
         "anchor_courses": "数学分析、高等代数、概率论与数理统计为三门基石课，必须入选",
-        "level_default": "大学数学系本科至硕士阶段",
+        "level_default": "本科",
         "capstone_hint": "硕士顶峰以研究生资格考试（QE）冲刺为目标组织核心课程",
     },
+    "计算机科学与技术": {
+        "textbook_preference": (
+            "美版经典教材内容更详细系统；优先选择已有中文翻译版的美版经典教材；"
+            "宁缺勿滥，必须是历经教学检验的经典（如 K&R、CLRS 级别），不选讲义式或应试类图书"
+        ),
+        "tracks_hint": (
+            "经典学习方向为三条主干（kind=main）：程序设计与算法、计算机系统、人工智能与机器学习；"
+            "课程按知识归属归入相应主干方向。AI 时代语境：基础打牢、前沿（大模型/深度学习）不断代"
+        ),
+        "naming_convention": (
+            "以国内高校计算机本科课程命名为准：程序设计基础、数据结构与算法、计算机组成与体系结构、"
+            "操作系统、计算机网络、数据库系统、机器学习基础（深度学习为其进阶别名）；"
+            "规范化名为「计算机科学」"
+        ),
+        "anchor_courses": "程序设计基础、数据结构与算法为第一门基石课，必须入选",
+        "level_default": "本科",
+        "capstone_hint": "前沿以「大语言模型/生成式 AI」方向为顶峰组织课程",
+    },
+}
+
+PRIOR_KEYS_BY_STEP: dict[str, tuple[str, ...]] = {
+    # 探索管线各步注入的先验键集（分步裁剪，2026-08-26 用户裁决；2026-09-03 v8 起领域管线
+    # 仅 domain/courses 两步，原 path 步并入 courses，path 键集退役）：
+    # domain 步只喂命名/主线/基石/层级四键；courses 步全量；
+    # tutorials（课程教材探索，2026-08-26 单 prompt 重设计）仅教材偏好。
+    "domain": ("naming_convention", "tracks_hint", "anchor_courses", "level_default"),
+    "courses": (
+        "naming_convention", "tracks_hint", "anchor_courses", "level_default",
+        "textbook_preference", "capstone_hint",
+    ),
+    "tutorials": ("textbook_preference",),
 }
 
 
 def get_prior(domain_name: str) -> dict[str, str]:
     """按域名精确取先验知识（去首尾空白）；未命中返回空 dict。"""
     return dict(DOMAIN_PRIORS.get((domain_name or "").strip(), {}))
+
+
+def get_prior_for_step(domain_name: str, step: str) -> dict[str, str]:
+    """按步裁剪先验知识：只返回 PRIOR_KEYS_BY_STEP[step] 中声明的键；未命中领域返回空 dict。"""
+    allowed = PRIOR_KEYS_BY_STEP.get(step, ())
+    prior = DOMAIN_PRIORS.get((domain_name or "").strip(), {})
+    return {key: prior[key] for key in allowed if key in prior}

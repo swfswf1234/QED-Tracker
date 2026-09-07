@@ -85,7 +85,7 @@ def test_axiom_page_range_requires_parse(tmp_path, capsys):
 def test_serve_runs_uvicorn_with_created_app(monkeypatch, tmp_path):
     captured = {}
     monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: None)
-    monkeypatch.setattr("qed_tracker.cli.upgrade_database", lambda settings: None)
+    monkeypatch.setattr("qed_tracker.cli.ensure_schema", lambda engine: None)
     monkeypatch.setattr("qed_tracker.cli._configure_serve_logging", lambda log_dir: None)
     fake_app = object()
     monkeypatch.setattr("qed_tracker.api.main.create_app", lambda settings, **kwargs: fake_app)
@@ -97,11 +97,11 @@ def test_serve_runs_uvicorn_with_created_app(monkeypatch, tmp_path):
 
 
 def test_serve_continues_when_database_migration_fails(monkeypatch, tmp_path, capsys):
-    def boom(settings):
+    def boom(engine):
         raise RuntimeError("MySQL 不可用")
 
     monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: None)
-    monkeypatch.setattr("qed_tracker.cli.upgrade_database", boom)
+    monkeypatch.setattr("qed_tracker.cli.ensure_schema", boom)
     monkeypatch.setattr("qed_tracker.cli._configure_serve_logging", lambda log_dir: None)
     monkeypatch.setattr("qed_tracker.api.main.create_app", lambda settings, **kwargs: object())
     monkeypatch.setattr("qed_tracker.cli.uvicorn.run", lambda app, **kwargs: None)
@@ -110,18 +110,17 @@ def test_serve_continues_when_database_migration_fails(monkeypatch, tmp_path, ca
 
 
 def test_db_backed_commands_inject_root_env(monkeypatch, tmp_path):
-    """mainline/migrate 依赖 qed 库，与 serve 一样必须注入根 .env（QED-031 任务 7 疏漏）。
+    """mainline 依赖 qed 库，与 serve 一样必须注入根 .env（QED-031 任务 7 疏漏）。
 
     QED-037 后 config.py 也自动读 .env，故 chdir 到 tmp 隔离本机真实 .env，
-    断言聚焦 cli._load_root_env 的调用点（migrate + mainline 注入；config 不注入）。
+    断言聚焦 cli._load_root_env 的调用点（mainline 注入；config 不注入）。
     """
     monkeypatch.chdir(tmp_path)
     calls = []
     monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: calls.append(start) or None)
-    assert main(["--data-root", str(tmp_path), "migrate"]) == 2  # 无凭据仍门禁，但已尝试注入
     assert main(["--data-root", str(tmp_path), "mainline", "list", "--course", "01_math_analysis"]) == 2
     assert main(["--data-root", str(tmp_path), "config", "show"]) == 0
-    assert len(calls) == 2  # migrate + mainline 注入；config 不注入
+    assert len(calls) == 1  # mainline 注入；config 不注入
 
 
 def test_configure_serve_logging_writes_to_logs_dir(tmp_path):
@@ -154,19 +153,25 @@ def test_serve_loads_root_env_into_environment(monkeypatch, tmp_path):
     from qed_tracker import cli as cli_module
 
     monkeypatch.delenv("QED_DB_PASSWORD", raising=False)
-    (tmp_path / ".env").write_text("QED_DB_PASSWORD=secret123\nQWEN_API_KEY=sk-env\n", encoding="utf-8")
+    (tmp_path / ".env").write_text(
+        "QED_DB_PASSWORD=secret123\nQWEN_API_KEY=sk-env\nQED_DB_NAME=qed_test        # qed\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("QWEN_API_KEY", "explicit")
     try:
         assert cli_module._load_root_env(tmp_path) == tmp_path / ".env"
         assert os_module.environ["QED_DB_PASSWORD"] == "secret123"
+        # 内联注释剥离：库名不带 ` # qed`（QED-053/ADR 0006 排障）
+        assert os_module.environ["QED_DB_NAME"] == "qed_test"
     finally:
-        os_module.environ.pop("QED_DB_PASSWORD", None)  # 清理注入，避免污染其他测试
+        os_module.environ.pop("QED_DB_PASSWORD", None)
+        os_module.environ.pop("QED_DB_NAME", None)
     assert os_module.environ["QWEN_API_KEY"] == "explicit"  # 已有值不被覆盖
 
     # main(serve) 以 cwd 为查找起点调用 _load_root_env
     seen = []
     monkeypatch.setattr("qed_tracker.cli._load_root_env", lambda start: seen.append(start) or None)
-    monkeypatch.setattr("qed_tracker.cli.upgrade_database", lambda settings: None)
+    monkeypatch.setattr("qed_tracker.cli.ensure_schema", lambda engine: None)
     monkeypatch.setattr("qed_tracker.cli._configure_serve_logging", lambda log_dir: None)
     monkeypatch.setattr("qed_tracker.api.main.create_app", lambda settings, **kwargs: object())
     monkeypatch.setattr("qed_tracker.cli.uvicorn.run", lambda app, **kwargs: None)
@@ -183,4 +188,7 @@ def test_production_package_has_no_removed_runtime_dependencies():
     assert not list((root / "app").rglob("*.py"))
     # scripts/ 自 QED-032（2026-08-17）起为正式生命周期脚本目录；
     # 只允许本仓库声明的脚本，新增脚本需同步本守卫（防旧布局无声明残留）。
-    assert set((root / "scripts").rglob("*.py")) == {root / "scripts" / "qed_tracker_service.py"}
+    # apply_table_comments.py 已随 v0.1 数据库重构退役（ADR 0006：注释由 ORM comment= 建表即带）。
+    assert set((root / "scripts").rglob("*.py")) == {
+        root / "scripts" / "qed_tracker_service.py",
+    }

@@ -51,11 +51,18 @@ qed-tracker courses list
 qed-tracker courses show 01_math_analysis
 qed-tracker mainline new --course 01_math_analysis --title "数学分析原理" --author Rudin
 qed-tracker mainline review <knowledge_id>
+# 教程级取书：经 8901 五阶段链（检索→确认→下载→机器验收→登记 owned）
 qed-tracker mainline download <knowledge_id>
-# 验收通过 → 复制移交根仓库 dataset/qed-tracker/
-qed-tracker mainline approve <knowledge_id>
-# 一次性存量迁移（math.json + 旧三表 → 五表；幂等可重放，--drop-legacy 才删旧表）
-qed-tracker migrate
+# 只读复核（重算 sha/页数比对）
+qed-tracker mainline verify <knowledge_id>
+# 渠道有效性汇总
+qed-tracker mainline channels
+
+# 手动知识导入（标准答案 → 系统；需要 8901 服务在线）
+qed-tracker domains import docs/knowledge/math-advanced.json
+qed-tracker knowledge import docs/knowledge/math-advanced/01_math_analysis.json
+# 手动下载导入（外部 PDF → 校验 → 拷入数据根 raw/ → mark_owned 登记 owned）
+qed-tracker books import <book_id> "C:/downloads/textbook.pdf" --target "raw/math-advanced/01_math_analysis/斯图尔特微积分.pdf"
 
 # 默认只上传；显式 --parse 才创建 Axiom 解析任务
 qed-tracker axiom push sha256:<digest>
@@ -74,7 +81,6 @@ qed-tracker axiom push sha256:<digest> --parse --page-start 1 --page-end 20
 │   └── papers/<year>/                       # 论文
 ├── meta/
 │   ├── resources/<sha256>.json              # 单资源事实源
-│   ├── main-line/<course_id>/<entry_id>.json # 主链路教材条目（五要素，独立于资源清单）
 │   ├── selections/<selection-id>.json       # 论文选择报告
 │   ├── transfers/axiom/<sha256>.json        # Axiom 传输记录
 │   └── tasks/<task-id>.json                 # 后台任务状态
@@ -82,7 +88,9 @@ qed-tracker axiom push sha256:<digest> --parse --page-start 1 --page-end 20
 ```
 
 默认数据根为 `dataset/qed-tracker/`。`inventory scan` 只登记数据根目录内的 PDF，不移动或删除
-原文件。下载先写入 `.part`，通过 PDF 结构校验后才原子落盘并登记（随后双写 MySQL 查询索引）。
+原文件。自动取书先写入 `.part`，通过机器验收（PDF 结构/页数/大小硬门槛）后才原子落盘 `raw/`
+并经 `mark_owned` 登记（随后双写 MySQL 查询索引）；旧 `meta/main-line/` JSON 条目已退役
+（教程/书行落 `qt_knowledge`/`qt_books`）。
 
 内置教材来源为 Internet Archive、Open Library、Google Books 与 libgen_li（libgen_li 仅发现与
 提供人工下载方案，不自动写文件）；不依赖旧配置。
@@ -97,6 +105,6 @@ QED-Tracker 只负责取得并登记原始 PDF。Axiom-Flow 负责不可变导�
 
 - [文档索引](docs/index.md)
 - [系统架构](docs/architecture/system-overview.md)
-- [日常操作](docs/guides/operations.md)
+- [操作指南](docs/guides/operations.md)
 - [开发指南](docs/guides/development.md)
 - [后续规划](docs/trackers/roadmap.md)

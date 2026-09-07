@@ -2,8 +2,6 @@
 
 最后更新：2026-08-12
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** 实现主链路第一版——CLI 跑通 00 概率论与数理统计、01 数学分析、02 高等代数三门基础课的「课程梳理 → 教材条目 → LLM 预填评价 → 人工评审 → 下载 → 验收 → 移交根仓库」闭环，并修复乱码链路。
 
 **Architecture:** 主链路是与 evaluate 平行的独立体系：`courses/`（包内课程体系 JSON）+ `main_line/`（教材条目五要素存储、LLM 预填、渠道记录、移交服务）+ CLI `courses`/`mainline` 命令组。下载复用现有通用下载器与登记链路；验收通过后复制 + 登记同步移交根仓库 `dataset/qed-tracker/`。设计事实源：`docs/design/main-line-curriculum.md`。

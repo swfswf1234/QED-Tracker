@@ -46,6 +46,115 @@ def test_google_books_exposes_only_real_pdf_download_links():
     assert results[1].availability == Availability.METADATA_ONLY
 
 
+# ---- QED-050 渠道 enrich：介绍字段随既有响应带回（零新增 HTTP） ----
+
+def test_internet_archive_search_enriches_description_and_publisher():
+    captured = {}
+
+    def handler(request):
+        if request.url.path.startswith("/advancedsearch"):
+            captured["fl"] = httpx.URL(str(request.url)).params.get_list("fl[]")
+            return httpx.Response(200, json={"response": {"docs": [
+                {"identifier": "book-1", "title": "Book", "description": ["Intro A", "Intro B"], "publisher": "P Press"},
+            ]}}, request=request)
+        return httpx.Response(200, json={"files": [{"name": "book.pdf", "size": "10"}]}, request=request)
+
+    provider = InternetArchiveProvider()
+    _replace_client(provider, handler)
+    try:
+        candidate = provider.search("Book", 5)[0]
+    finally:
+        provider.close()
+    assert {"identifier", "title", "creator", "year", "language", "description", "publisher"} <= set(captured["fl"])
+    assert candidate.description == "Intro A Intro B"  # solr 多值字段归一
+    assert candidate.publisher == "P Press"
+
+
+def test_internet_archive_resolve_backfills_metadata_description():
+    """search fl[] 未带回介绍时，resolve 顺带读 metadata 的 description/publisher/date（不覆盖已有值）。"""
+
+    def handler(request):
+        if request.url.path.startswith("/advancedsearch"):
+            return httpx.Response(200, json={"response": {"docs": [{"identifier": "book-1", "title": "Book"}]}}, request=request)
+        return httpx.Response(200, json={
+            "metadata": {"description": "Long intro", "publisher": "P Press", "date": "2006-01-01"},
+            "files": [{"name": "book.pdf", "size": "10"}],
+        }, request=request)
+
+    provider = InternetArchiveProvider()
+    _replace_client(provider, handler)
+    try:
+        resolved = provider.resolve(provider.search("Book", 5)[0])
+    finally:
+        provider.close()
+    assert resolved.description == "Long intro"
+    assert resolved.publisher == "P Press"
+    assert resolved.year == "2006"
+
+
+def test_internet_archive_resolve_keeps_search_description():
+    """search 已带回的介绍不被 metadata 覆盖。"""
+
+    def handler(request):
+        if request.url.path.startswith("/advancedsearch"):
+            return httpx.Response(200, json={"response": {"docs": [
+                {"identifier": "book-1", "title": "Book", "description": "From search"},
+            ]}}, request=request)
+        return httpx.Response(200, json={
+            "metadata": {"description": "From metadata"},
+            "files": [{"name": "book.pdf", "size": "10"}],
+        }, request=request)
+
+    provider = InternetArchiveProvider()
+    _replace_client(provider, handler)
+    try:
+        resolved = provider.resolve(provider.search("Book", 5)[0])
+    finally:
+        provider.close()
+    assert resolved.description == "From search"
+
+
+def test_open_library_search_enriches_intro_fields():
+    captured = {}
+
+    def handler(request):
+        captured["fields"] = httpx.URL(str(request.url)).params["fields"]
+        return httpx.Response(200, json={"docs": [{
+            "title": "Book", "author_name": ["Author"], "ia": ["arch-1"],
+            "publisher": ["Wiley"], "subtitle": "Vol.1",
+            "first_sentence": {"type": "/type/text", "value": "It begins."},
+            "number_of_pages_median": 1780,
+        }]}, request=request)
+
+    provider = OpenLibraryProvider()
+    _replace_client(provider, handler)
+    try:
+        candidate = provider.search("Book", 5)[0]
+    finally:
+        provider.close()
+    assert "publisher" in captured["fields"] and "first_sentence" in captured["fields"] and "number_of_pages_median" in captured["fields"]
+    assert candidate.publisher == "Wiley"
+    assert candidate.description == "Vol.1；It begins."  # 副题 + 首句（dict 形状归一）
+    assert candidate.page_count == 1780
+
+
+def test_google_books_enriches_volume_info():
+    payload = {"items": [{
+        "id": "a",
+        "volumeInfo": {"title": "Book", "authors": ["A"], "description": "About this book", "publisher": "P", "pageCount": 658},
+        "accessInfo": {"pdf": {"downloadLink": "https://example.test/a.pdf"}},
+    }]}
+    provider = GoogleBooksProvider()
+    _replace_client(provider, lambda request: httpx.Response(200, json=payload, request=request))
+    try:
+        candidate = provider.search("Book", 5)[0]
+    finally:
+        provider.close()
+    assert candidate.description == "About this book"
+    assert candidate.publisher == "P"
+    assert candidate.page_count == 658
+
+
 def test_internet_archive_resolves_largest_public_pdf():
     def handler(request):
         if request.url.path.startswith("/advancedsearch"):
@@ -254,6 +363,8 @@ def test_libgen_li_search_parses_rows_metadata_only():
     assert first.year == "2006"
     assert first.size_bytes == 27 * 1024 * 1024  # 9 列模板 [6] 大小
     assert first.authors and "菲赫金哥尔茨" in first.authors[0]
+    assert first.publisher == "高等教育出版社"  # QED-050 enrich：Publisher 列回填
+    assert first.page_count == 1780  # Pages 列「1780 / 1780」取首个数字
     assert first.availability == Availability.METADATA_ONLY
     assert first.download_url == ""  # libgen.li 无 HTTP 直链
     assert "edition.php?id=138177644" in first.page_url

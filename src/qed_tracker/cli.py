@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -22,9 +24,9 @@ from qed_tracker.axiom import AxiomClient
 from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key, load_settings
 from qed_tracker.courses import Curriculum
-from qed_tracker.database import upgrade_database
+from qed_tracker.db.schema import ensure_schema
 from qed_tracker.downloader import DownloadManager
-from qed_tracker.inventory import Inventory, raw_course_dir, raw_general_dir
+from qed_tracker.inventory import Inventory, raw_general_dir
 from qed_tracker.models import Availability, Candidate, ResourceKind
 from qed_tracker.profiles import list_paper_profiles, load_paper_profile
 from qed_tracker.providers import ArxivProvider, BailianPaperAdvisor, create_book_providers
@@ -56,6 +58,20 @@ def build_parser() -> argparse.ArgumentParser:
     books_url.add_argument("--author", action="append", default=[])
     books_url.add_argument("--language", default="")
     books_url.add_argument("--kind", choices=["book", "exercise"], default="book")
+    books_import = books_commands.add_parser(
+        "import", help="手动导入本地 PDF（外部路径 → 校验 → 拷入数据根 → mark_owned 登记）"
+    )
+    books_import.add_argument("book_id", help="书籍标识（qt_books.book_id）")
+    books_import.add_argument("file_path", type=Path, help="本地 PDF 路径（可在数据根外）")
+    books_import.add_argument("--target", dest="target_path", default="",
+                              help="期望落盘相对路径（raw/<domain>/<course>/<书名>.pdf，自动补 _<sha8>）")
+    books_import.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+    books_fetch = books_commands.add_parser(
+        "fetch", help="书级自动取书（经 8901 五阶段编排：检索→确认→下载→验收→登记）"
+    )
+    books_fetch.add_argument("book_id", help="书籍标识（qt_books.book_id）")
+    books_fetch.add_argument("--timeout", type=float, default=1800.0, help="任务轮询超时秒数（默认 1800）")
+    books_fetch.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
 
     papers = commands.add_parser("papers", help="arXiv 论文")
     paper_commands = papers.add_subparsers(dest="papers_command", required=True)
@@ -126,6 +142,43 @@ def build_parser() -> argparse.ArgumentParser:
     courses_show = courses_commands.add_parser("show", help="查看单门课（含前置/关联目标）")
     courses_show.add_argument("course_id")
 
+    domains = commands.add_parser("domains", help="领域知识导入与 LLM 探索")
+    domains_commands = domains.add_subparsers(dest="domains_command", required=True)
+    domains_import = domains_commands.add_parser("import", help="导入领域标准答案 JSON（docs/knowledge/<domain>.json）")
+    domains_import.add_argument("path", type=Path, help="领域 JSON 文件路径")
+    domains_import.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+    domains_explore = domains_commands.add_parser(
+        "explore",
+        help="LLM 领域探索（经 8901 dry-run 同步执行；不写库，唯一痕迹是 qed_llm_calls 日志）",
+    )
+    domains_explore.add_argument("name", help="领域名称（如 高等数学）")
+    domains_explore.add_argument("--scope", default="", help="范围提示（缺省用内置范围说明）")
+    domains_explore.add_argument("--mode", default="direct", choices=["direct", "text", "doc"],
+                                 help="参考输入模式（direct/text/doc）")
+    domains_explore.add_argument("--ref-text", default="", help="参考文本（mode=text 必填，超长截断）")
+    domains_explore.add_argument("--ref-doc", dest="ref_doc_path", default="",
+                                 help="参考文档路径（mode=doc 必填，UTF-8 文本）")
+    domains_explore.add_argument("--confirm-name", dest="confirm_name", default="",
+                                 help="人工确认的规范领域名（跳过名称确认，贯穿后续步骤）")
+    domains_explore.add_argument("--timeout", type=float, default=600.0,
+                                 help="同步探索超时秒数（默认 600；两步管线真实耗时约 1~3 分钟）")
+    domains_explore.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+    domains_confirm = domains_commands.add_parser(
+        "confirm",
+        help="确认领域知识：读取暂存文件 → 覆盖写入数据库",
+    )
+    domains_confirm.add_argument("domain_id", help="领域 ID（如 math-advanced）")
+    domains_confirm.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+
+    knowledge = commands.add_parser("knowledge", help="课程知识手动导入")
+    knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
+    knowledge_import = knowledge_commands.add_parser(
+        "import",
+        help="导入课程标准答案 JSON（docs/knowledge/<domain>/<course>.json）→ 导入即确认+建候选册",
+    )
+    knowledge_import.add_argument("path", type=Path, help="课程 JSON 文件路径")
+    knowledge_import.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+
     mainline = commands.add_parser("mainline", help="主链路教材条目（课程梳理→下载→验收）")
     mainline_commands = mainline.add_subparsers(dest="mainline_command", required=True)
     mainline_list = mainline_commands.add_parser("list", help="列出课程教材条目")
@@ -138,29 +191,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--set-no", default="",
         help="套标记（1~4 中文套 / en 英文对照套）：有值时 name 按「教程{set_no}：书名（作者）」规范生成",
     )
-    mainline_review = mainline_commands.add_parser("review", help="人工评审定稿（版本/简介）")
+    mainline_review = mainline_commands.add_parser("review", help="人工评审定稿（draft → confirmed）")
     mainline_review.add_argument("knowledge_id")
-    mainline_review.add_argument("--intro", help="教材简介（缺省用模板占位，人工审定）")
-    mainline_review.add_argument("--version", help="教材版本号（如 第8版）")
-    mainline_review.add_argument(
-        "--title", help="教材原始书名（缺省从 name 剥离「教程{set_no}：」前缀与（作者）后缀回退）"
+    mainline_download = mainline_commands.add_parser(
+        "download", help="教程级取书（经 8901 五阶段编排：检索→确认→下载→验收→登记）"
     )
-    mainline_review.add_argument("--author", action="append", default=[], help="教材作者（可重复）")
-    mainline_download = mainline_commands.add_parser("download", help="触发渠道下载")
     mainline_download.add_argument("knowledge_id")
-    mainline_verify = mainline_commands.add_parser("verify", help="校验已下载文件")
+    mainline_download.add_argument(
+        "--include-parallel", action="store_true", help="显式纳入 parallel_ref 平行读物（默认仅教材+习题集）"
+    )
+    mainline_download.add_argument("--timeout", type=float, default=1800.0, help="任务轮询超时秒数（默认 1800）")
+    mainline_download.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+    mainline_verify = mainline_commands.add_parser("verify", help="只读复核已登记书籍（inspect_pdf 重算比对）")
     mainline_verify.add_argument("knowledge_id")
-    mainline_verify.add_argument("--book", help="指定书行 book_id（缺省取首个已下载书行）")
-    mainline_approve = mainline_commands.add_parser("approve", help="验收通过 → 移交根仓库")
-    mainline_approve.add_argument("knowledge_id")
-    mainline_approve.add_argument("--book", help="指定书行 book_id（缺省取首个未移交的 verified 书行）")
-    mainline_reject = mainline_commands.add_parser("reject", help="验收不通过（填原因）")
-    mainline_reject.add_argument("knowledge_id")
-    mainline_reject.add_argument("--reason", required=True)
+    mainline_verify.add_argument("--book", help="指定书籍 book_id（缺省复核该教程全部 owned 书籍）")
     mainline_commands.add_parser("channels", help="渠道有效性汇总")
-
-    migrate = commands.add_parser("migrate", help="一次性存量迁移（math.json + 三表 → 五表；幂等可重放）")
-    migrate.add_argument("--drop-legacy", action="store_true", help="迁移完成后删除旧表（qt_selections/qt_downloads）")
 
     serve = commands.add_parser("serve", help="启动工作台 API 服务（8901）")
     serve.add_argument("--host", default="127.0.0.1", help="监听地址")
@@ -175,7 +220,7 @@ def _settings(args) -> Settings:
 def _curriculum_repository(settings: Settings) -> KnowledgeRepository | None:
     if not settings.db_configured:
         return None
-    from qed_tracker.database import create_engine_for, session_factory
+    from qed_tracker.db.engine import create_engine_for, session_factory
     from qed_tracker.db.knowledge_repository import KnowledgeRepository
 
     engine = create_engine_for(settings)
@@ -216,6 +261,29 @@ def _book_service(settings: Settings, names: tuple[str, ...] | None = None) -> B
     return BookService(providers, ResourceService(Inventory(settings.data_root), downloader))
 
 
+def _books_import(args, settings: Settings) -> int:
+    """手动下载导入：外部 PDF → 经 8901 POST /books/{id}/import 登记（D3/D4；无离线直连）。"""
+    import httpx
+
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+    payload: dict = {"file_path": str(args.file_path)}
+    if getattr(args, "target_path", ""):
+        payload["target_path"] = args.target_path
+    try:
+        response = httpx.post(f"{base_url}/api/v1/books/{args.book_id}/import", json=payload, timeout=120.0)
+    except httpx.HTTPError as exc:
+        _print({"error": f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve"}, True) if args.json else print(
+            f"ERROR: 8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve", file=sys.stderr
+        )
+        return 6
+    if response.status_code >= 400:
+        detail = response.json().get("detail", response.text)
+        _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
+        return 2
+    _print(response.json(), args.json)
+    return 0
+
+
 def _paper_service(settings: Settings, *, with_advisor: bool = False) -> PaperService:
     provider = ArxivProvider(retries=settings.retries)
     manager = DownloadManager(
@@ -253,6 +321,10 @@ def _display_selection(report: dict) -> None:
 
 def _books(args, settings: Settings) -> int:
     inventory = Inventory(settings.data_root)
+    if args.books_command == "import":
+        return _books_import(args, settings)
+    if args.books_command == "fetch":
+        return _books_fetch(args, settings)
     if args.books_command == "fetch-url":
         manager = DownloadManager(
             proxy=settings.proxy,
@@ -571,11 +643,261 @@ def _load_curriculum(subject_or_course_id: str) -> Curriculum:
         raise ValueError(f"未知学科课程体系：{subject_or_course_id}") from None
 
 
+def _domains(args, settings: Settings) -> int:
+    """domains 子命令分发：import / explore / confirm。"""
+    if args.domains_command == "explore":
+        return _domains_explore(args, settings)
+    if args.domains_command == "confirm":
+        return _domains_confirm(args, settings)
+    return _domains_import(args, settings)
+
+
+def _domains_import(args, settings: Settings) -> int:
+    """手动领域知识导入：本地校验 → 经 8901 API 写入文件暂存 → 待确认。"""
+    import httpx
+
+    from qed_tracker.application.knowledge_import import KnowledgeImportError, validate_domain
+
+    try:
+        with open(args.path, encoding="utf-8") as stream:
+            data = json.load(stream)
+    except OSError as exc:
+        _print({"error": f"文件不可读：{args.path}（{exc}）"}, True) if args.json else print(
+            f"ERROR: 文件不可读：{args.path}（{exc}）", file=sys.stderr
+        )
+        return 2
+    except json.JSONDecodeError as exc:
+        _print({"error": f"JSON 解析失败：{exc}"}, True) if args.json else print(
+            f"ERROR: JSON 解析失败：{exc}", file=sys.stderr
+        )
+        return 2
+    try:
+        validate_domain(data)
+    except KnowledgeImportError as exc:
+        _print({"error": f"校验失败：{exc}"}, True) if args.json else print(
+            f"ERROR: 校验失败：{exc}", file=sys.stderr
+        )
+        return 2
+
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+    try:
+        response = httpx.post(
+            f"{base_url}/api/v1/domains/import",
+            json={"domain": data},
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        _print({"error": f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve"}, True) if args.json else print(
+            f"ERROR: 8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve", file=sys.stderr
+        )
+        return 6
+    if response.status_code >= 400:
+        detail = response.json().get("detail", response.text)
+        _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
+        return 2
+    result = response.json()
+    _print(result, args.json)
+    if not args.json:
+        domain_id = result.get("domain_id", "")
+        print(f"\n  下一步：确认后写入数据库")
+        print(f"  qed-tracker domains confirm {domain_id}")
+    return 0
+
+
+def _domains_explore(args, settings: Settings) -> int:
+    """LLM 领域探索：经 8901 dry-run 端点同步执行（不写库；LLM 日志落 qed_llm_calls）。
+
+    confirmation_required（名称需人工确认）时打印 name_check 并以退出码 2 结束，
+    提示用户核对后带 --confirm-name 重跑。
+    """
+    import httpx
+
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+    payload: dict = {
+        "domain_name": args.name,
+        "mode": args.mode,
+        "ref_text": args.ref_text,
+        "ref_doc_path": args.ref_doc_path,
+        "confirm_name_override": args.confirm_name,
+    }
+    if args.scope.strip():
+        payload["scope_hint"] = args.scope.strip()
+    try:
+        response = httpx.post(
+            f"{base_url}/api/v1/prompt-explores/dry-run",
+            json=payload,
+            timeout=args.timeout,
+        )
+    except httpx.HTTPError as exc:
+        _print({"error": f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve"}, True) if args.json else print(
+            f"ERROR: 8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve", file=sys.stderr
+        )
+        return 6
+    if response.status_code >= 400:
+        detail = response.json().get("detail", response.text)
+        _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
+        return 2
+    body = response.json()
+    if body.get("confirmation_required"):
+        if args.json:
+            _print(body, True)
+        else:
+            name_check = body.get("name_check", {})
+            print("领域名称需要人工确认：")
+            print(f"  原因：{name_check.get('reason', '')}")
+            suggested = name_check.get("suggested_name") or ""
+            if suggested:
+                print(f"  建议：{suggested}")
+            print(f"  核对后带 --confirm-name \"{suggested or args.name}\" 重跑。")
+        return 2
+    if args.json:
+        _print(body, True)
+    else:
+        report = body.get("report", {})
+        domain = report.get("domain", {})
+        courses = report.get("courses", [])
+        path = report.get("path", {})
+        print(f"领域：{domain.get('final_name', args.name)}（{domain.get('level', '')}）")
+        print(f"课程数：{len(courses)}")
+        for course in courses:
+            print(f"  [{course.get('stage', '')}] {course.get('name', '')}"
+                  f"（{course.get('course_id', '')}，前置：{', '.join(course.get('prerequisites', [])) or '无'}）")
+        graph = path.get("graph_td", "")
+        if graph:
+            print("学习路径（graph TD）：")
+            print(graph)
+        print("调用明细：")
+        for call in body.get("calls", []):
+            print(f"  {call.get('step')} {call.get('template_id')} {call.get('duration_ms')}ms")
+    return 0
+
+
+def _domains_confirm(args, settings: Settings) -> int:
+    """确认领域知识：经 8901 API 读取暂存文件 → 覆盖写入数据库。"""
+    import httpx
+
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+    try:
+        response = httpx.post(
+            f"{base_url}/api/v1/domains/{args.domain_id}/confirm",
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        _print({"error": f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve"}, True) if args.json else print(
+            f"ERROR: 8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve", file=sys.stderr
+        )
+        return 6
+    if response.status_code >= 400:
+        detail = response.json().get("detail", response.text)
+        _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
+        return 2
+    _print(response.json(), args.json)
+    return 0
+
+
+def _knowledge_import(args, settings: Settings) -> int:
+    """课程标准答案导入：本地校验（数据文件版契约）→ 经 8901 A2 采纳（source=manual）→ 定稿。
+
+    采纳（POST /courses/{id}/knowledge）即按 refs 幂等建 decided/parallel 书行并回填
+    book_id；仍为 draft 的套逐套 POST /knowledge/{id}/confirm 定稿，已确认套跳过，
+    重放可续。CLI 路径直达"已确认+书库就绪"。
+    """
+    import httpx
+
+    from qed_tracker.application.knowledge_import import KnowledgeImportError, validate_course
+
+    try:
+        with open(args.path, encoding="utf-8") as stream:
+            data = json.load(stream)
+    except OSError as exc:
+        _print({"error": f"文件不可读：{args.path}（{exc}）"}, True) if args.json else print(
+            f"ERROR: 文件不可读：{args.path}（{exc}）", file=sys.stderr
+        )
+        return 2
+    except json.JSONDecodeError as exc:
+        _print({"error": f"JSON 解析失败：{exc}"}, True) if args.json else print(
+            f"ERROR: JSON 解析失败：{exc}", file=sys.stderr
+        )
+        return 2
+    try:
+        validate_course(data)
+    except KnowledgeImportError as exc:
+        _print({"error": f"校验失败：{exc}"}, True) if args.json else print(
+            f"ERROR: 校验失败：{exc}", file=sys.stderr
+        )
+        return 2
+
+    course_id = data["course_id"]
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+    try:
+        response = httpx.post(
+            f"{base_url}/api/v1/courses/{course_id}/knowledge",
+            json={"tutorials": data["tutorials"], "source": "manual"},
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        _print({"error": f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve"}, True) if args.json else print(
+            f"ERROR: 8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve", file=sys.stderr
+        )
+        return 6
+    if response.status_code >= 400:
+        try:
+            detail = response.json().get("detail", response.text)
+        except ValueError:
+            detail = response.text
+        _print({"error": detail}, True) if args.json else print(f"ERROR: {detail}", file=sys.stderr)
+        return 2
+
+    def _post(url: str, payload: dict) -> tuple[int, dict]:
+        resp = httpx.post(url, json=payload, timeout=30.0)
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {"detail": resp.text}
+        return resp.status_code, body
+
+    created = response.json().get("created", [])
+    confirmed = 0
+    skipped_confirm = 0
+    books_created = 0
+    errors: list[str] = []
+    for item in created:
+        knowledge_id = str(item.get("knowledge_id", ""))
+        set_no = str(item.get("set_no", "")).strip()
+        status = str(item.get("status", ""))
+        books_created += int(item.get("books_created", 0) or 0)
+        if not knowledge_id:
+            errors.append(f"套 {set_no or '?'}：采纳结果缺 knowledge_id")
+            continue
+        if status == "draft":
+            code, body = _post(f"{base_url}/api/v1/knowledge/{knowledge_id}/confirm", {})
+            if code >= 400:
+                errors.append(f"套 {set_no} 确认失败（{code}）：{body.get('detail', body)}")
+            else:
+                confirmed += 1
+        else:
+            skipped_confirm += 1
+
+    summary = {
+        "course_id": course_id,
+        "sets": len(created),
+        "confirmed": confirmed,
+        "confirm_skipped": skipped_confirm,
+        "books_created": books_created,
+        "errors": errors,
+    }
+    _print(summary, args.json)
+    if not args.json and errors:
+        for message in errors:
+            print(f"WARN: {message}", file=sys.stderr)
+    return 2 if errors else 0
+
+
 def _llm_call_engine(settings: Settings):
     """local 模式调用记录写 qed_llm_calls 用（QED-037）：DB 未配置时返回 None 不落库。"""
     if not settings.db_configured:
         return None
-    from qed_tracker.database import create_engine_for
+    from qed_tracker.db.engine import create_engine_for
 
     return create_engine_for(settings)
 
@@ -597,47 +919,20 @@ def _mainline_advisor(*, api_key: str, model: str, base_url: str, timeout: float
     )
 
 
-def _migrate(args, settings: Settings) -> int:
-    if not settings.db_configured:
-        _print({"error": "数据库未配置：迁移需要 qed 库连接"}, True) if args.json else print(
-            "ERROR: 数据库未配置：迁移需要 qed 库连接", file=sys.stderr
-        )
-        return 2
-    from qed_tracker.application.migrate_knowledge import migrate_curriculum, migrate_legacy_data
-    from qed_tracker.database import create_engine_for, session_factory
-    from qed_tracker.db.knowledge_repository import InvalidTransition
-
-    engine = create_engine_for(settings)
-    factory = session_factory(engine)
-    try:
-        migrate_curriculum(factory)
-        stats = migrate_legacy_data(factory, drop_legacy=args.drop_legacy)
-    except (KeyError, InvalidTransition, ValueError) as exc:
-        _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
-    except Exception as exc:  # noqa: BLE001 - DB 故障兜底
-        _print({"error": f"数据库错误：{exc}"}, True) if args.json else print(f"ERROR: 数据库错误：{exc}", file=sys.stderr)
-        return 2
-    finally:
-        engine.dispose()
-    _print({"seeded": True, **stats}, True) if args.json else print(
-        f"迁移完成：knowledge={stats['knowledge']} books={stats['books']} sources={stats['sources']}"
-    )
-    if not args.drop_legacy:
-        print("提示：确认无误后可再次运行 `qed-tracker migrate --drop-legacy` 删除旧表", file=sys.stderr)
-    return 0
-
-
 def _mainline(args, settings: Settings) -> int:
     from qed_tracker.courses import set_repository
     from qed_tracker.db.knowledge_repository import InvalidTransition, KnowledgeRepository
+
+    if args.mainline_command == "download":
+        # 教程级取书经 8901 后台任务执行五阶段编排（D4：无离线直连），CLI 侧无需直连 DB。
+        return _mainline_download(args, settings)
 
     if not settings.db_configured:
         _print({"error": "数据库未配置：主链路需 qt_knowledge/qt_books 表"}, True) if args.json else print(
             "ERROR: 数据库未配置：主链路需 qt_knowledge/qt_books 表", file=sys.stderr
         )
         return 2
-    from qed_tracker.database import create_engine_for, session_factory
+    from qed_tracker.db.engine import create_engine_for, session_factory
 
     engine = create_engine_for(settings)
     factory = session_factory(engine)
@@ -655,15 +950,100 @@ def _mainline(args, settings: Settings) -> int:
         engine.dispose()
 
 
-def _raw_title_from_name(name: str) -> str:
-    """从规范展示名回退原始书名（QED-036）：「教程1：数学分析（Rudin）」→「数学分析」。"""
-    rest = name
-    prefix = rest.split("：", 1)
-    if len(prefix) == 2 and prefix[0].startswith("教程"):
-        rest = prefix[1]
-    if rest.endswith("）") and "（" in rest:
-        rest = rest[: rest.rfind("（")]
-    return rest.strip()
+def _fetch_task_via_api(args, settings: Settings, submit_path: str, payload: dict) -> tuple[int, dict]:
+    """取书任务提交与等待（书级/教程级共用）：POST submit_path → 轮询 GET /tasks/{id} 至终态。
+
+    五阶段编排在服务端执行（D4：无离线直连）。返回 (exit_code, 任务 result)：
+    0 = 任务 succeeded；2/3/6 = 请求错误 / 任务失败或轮询超时 / 服务不可达（错误已打印）。
+    """
+    import httpx
+
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+
+    def _fail(code: int, message: str) -> tuple[int, dict]:
+        _print({"error": message}, True) if args.json else print(f"ERROR: {message}", file=sys.stderr)
+        return code, {}
+
+    try:
+        response = httpx.post(f"{base_url}{submit_path}", json=payload, timeout=30.0)
+    except httpx.HTTPError as exc:
+        return _fail(6, f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve")
+    if response.status_code >= 400:
+        detail = response.json().get("detail", response.text)
+        return _fail(2, str(detail))
+    task_id = str(response.json().get("task_id", ""))
+    if not task_id:
+        return _fail(2, f"取书任务提交异常：响应缺 task_id（{response.text[:200]}）")
+
+    deadline = time.monotonic() + float(args.timeout)
+    body: dict = {}
+    while True:
+        if time.monotonic() > deadline:
+            return _fail(3, f"取书任务轮询超时（{args.timeout}s）：task_id={task_id}，可稍后查询任务结果")
+        try:
+            poll = httpx.get(f"{base_url}/api/v1/tasks/{task_id}", timeout=30.0)
+        except httpx.HTTPError as exc:
+            return _fail(6, f"8901 服务不可达（{base_url}）：{exc}")
+        if poll.status_code >= 400:
+            detail = poll.json().get("detail", poll.text)
+            return _fail(2, str(detail))
+        body = poll.json()
+        if body.get("status") in ("succeeded", "failed"):
+            break
+        time.sleep(2.0)
+
+    if body.get("status") == "failed":
+        return _fail(3, f"取书任务失败：{body.get('error', '')}（task_id={task_id}）")
+    return 0, body.get("result") or {}
+
+
+def _books_fetch(args, settings: Settings) -> int:
+    """书级取书入口：经 8901 POST /books/{id}/fetch 提交五阶段后台任务并轮询至终态。
+
+    退出码：0 取得或已 owned / 3 任务失败 / 2 请求错误 / 6 服务不可达。
+    """
+    code, result = _fetch_task_via_api(args, settings, f"/api/v1/books/{args.book_id}/fetch", {})
+    if code != 0:
+        return code
+    if args.json:
+        _print(result, True)
+        return 0 if result.get("ok") else 3
+    if result.get("skipped"):
+        print(f"[跳过] {args.book_id}（{result.get('reason', '已 owned')}）")
+    else:
+        print(f"取书完成：{args.book_id} → {result.get('file_path', '')}")
+    return 0 if result.get("ok") else 3
+
+
+def _mainline_download(args, settings: Settings) -> int:
+    """教程级取书入口：经 8901 POST /knowledge/{id}/fetch 提交后台任务并轮询至终态。
+
+    五阶段编排（检索→确认→下载→验收→登记）在服务端执行（D4：无离线直连）；
+    CLI 只负责提交与等待。退出码：0 全部成功 / 2 请求错误 / 3 任务失败或部分失败
+    或轮询超时 / 6 服务不可达。
+    """
+    code, result = _fetch_task_via_api(
+        args, settings,
+        f"/api/v1/knowledge/{args.knowledge_id}/fetch",
+        {"include_parallel": bool(getattr(args, "include_parallel", False))},
+    )
+    if code != 0:
+        return code
+    if args.json:
+        _print(result, True)
+        return 0 if result.get("ok") else 3
+    processed = result.get("processed", [])
+    failed = [item for item in processed if not item.get("ok")]
+    print(f"取书完成：{result.get('knowledge_id', args.knowledge_id)}"
+          f"（成功 {len(processed) - len(failed)}，失败 {len(failed)}）")
+    for item in processed:
+        if not item.get("ok"):
+            print(f"  [失败] {item.get('book_id')}：{item.get('error', '')}")
+        elif item.get("skipped"):
+            print(f"  [跳过] {item.get('book_id')}（{item.get('reason', '已 owned')}）")
+        else:
+            print(f"  [完成] {item.get('book_id')} → {item.get('file_path', '')}")
+    return 0 if result.get("ok") else 3
 
 
 def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
@@ -692,21 +1072,23 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
         else:
             for item in items:
                 books = repo.list_books(item.knowledge_id)
-                summary = "、".join(f"{book.display_title}[{book.status}]" for book in books) or "-"
+                summary = "、".join(
+                    f"{book.title}[{book.status}/{book.holding}]" for book in books
+                ) or "-"
                 print(f"{item.knowledge_id} [{item.status}] {item.name}（{item.kind} 套{item.set_no}）")
                 print(f"    书籍: {summary}")
         return 0
 
     if args.mainline_command == "channels":
+        # 域级书库全量遍历：每书聚合一次（书库化后一书可被多套 refs 引用，按教程走会重复计数）
         stats: dict[str, dict[str, int]] = {}
-        for item in repo.list_knowledge():
-            for book in repo.list_books(item.knowledge_id):
-                for source in repo.list_sources(book.book_id):
-                    bucket = stats.setdefault(source.channel, {"ok": 0, "fail": 0})
-                    if source.ok:
-                        bucket["ok"] += 1
-                    else:
-                        bucket["fail"] += 1
+        for book in repo.list_books():
+            for source in repo.list_sources(book.book_id):
+                bucket = stats.setdefault(source.channel, {"ok": 0, "fail": 0})
+                if source.ok:
+                    bucket["ok"] += 1
+                else:
+                    bucket["fail"] += 1
         _print_channel_summary(stats, args.json)
         return 0
 
@@ -729,7 +1111,7 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
         # QED-036：有 set_no 时 name 按「教程{set_no}：书名（作者）」规范生成；否则保持原始 title
         name = tutorial_name(set_no, args.title, args.author) if set_no else args.title
         knowledge = repo.create_knowledge(
-            domain_id=curriculum.subject, course_id=args.course, kind="tutorial", set_no=set_no, name=name
+            course_id=args.course, kind="tutorial", set_no=set_no, name=name
         )
         advisor = _mainline_advisor(
             api_key=llm_api_key(),
@@ -764,261 +1146,85 @@ def _mainline_impl(args, repo: KnowledgeRepository, settings: Settings) -> int:
         return 0
 
     if args.mainline_command == "review":
+        # 定稿 = 状态迁移 draft → confirmed（refs/简介已在采纳时落行，tutorials@v2 契约）
         knowledge = repo.get_knowledge(args.knowledge_id)
         if knowledge is None:
-            _print({"error": f"知识行不存在：{args.knowledge_id}"}, True) if args.json else print(
-                f"ERROR: 知识行不存在：{args.knowledge_id}", file=sys.stderr
+            _print({"error": f"教程不存在：{args.knowledge_id}"}, True) if args.json else print(
+                f"ERROR: 教程不存在：{args.knowledge_id}", file=sys.stderr
             )
             return 2
-        intro = args.intro or f"{knowledge.name}：教材与习题集配套资源（LLM 预填 + 人工审）。"
-        # QED-036：决定引用 {title, version, authors}；title 优先取 --title，缺省从规范名回退
-        title = (args.title or "").strip() or _raw_title_from_name(knowledge.name)
         try:
-            updated = repo.confirm_knowledge(
-                knowledge.knowledge_id,
-                textbook_ref={
-                    "title": title,
-                    "version": args.version or "",
-                    "authors": list(args.author),
-                },
-                textbook_intro=intro,
-            )
+            updated = repo.confirm_knowledge(knowledge.knowledge_id)
         except InvalidTransition as exc:
             _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
             return 2
         _print(updated.to_dict(), True) if args.json else print(f"已定稿：{updated.knowledge_id} → {updated.status}")
         return 0
 
-    if args.mainline_command == "reject":
-        try:
-            updated = repo.reject_knowledge(args.knowledge_id, reason=args.reason, by="cli")
-        except (KeyError, InvalidTransition, ValueError) as exc:
-            _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
-            return 2
-        _print(updated.to_dict(), True) if args.json else print(f"已否定：{updated.knowledge_id}（{args.reason}）")
-        return 0
-
-    if args.mainline_command == "download":
-        knowledge = repo.get_knowledge(args.knowledge_id)
-        if knowledge is None:
-            _print({"error": f"知识行不存在：{args.knowledge_id}"}, True) if args.json else print(
-                f"ERROR: 知识行不存在：{args.knowledge_id}", file=sys.stderr
-            )
-            return 2
-        if knowledge.status != "confirmed":
-            _print({"error": f"只有 confirmed 知识行可下载（当前 {knowledge.status}）"}, True) if args.json else print(
-                f"ERROR: 只有 confirmed 知识行可下载（当前 {knowledge.status}）", file=sys.stderr
-            )
-            return 2
-        books = repo.list_books(knowledge.knowledge_id)
-        book = next((b for b in books if b.status in ("candidate", "decided", "failed")), None)
-        if book is None:
-            done = next((b for b in books if b.status in ("downloaded", "verified")), None)
-            if done is not None:
-                action = "approve（或 reject 重选）" if done.status == "verified" else "verify（或 reject 重选）"
-                _print({"book_id": done.book_id, "status": done.status, "message": "已下载"}, True) if args.json else print(
-                    f"已下载，请执行 {action}"
-                )
-                return 0
-            book = repo.create_book(
-                knowledge.knowledge_id, kind="textbook", roles=["textbook"], title=knowledge.name, authors=[]
-            )
-        try:
-            if book.status == "candidate":
-                book = repo.decide_book(book.book_id)
-                book = repo.start_download(book.book_id)
-            elif book.status == "decided":
-                book = repo.start_download(book.book_id)
-            elif book.status == "failed":
-                book = repo.retry_download(book.book_id)
-            service = _book_service(settings)
-            try:
-                query = f"{knowledge.name} {knowledge.kind}".strip()
-                ranked = service.search(query, limit=8)
-                candidates = [item.candidate for item in ranked]
-                for name, error in service.failures:
-                    print(f"WARN {name}: {error}", file=sys.stderr)
-                downloadable = [c for c in candidates if c.availability == Availability.DOWNLOADABLE]
-                if not downloadable:
-                    for c in candidates:
-                        if c.availability == Availability.METADATA_ONLY and c.links:
-                            print(f"人工下载指引 [{c.provider}]: {c.title}")
-                            for link in c.links:
-                                print(f"  - {link.label}: {link.url}")
-                    repo.add_source(book.book_id, channel="search", ok=False, note="无自动可下载候选")
-                    try:
-                        repo.fail_download(book.book_id)
-                    except InvalidTransition:
-                        pass
-                    _print({"error": "无自动可下载候选，请人工下载后登记"}, True) if args.json else print(
-                        "WARN: 无自动可下载候选，请人工下载后登记", file=sys.stderr
-                    )
-                    return 3
-                candidate = downloadable[0]
-                record = service.download(candidate, kind=ResourceKind.BOOK)
-                repo.add_source(book.book_id, channel=candidate.provider, ok=True, note=record.resource_id)
-                repo.complete_download(
-                    book.book_id,
-                    sha256=record.sha256,
-                    relative_path=record.file["relative_path"],
-                    page_count=record.file.get("page_count"),
-                    absolute_path=str(record.absolute_path(settings.data_root)),
-                    file_name=Path(record.file["relative_path"]).name,
-                )
-                _print(
-                    {"book_id": book.book_id, "resource_id": record.resource_id, "path": record.file["relative_path"]},
-                    True,
-                ) if args.json else print(f"已下载：{record.file['relative_path']}")
-                return 0
-            finally:
-                service.close()
-        except Exception as exc:  # noqa: BLE001 - CLI 顶层兜底
-            repo.add_source(book.book_id, channel="download", ok=False, note=str(exc)[:300])
-            try:
-                repo.fail_download(book.book_id)
-            except InvalidTransition:
-                pass
-            _print({"error": f"下载失败：{exc}"}, True) if args.json else print(
-                f"ERROR: 下载失败：{exc}", file=sys.stderr
-            )
-            return 2
-
     if args.mainline_command == "verify":
+        # 只读复核（设计裁决 6）：重算 inspect_pdf 比对 sha/size/pages，不做状态迁移。
         knowledge = repo.get_knowledge(args.knowledge_id)
         if knowledge is None:
-            _print({"error": f"知识行不存在：{args.knowledge_id}"}, True) if args.json else print(
-                f"ERROR: 知识行不存在：{args.knowledge_id}", file=sys.stderr
+            _print({"error": f"教程不存在：{args.knowledge_id}"}, True) if args.json else print(
+                f"ERROR: 教程不存在：{args.knowledge_id}", file=sys.stderr
             )
             return 2
         books = repo.list_books(knowledge.knowledge_id)
+        owned = [b for b in books if b.holding == "owned" and b.file_path]
         if args.book:
-            book = next((b for b in books if b.book_id == args.book), None)
-            if book is None:
-                _print({"error": f"书行不存在：{args.book}"}, True) if args.json else print(
-                    f"ERROR: 书行不存在：{args.book}", file=sys.stderr
-                )
-                return 2
-            if book.status != "downloaded":
-                _print({"error": f"书行未下载（当前 {book.status}），无法校验"}, True) if args.json else print(
-                    f"ERROR: 书行未下载（当前 {book.status}），无法校验", file=sys.stderr
+            targets = [b for b in owned if b.book_id == args.book]
+            if not targets:
+                _print({"error": f"书籍不存在、未登记或不属于该教程：{args.book}"}, True) if args.json else print(
+                    f"ERROR: 书籍不存在、未登记或不属于该教程：{args.book}", file=sys.stderr
                 )
                 return 2
         else:
-            book = next((b for b in books if b.status == "downloaded"), None)
-            if book is None:
-                _print({"error": "没有已下载（downloaded）的书行，请先执行 download"}, True) if args.json else print(
-                    "ERROR: 没有已下载（downloaded）的书行，请先执行 download", file=sys.stderr
+            targets = owned
+            if not targets:
+                _print({"error": "没有已登记（owned）的书籍，请先取书或人工导入"}, True) if args.json else print(
+                    "ERROR: 没有已登记（owned）的书籍，请先取书或人工导入", file=sys.stderr
                 )
                 return 2
-        path = Path(book.absolute_path or "")
-        if not path.is_file():
-            path = settings.data_root / Path(book.relative_path)
-        if not path.is_file():
-            _print({"error": f"文件不存在：{path}"}, True) if args.json else print(
-                f"ERROR: 文件不存在：{path}", file=sys.stderr
-            )
-            return 3
-        try:
-            from qed_tracker.downloader import inspect_pdf
+        from qed_tracker.downloader import inspect_pdf
 
-            digest, size, pages = inspect_pdf(path)
-        except Exception as exc:  # noqa: BLE001
-            _print({"error": f"校验失败：{exc}"}, True) if args.json else print(
-                f"ERROR: 校验失败：{exc}", file=sys.stderr
-            )
-            return 2
-        verified = repo.verify_book(book.book_id)
-        _print(
-            {"book_id": verified.book_id, "path": str(path), "sha256": digest[:16], "size_bytes": size,
-             "page_count": pages, "status": verified.status},
-            True,
-        ) if args.json else print(
-            f"已校验：{verified.book_id} → {verified.status} | {path} | sha256={digest[:16]}... | {size} bytes | {pages} 页"
-        )
-        return 0
-
-    if args.mainline_command == "approve":
-        knowledge = repo.get_knowledge(args.knowledge_id)
-        if knowledge is None:
-            _print({"error": f"知识行不存在：{args.knowledge_id}"}, True) if args.json else print(
-                f"ERROR: 知识行不存在：{args.knowledge_id}", file=sys.stderr
-            )
-            return 2
-        verified = [b for b in repo.list_books(knowledge.knowledge_id) if b.status == "verified"]
-        if not verified:
-            _print({"error": "没有已验收（verified）的书行，请先执行 verify"}, True) if args.json else print(
-                "ERROR: 没有已验收（verified）的书行，请先执行 verify", file=sys.stderr
-            )
-            return 2
-
-        def _source(book) -> Path:
-            path = Path(book.absolute_path or "")
+        rows: list[dict] = []
+        has_invalid = has_missing = has_changed = False
+        for book in targets:
+            path = settings.data_root / Path(book.file_path)
+            entry: dict = {"book_id": book.book_id, "title": book.title, "path": str(path), "status": "ok"}
             if not path.is_file():
-                path = settings.data_root / Path(book.relative_path)
-            return path
-
-        def _target(book) -> Path:
-            return (
-                raw_course_dir(settings.data_root, knowledge.course_id, domain_id=knowledge.domain_id)
-                / _source(book).name
-            )
-
-        if args.book:
-            book = next((b for b in verified if b.book_id == args.book), None)
-            if book is None:
-                _print({"error": f"书行不存在或未验收：{args.book}"}, True) if args.json else print(
-                    f"ERROR: 书行不存在或未验收：{args.book}", file=sys.stderr
-                )
-                return 2
+                entry["status"] = "missing"
+                has_missing = True
+            else:
+                try:
+                    digest, size, pages = inspect_pdf(path)
+                except Exception as exc:  # noqa: BLE001 - 逐书复核兜底
+                    entry["status"] = f"invalid: {exc}"
+                    has_invalid = True
+                else:
+                    entry["sha256"] = digest
+                    entry["size_bytes"] = size
+                    entry["page_count"] = pages
+                    fingerprint = re.search(r"_([0-9a-f]{8})$", path.stem)  # D9 内容指纹
+                    if fingerprint and not digest.startswith(fingerprint.group(1)):
+                        entry["status"] = "changed"
+                        has_changed = True
+            rows.append(entry)
+        if args.json:
+            _print(rows, True)
         else:
-            book = next(
-                (b for b in verified if not _target(b).exists() or _target(b).resolve() == _source(b).resolve()),
-                verified[0],
-            )
-        source = _source(book)
-        if not source.is_file():
-            _print({"error": f"文件不存在：{source}"}, True) if args.json else print(
-                f"ERROR: 文件不存在：{source}", file=sys.stderr
-            )
+            for entry in rows:
+                tail = ""
+                if "sha256" in entry:
+                    tail = (f" | sha256={entry['sha256'][:16]}... | {entry['size_bytes']} bytes"
+                            f" | {entry['page_count']} 页")
+                print(f"[{entry['status']}] {entry['book_id']} {entry['title']} | {entry['path']}{tail}")
+        if has_invalid:
+            return 2
+        if has_missing:
             return 3
-        try:
-            from qed_tracker.downloader import inspect_pdf
-
-            inspect_pdf(source)  # 验收前校验 PDF 完整性
-        except Exception as exc:  # noqa: BLE001
-            _print({"error": f"PDF 校验失败：{exc}"}, True) if args.json else print(
-                f"ERROR: PDF 校验失败：{exc}", file=sys.stderr
-            )
-            return 2
-        # 移交：目标 = 数据根共享布局 raw/<domain>/<course>/
-        try:
-            target_dir = raw_course_dir(settings.data_root, knowledge.course_id, domain_id=knowledge.domain_id)
-            target_dir.mkdir(parents=True, exist_ok=True)
-            target = target_dir / source.name
-            if target.exists() and target.resolve() != source.resolve():
-                _print({"error": f"移交目标已存在：{target}"}, True) if args.json else print(
-                    f"ERROR: 移交目标已存在：{target}", file=sys.stderr
-                )
-                return 2
-            import shutil
-
-            shutil.copy2(source, target)
-        except OSError as exc:
-            _print({"error": f"移交失败：{exc}"}, True) if args.json else print(
-                f"ERROR: 移交失败：{exc}", file=sys.stderr
-            )
-            return 2
-        _print({"final_path": str(target), "status": "approved"}, True) if args.json else print(
-            f"验收通过，已移交根仓库：{target}"
-        )
-        try:
-            repo.complete_knowledge(knowledge.knowledge_id)
-            _print({"knowledge_status": "completed"}, True) if args.json else print(
-                f"知识行已完成：{knowledge.knowledge_id} → completed"
-            )
-        except InvalidTransition as exc:
-            print(f"提示：{exc}（书行全 verified 后可再次 approve 完成知识行）", file=sys.stderr)
-        print("提示：课程 related_targets 回填待二次确认评估后人工执行（qed_course 表）", file=sys.stderr)
+        if has_changed:
+            return 4
         return 0
 
     print(f"ERROR: 未实现的 mainline 命令：{args.mainline_command}", file=sys.stderr)
@@ -1059,9 +1265,16 @@ def _serve(args, settings: Settings) -> int:
 
     _configure_serve_logging(Path(__file__).resolve().parents[2] / "logs")
     try:
-        upgrade_database(settings)
+        # 模型即 schema：启动自愈（缺表补建/改列重建/幂等），无 Alembic 迁移链（ADR 0006）。
+        from qed_tracker.db.engine import create_engine_for, dispose
+
+        engine = create_engine_for(settings)
+        try:
+            ensure_schema(engine)
+        finally:
+            dispose(engine)
     except Exception as exc:  # 数据库不可用时服务仍可启动（健康/浏览可用，任务明确报错）
-        print(f"WARN 数据库迁移跳过：{exc}", file=sys.stderr)
+        print(f"WARN 数据库 schema 自愈跳过：{exc}", file=sys.stderr)
     uvicorn.run(create_app(settings), host=args.host, port=args.port or settings.port, log_level="info", log_config=None)
     return 0
 
@@ -1083,7 +1296,10 @@ def _load_root_env(start: Path) -> Path | None:
         key, _, value = line.partition("=")
         key = key.strip()
         if key.startswith("QED_") or key in ("QWEN_API_KEY", "DEEPSEEK_API_KEY", "GLM_API_KEY"):
-            os.environ.setdefault(key, value.strip().strip('"').strip("'"))
+            # 内联注释剥离（与 config._env_file_values 一致；` #` 才截断，`abc#def` 保留）
+            from qed_tracker.config import strip_inline_comment
+
+            os.environ.setdefault(key, strip_inline_comment(value.strip()).strip('"').strip("'"))
     return env_path
 
 
@@ -1091,8 +1307,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.command in ("serve", "mainline", "migrate"):
-            # DB 系命令与 serve 一样注入根 .env（QED-031：mainline/migrate 依赖 qed 库）
+        if args.command in ("serve", "mainline"):
+            # DB 系命令与 serve 一样注入根 .env（QED-031：mainline 依赖 qed 库）
             _load_root_env(Path.cwd())
         settings = _settings(args)
         handlers = {
@@ -1103,8 +1319,9 @@ def main(argv: list[str] | None = None) -> int:
             "axiom": _axiom,
             "config": _config,
             "courses": _courses,
+            "domains": _domains,
+            "knowledge": _knowledge_import,
             "mainline": _mainline,
-            "migrate": _migrate,
             "serve": _serve,
         }
         return handlers[args.command](args, settings)

@@ -16,7 +16,6 @@ dependencies = [
   "uvicorn>=0.30.0",
   "pydantic>=2.9.0",
   "sqlalchemy>=2.0.0",
-  "alembic>=1.13.0",
   "pymysql>=1.1.0",
 ]
 
@@ -34,7 +33,7 @@ qed-tracker = "qed_tracker.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-qed_tracker = ["catalogs/*.json", "paper_profiles/*.json", "migrations/data/*.json"]
+qed_tracker = ["catalogs/*.json", "paper_profiles/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
