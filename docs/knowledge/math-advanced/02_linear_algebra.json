@@ -1,62 +1,96 @@
 {
-  "meta": {
-    "contract": "course-knowledge/manual@v1",
-    "name": "高等代数课程知识（标准答案）",
-    "confirmed_at": "2026-08-29",
-    "purpose": "高等代数（02_linear_algebra）课程教材层标准答案：tutorials 套决定引用 + 期望落盘路径（target_path 基础名不含 sha，导入时按命名规则补 _<sha8>）",
-    "source": "docs/knowledge/course-tutorials-math-golden.json（2026-08-28 定稿范本）拆分",
-    "notes": [
-      "套1 教材自带习题（roles=[textbook,exercises]），exercise=null；套2 配独立习题集（苏联《线性代数习题集》沿用 catalog 登记名，编者待核实）",
-      "target_path 为期望落盘相对路径（QED_DATA_ROOT 相对），不含 sha 后缀"
-    ]
-  },
-  "domain": "math-advanced",
-  "course": {
-    "course_id": "02_linear_algebra",
-    "name": "高等代数",
-    "aliases": ["线性代数"]
-  },
+  "domain_id": "math-advanced",
+  "course_id": "02_linear_algebra",
+  "course_name": "高等代数",
   "tutorials": [
     {
+      "knowledge_id": "kt-02la-1",
+      "kind": "tutorial",
       "set_no": "1",
-      "set_name": "教程1：斯特朗线性代数（Strang）",
-      "textbook": {
-        "title": "斯特朗线性代数",
-        "original_title": "Linear Algebra and Its Applications",
-        "authors": ["Strang"],
-        "version": {"edition": "图灵数学经典", "publisher": "人民邮电出版社", "year": 2025},
-        "roles": ["textbook", "exercises"],
-        "position": "beginner",
-        "intro": "吉尔伯特·斯特朗（Gilbert Strang），MIT 数学系教授，18.06 线性代数数十年主讲人，全球最具影响力的线性代数教育者之一。本书从「列空间」与「四个基本子空间」的几何视角组织全书，极度强调矩阵分解（LU、QR、SVD）的力量与实际应用（图像处理、搜索算法等），写作直观通俗、深入浅出。中译《斯特朗线性代数》（图灵数学经典，2025），对应 Linear Algebra and Its Applications。最佳入门教材：把线性代数从「算行列式和逆矩阵」升华为「几何与数据科学的语言」。每章大量习题并附部分解答，与 MIT OCW 作业试题配套——习题同源。",
-        "target_path": "raw/math-advanced/02_linear_algebra/斯特朗线性代数.pdf"
-      },
-      "exercise": null,
-      "reason": "几何直观+矩阵分解视角，MIT OCW 配套最佳入门"
+      "name": "教程1：Strang《线性代数及其应用》+ MIT OCW 18.06",
+      "position": "beginner",
+      "intro": "Strang 从「列空间」与「四个基本子空间」的几何视角组织全书，极度强调矩阵分解（LU、QR、SVD）的力量与实际应用，把线性代数从「算行列式和逆矩阵」升华为「几何与数据科学的语言」，是入门位没有对手的教材。最佳用法是视频与教材章节一一对照：MIT OCW 18.06（Strang 主讲）的官方 Problem Sets 自带完整解答，考试卷与答案也全部公开，构成「看课—读教材—做题—对答案」的完整闭环。持有中译本为 1990 年老译本，与现行 18.06 课件存在一定代差，概念与记号以视频和 OCW 讲义为准、译本作叙述补充即可。",
+      "textbook_ref": [
+        {
+          "book_id": "02la-b01",
+          "title": "线性代数及其应用",
+          "part": "",
+          "authors": [
+            { "name": "Gilbert Strang", "role": "author" }
+          ],
+          "publisher": "",
+          "edition": "",
+          "year": 1990,
+          "language": "zh",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": null
     },
     {
+      "knowledge_id": "kt-02la-2",
+      "kind": "tutorial",
       "set_no": "2",
-      "set_name": "教程2：线性代数应该这样学（Axler）",
-      "textbook": {
-        "title": "线性代数应该这样学",
-        "original_title": "Linear Algebra Done Right",
-        "authors": ["Axler"],
-        "version": {"edition": "第4版", "publisher": "人民邮电出版社", "year": null},
-        "roles": ["textbook"],
-        "position": "advanced",
-        "intro": "谢尔登·阿克斯勒（Sheldon Axler），旧金山州立大学教授。本书完全避开行列式，从线性变换（算子）与特征值的角度构建整个理论体系，强调结构、本质与逻辑的纯粹性，叙述清晰简洁，被誉为「线性代数的文学经典」。它让你摆脱行列式的束缚，真正理解线性代数的「灵魂」是线性变换而非矩阵计算。中译第4版由人民邮电出版社（图灵数学经典）出版，对应 Linear Algebra Done Right。适合在计算与几何基础（如 Strang）之上深刻理解理论的学习者，是数学专业进阶的最佳读物。习题精炼、多为概念考题，不涉复杂计算但直击定义与定理间的关系，务必亲手完成。",
-        "target_path": "raw/math-advanced/02_linear_algebra/线性代数应该这样学.pdf"
-      },
-      "exercise": {
-        "title": "线性代数习题集",
-        "original_title": "",
-        "authors": ["苏联"],
-        "version": {"edition": "", "publisher": "", "year": null},
-        "roles": ["exercises"],
-        "position": "advanced",
-        "intro": "苏联学派经典线性代数习题集（catalog 已登记下载目标），覆盖线性方程组、矩阵运算、特征值、二次型等核心题型，题量扎实、计算与理论并重，历经苏联及国内数学系教学检验。与 Axler《线性代数应该这样学》搭配使用：Axler 提供算子视角的理论骨架，本习题集提供扎实的独立训练量，理论理解与计算能力互补，构成该套完整学习闭环。",
-        "target_path": "raw/math-advanced/02_linear_algebra/线性代数习题集.pdf"
-      },
-      "reason": "摆脱行列式直击算子本质，配苏联习题集扎实训练"
+      "name": "教程2：Axler《线性代数应该这样学》+ 普罗斯库烈柯夫《线性代数习题集》",
+      "position": "advanced",
+      "intro": "Axler 完全避开行列式，从线性变换（算子）与特征值的角度构建整个理论体系，强调结构、本质与逻辑的纯粹性，被誉为「线性代数的文学经典」——它的算子视角正是泛函分析的预演，数学专业理论进阶首选。Axler 自带习题精炼但偏概念、计算量小，训练量由普罗斯库烈柯夫《线性代数习题集》补足：苏联经典题集，近两千题覆盖行列式、方程组、二次型、线性变换等全部核心题型，附答案与提示，堪称「线性代数界的吉米多维奇」——理论以 Axler 为纲、训练以普氏为量，与数学分析课 Rudin+吉米多维奇的配方同构。持有中译为 2009 年版（对应英文第 2 版），教材自带习题可用社区流传的第 2 版题解校验。",
+      "textbook_ref": [
+        {
+          "book_id": "02la-b02",
+          "title": "线性代数应该这样学",
+          "part": "",
+          "authors": [
+            { "name": "Sheldon Axler", "role": "author" }
+          ],
+          "publisher": "人民邮电出版社",
+          "edition": "第2版",
+          "year": 2009,
+          "language": "zh",
+          "roles": ["textbook"]
+        }
+      ],
+      "exercise_ref": [
+        {
+          "book_id": "02la-b06",
+          "title": "线性代数习题集",
+          "part": "",
+          "authors": [
+            { "name": "О. В. 普罗斯库烈柯夫", "role": "author" },
+            { "name": "周晓钟", "role": "translator" }
+          ],
+          "publisher": "高等教育出版社",
+          "edition": "",
+          "year": 1981,
+          "language": "zh",
+          "roles": ["exercises"]
+        }
+      ]
+    },
+    {
+      "knowledge_id": "kt-02la-3",
+      "kind": "tutorial",
+      "set_no": "3",
+      "name": "教程3：Artin《代数》（高代→抽象代数桥接）",
+      "position": "comprehensive",
+      "intro": "Artin 从矩阵群与对称性讲起，一部书打通高等代数与抽象代数：前半（矩阵、群、向量空间、线性变换、对称）即高等代数的深化，后半（环、模、域与伽罗瓦理论）直接衔接抽象代数课程，是三门基础课之间杠杆率最高的一本桥接书，对继续走硕士路线的学习者尤其关键。以线性变换与对称的视角回头重审线性代数，再顺势进入群环域的世界；习题多为精心设计的证明题，无官方题解——硬啃习题本身即是这门书设定的训练方式。学完本套即可无缝进入抽象代数课程。",
+      "textbook_ref": [
+        {
+          "book_id": "02la-b03",
+          "title": "代数",
+          "part": "",
+          "authors": [
+            { "name": "Michael Artin", "role": "author" },
+            { "name": "姚海楼", "role": "translator" },
+            { "name": "平艳茹", "role": "translator" }
+          ],
+          "publisher": "机械工业出版社",
+          "edition": "",
+          "year": null,
+          "language": "zh",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": null
     }
   ]
 }

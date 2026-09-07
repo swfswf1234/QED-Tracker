@@ -1,11 +1,12 @@
 """prompt_lab 管线（QED-043）：领域与课程知识探索编排器。
 
-领域管线（v3 三步）：domain（领域校验与探索）→ courses（核心课程+简述）→ path（学习顺序+层级）。
+领域管线（v8 两步，2026-09-03 用户裁决：path@v5 并入 courses@v8，输出即标准答案同构）：
+domain（领域校验与探索）→ courses（核心课程 + stage 层级 + prerequisites 先修）。
 课程管线（v1 单步，2026-08-26 用户裁决：砍 tree，一个 prompt）：
 tutorials（围绕课程介绍，推荐「教材+配套习题集」成套方案）。
 每步独立模板（templates.py 注册表）+ ExploreAdvisorBase 结构化调用骨架
 （严格 JSON + 坏 JSON 一次修复重试 + 预算 + 审计）；领域先验知识经 priors.py 注入；
-跨步一致性校验在管线内完成；graph TD 由服务端按 tier 分组 + prerequisites 推导渲染。
+跨步一致性校验在管线内完成；graph TD 由服务端按 stage 分组 + prerequisites 推导渲染。
 模型只生成报告，不写库不改共享表。
 """
 
@@ -17,7 +18,7 @@ from typing import Any
 
 from qed_tracker.prompt_lab import templates as templates_mod
 from qed_tracker.prompt_lab.priors import get_prior_for_step
-from qed_tracker.prompt_lab.templates import _DEFAULT_SCOPE
+from qed_tracker.prompt_lab.templates import _DEFAULT_SCOPE, STAGES
 from qed_tracker.providers.explore_advisor import ExploreAdvisorBase, _read_reference
 
 
@@ -52,21 +53,20 @@ def _apply_cross(step: str, context: dict[str, Any], value: Any) -> None:
         for course in value["courses"]:
             if course["track"] and course["track"] not in track_names:
                 raise ValueError(
-                    f"{course['slug']}.track 不在 classic_tracks 内：{course['track']}"
+                    f"{course['course_id']}.track 不在 classic_tracks 内：{course['track']}"
                 )
-    elif step == "path":
-        slugs = context.get("course_slugs", set())
-        result_slugs = {a["slug"] for a in value["assignments"]}
-        if result_slugs != slugs:
-            raise ValueError("path.assignments 必须与课程清单完全一致（不得新增/遗漏）")
 
 
 class DomainPipeline(ExploreAdvisorBase):
-    """领域知识探索：domain → courses → path 三步管线。"""
+    """领域知识探索：domain → courses 两步管线（v8：stage/prerequisites 并入 courses 输出）。"""
 
     contract_version = "prompt-optimize-v3"
 
     def __init__(self, **kwargs: Any) -> None:
+        # D1 缓解：合并后 courses 单次输出变长（12~16 门课完整 JSON），领域管线强制 max_tokens ≥16384。
+        # （API/CLI 经 _advisor_kwargs 显式传 settings.llm_max_tokens=4096 会覆盖 setdefault，
+        #   故用 max 下限而非 setdefault；8192 对 deepseek 长 JSON 仍会截断，故提到 16384。）
+        kwargs["max_tokens"] = max(int(kwargs.get("max_tokens", 16384)), 16384)
         super().__init__(**kwargs)
         self.step_calls: list[dict[str, Any]] = []
         """每步一次调用明细（step/template_id/duration_ms，含修复重试耗时）。"""
@@ -84,7 +84,6 @@ class DomainPipeline(ExploreAdvisorBase):
         """confirm_name_override 非空 = 人工已确认领域名（P12 弹窗流），跳过确认检查并以该名贯穿后续。"""
         domain_template = templates_mod.get_template("domain-explore", "domain")
         courses_template = templates_mod.get_template("domain-explore", "courses")
-        path_template = templates_mod.get_template("domain-explore", "path")
 
         reference = _read_reference(mode, ref_text, ref_doc_path)
 
@@ -104,7 +103,8 @@ class DomainPipeline(ExploreAdvisorBase):
         ):
             raise NameConfirmationRequired(name_check)
 
-        # step2 核心课程与简述（主线全量含 summary；scope_hint 权威边界贯穿）
+        # step2 核心课程 + stage 层级 + prerequisites 先修（scope_hint 权威边界贯穿；
+        # 单次生成天然 course_id 一致，跨步仅校验 track 归属）
         tracks = domain["classic_tracks"]
         courses = self._run(
             courses_template,
@@ -117,42 +117,114 @@ class DomainPipeline(ExploreAdvisorBase):
             },
              "scope_hint": scope_hint,
              "prior_knowledge": get_prior_for_step(final_name, "courses")},
-            {"track_names": {t["name"] for t in tracks if t.get("kind") == "main"}},
+            {"track_names": {t["name"] for t in tracks}},
         )
-        course_slugs = {c["slug"] for c in courses["courses"]}
-
-        # step3 学习顺序与层级（课程清单带 summary 作为前置判断依据）
-        path = self._run(
-            path_template,
-            {"domain": {"name": final_name, "description": domain["description"],
-                        "classic_tracks": tracks},
-             "courses": [{"slug": c["slug"], "name": c["name"], "track": c["track"],
-                          "summary": c["summary"]} for c in courses["courses"]],
-             "scope_hint": scope_hint,
-             "prior_knowledge": get_prior_for_step(final_name, "path")},
-            {"course_slugs": course_slugs},
-        )
-        tiers = {a["slug"]: a["tier"] for a in path["assignments"]}
-        pres = {a["slug"]: a["prerequisites"] for a in path["assignments"]}
-        edges = [{"from": pre, "to": slug} for slug, pres_list in pres.items() for pre in pres_list]
-
-        merged_courses = [
-            {**course, "tier": tiers[course["slug"]], "prerequisites": pres[course["slug"]]}
+        edges = [
+            {"from": pre, "to": course["course_id"]}
             for course in courses["courses"]
+            for pre in course["prerequisites"]
         ]
+
         return {
             "domain": {
                 "final_name": final_name,
                 "description": domain["description"],
                 "level": domain["level"],
+                "stages": list(STAGES),
                 "classic_tracks": tracks,
                 "entry_requirements": domain["entry_requirements"],
+                "prior_knowledge": domain.get("prior_knowledge", ""),
             },
-            "courses": merged_courses,
+            "courses": courses["courses"],
             "path": {
-                "notes": path["notes"],
+                "notes": courses.get("notes", ""),
                 "edges": edges,
-                "graph_td": templates_mod.render_graph_td(merged_courses, edges),
+                "graph_td": templates_mod.render_graph_td(courses["courses"], edges),
+            },
+        }
+
+    def explore_domain_only(
+        self,
+        domain_name: str,
+        *,
+        scope_hint: str = _DEFAULT_SCOPE,
+        mode: str = "direct",
+        ref_text: str = "",
+        ref_doc_path: str = "",
+        confirm_name_override: str = "",
+    ) -> dict[str, Any]:
+        """只跑 domain@v4，不跑 courses@v8。用于 dry-run 评估和探索第一轮。"""
+        domain_template = templates_mod.get_template("domain-explore", "domain")
+        reference = _read_reference(mode, ref_text, ref_doc_path)
+
+        # step1 领域探索与校验
+        domain = self._run(
+            domain_template,
+            {"domain_name": domain_name, "scope_hint": scope_hint,
+             "user_input": reference,
+             "prior_knowledge": get_prior_for_step(domain_name, "domain")},
+            {},
+        )
+        final_name = (confirm_name_override or "").strip() or str(domain_name)
+        name_check = domain["name_check"]
+        suggested = (name_check.get("suggested_name") or "").strip()
+        if not confirm_name_override and (
+            not name_check.get("valid", False) or (suggested and suggested != domain_name)
+        ):
+            raise NameConfirmationRequired(name_check)
+
+        return {
+            "domain": {
+                "final_name": final_name,
+                "description": domain["description"],
+                "level": domain["level"],
+                "stages": list(STAGES),
+                "classic_tracks": domain["classic_tracks"],
+                "entry_requirements": domain["entry_requirements"],
+                "prior_knowledge": domain.get("prior_knowledge", ""),
+            },
+            "courses": None,  # 标记未跑 courses@v8
+        }
+
+    def explore_courses_only(
+        self,
+        domain_name: str,
+        domain_info: dict[str, Any],
+        *,
+        mode: str = "direct",
+        ref_text: str = "",
+        ref_doc_path: str = "",
+    ) -> dict[str, Any]:
+        """只跑 courses@v8，不跑 domain@v4。用于 confirm-domain 后的后台任务。"""
+        courses_template = templates_mod.get_template("domain-explore", "courses")
+        reference = _read_reference(mode, ref_text, ref_doc_path)
+
+        tracks = domain_info.get("classic_tracks", [])
+        courses = self._run(
+            courses_template,
+            {"domain": {
+                "name": domain_name,
+                "description": domain_info.get("description", ""),
+                "level": domain_info.get("level", ""),
+                "classic_tracks": tracks,
+                "entry_requirements": domain_info.get("entry_requirements", ""),
+            },
+             "scope_hint": domain_info.get("level", _DEFAULT_SCOPE),
+             "prior_knowledge": get_prior_for_step(domain_name, "courses")},
+            {"track_names": {t["name"] for t in tracks}},
+        )
+        edges = [
+            {"from": pre, "to": course["course_id"]}
+            for course in courses["courses"]
+            for pre in course["prerequisites"]
+        ]
+
+        return {
+            "courses": courses["courses"],
+            "path": {
+                "notes": courses.get("notes", ""),
+                "edges": edges,
+                "graph_td": templates_mod.render_graph_td(courses["courses"], edges),
             },
         }
 
@@ -183,6 +255,10 @@ class CoursePipeline(ExploreAdvisorBase):
     contract_version = "prompt-optimize-v3"
 
     def __init__(self, **kwargs: Any) -> None:
+        # tutorials@v2 每套含完整 refs（教材/习题集/平行读物）+ intro 100~200 字，输出较长；
+        # API/CLI 经 _advisor_kwargs 显式传 settings.llm_max_tokens=4096 会截断（finish_reason=length），
+        # 同样用 max 下限放宽到 16384。
+        kwargs["max_tokens"] = max(int(kwargs.get("max_tokens", 16384)), 16384)
         super().__init__(**kwargs)
         self.step_calls: list[dict[str, Any]] = []
         """单步调用明细（step/template_id/duration_ms，含修复重试耗时）。"""

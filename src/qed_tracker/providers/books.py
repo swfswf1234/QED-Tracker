@@ -52,6 +52,29 @@ def _decode_json(content: bytes) -> dict:
     return json.loads(_decode_text(content))
 
 
+def _solr_text(value: object) -> str:
+    """IA solr 字段可能是 str 或 list（多值字段），归一为单条字符串。"""
+    if isinstance(value, list):
+        return " ".join(str(part) for part in value).strip()
+    return str(value or "").strip()
+
+
+def _ol_text(value: object) -> str:
+    """OL search 字段值可能是 str / list / {"type": "/type/text", "value": ...}，归一为单条字符串。"""
+    if isinstance(value, dict):
+        value = value.get("value", "")
+    if isinstance(value, list):
+        return " ".join(_ol_text(part) for part in value).strip()
+    return str(value or "").strip()
+
+
+def _to_int(value: object) -> int | None:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
 def _archive_candidate(provider: str, item: dict) -> Candidate:
     identifier = str(item.get("identifier", ""))
     creator = item.get("creator") or item.get("author_name") or []
@@ -66,6 +89,9 @@ def _archive_candidate(provider: str, item: dict) -> Candidate:
         authors=creators,
         language=str(item.get("language", "")),
         year=str(item.get("year", "")),
+        publisher=_solr_text(item.get("publisher")),
+        description=_solr_text(item.get("description")),
+        page_count=_to_int(item.get("page_count")),
         page_url=f"https://archive.org/details/{identifier}" if identifier else "",
         availability=Availability.DOWNLOADABLE if identifier else Availability.METADATA_ONLY,
         identifiers={"internet_archive": identifier} if identifier else {},
@@ -90,7 +116,7 @@ class InternetArchiveProvider(HttpProvider):
     def search(self, query: str, limit: int = 10) -> list[Candidate]:
         response = self.client.get(
             "https://archive.org/advancedsearch.php",
-            params={"q": f"{self._build_solr_query(query)} AND mediatype:texts", "fl[]": ["identifier", "title", "creator", "year", "language"], "rows": limit, "output": "json"},
+            params={"q": f"{self._build_solr_query(query)} AND mediatype:texts", "fl[]": ["identifier", "title", "creator", "year", "language", "description", "publisher"], "rows": limit, "output": "json"},
             headers={"User-Agent": "QED-Tracker/0.5"},
         )
         response.raise_for_status()
@@ -99,7 +125,8 @@ class InternetArchiveProvider(HttpProvider):
     def resolve(self, candidate: Candidate) -> Candidate:
         response = self.client.get(f"https://archive.org/metadata/{candidate.provider_id}")
         response.raise_for_status()
-        files = _decode_json(response.content).get("files", [])
+        data = _decode_json(response.content)
+        files = data.get("files", [])
         pdfs = [item for item in files if str(item.get("name", "")).lower().endswith(".pdf") and item.get("private") not in (True, "true")]
         if not pdfs:
             raise ProviderError("Internet Archive 条目没有可公开下载的 PDF")
@@ -118,6 +145,24 @@ class InternetArchiveProvider(HttpProvider):
         file_md5 = str(pdfs[0].get("md5") or "")
         if file_md5:
             identifiers["md5"] = file_md5
+        # QED-050 enrich：resolve 本就为选文件而取 metadata，顺带读 description/publisher/date
+        # （零新增 HTTP）；只回填 search 缺失的字段，不覆盖已有值。
+        meta = data.get("metadata") or {}
+        updates: dict = {}
+        if not candidate.description:
+            description = _solr_text(meta.get("description"))
+            if description:
+                updates["description"] = description
+        if not candidate.publisher:
+            publisher = _solr_text(meta.get("publisher"))
+            if publisher:
+                updates["publisher"] = publisher
+        if not candidate.year:
+            year_match = re.search(r"\d{4}", str(meta.get("year") or meta.get("date") or ""))
+            if year_match:
+                updates["year"] = year_match.group(0)
+        if updates:
+            candidate = replace(candidate, **updates)
         return replace(candidate, identifiers=identifiers, download_url=url, size_bytes=int(pdfs[0].get("size") or 0) or None)
 
 
@@ -127,7 +172,7 @@ class OpenLibraryProvider(InternetArchiveProvider):
     def search(self, query: str, limit: int = 10) -> list[Candidate]:
         response = self.client.get(
             "https://openlibrary.org/search.json",
-            params={"q": query, "limit": limit, "fields": "title,author_name,ia,first_publish_year,language"},
+            params={"q": query, "limit": limit, "fields": "title,author_name,ia,first_publish_year,language,publisher,subtitle,first_sentence,number_of_pages_median"},
             headers={"User-Agent": "QED-Tracker/0.5"},
         )
         response.raise_for_status()
@@ -135,12 +180,17 @@ class OpenLibraryProvider(InternetArchiveProvider):
         for item in _decode_json(response.content).get("docs", []):
             archive_ids = item.get("ia") or []
             archive_id = archive_ids[0] if archive_ids else ""
+            # QED-050 enrich：介绍字段随同一次搜索响应带回（零新增 HTTP）；
+            # description 由副题 + 首句拼接（first_sentence 可能是 {"type": "/type/text"} 形状）。
             mapped = {
                 "identifier": archive_id,
                 "title": item.get("title", ""),
                 "author_name": item.get("author_name", []),
                 "year": item.get("first_publish_year", ""),
                 "language": (item.get("language") or [""])[0],
+                "publisher": _ol_text(item.get("publisher")),
+                "description": "；".join(part for part in (_ol_text(item.get("subtitle")), _ol_text(item.get("first_sentence"))) if part),
+                "page_count": _to_int(item.get("number_of_pages_median")),
             }
             results.append(_archive_candidate(self.name, mapped))
         return results
@@ -164,6 +214,9 @@ class GoogleBooksProvider(HttpProvider):
                 authors=tuple(info.get("authors", [])),
                 language=info.get("language", ""),
                 year=str(info.get("publishedDate", ""))[:4],
+                publisher=str(info.get("publisher", "")).strip(),
+                description=str(info.get("description", "")).strip(),
+                page_count=_to_int(info.get("pageCount")),
                 page_url=info.get("infoLink", ""),
                 download_url=link,
                 availability=Availability.DOWNLOADABLE if link else Availability.METADATA_ONLY,
@@ -215,6 +268,9 @@ class LibgenLiProvider(HttpProvider):
             size_match = self._SIZE_RE.search(cells[6] if len(cells) > 6 else "")
             if size_match:
                 size = size_match.group(1)
+            # QED-050 enrich：Publisher 列此前解析后丢弃，现回填进候选（零新增 HTTP）；
+            # Pages 列形如「1780 / 1780」，取首个数字。
+            pages_match = re.search(r"\d+", cells[5]) if len(cells) > 5 else None
             results.append(Candidate(
                 provider=self.name,
                 provider_id=edition_id,
@@ -222,6 +278,8 @@ class LibgenLiProvider(HttpProvider):
                 authors=tuple(part.strip() for part in cells[1].split(";")) if len(cells) > 1 else (),
                 year=cells[3] if len(cells) > 3 else "",
                 language=cells[4] if len(cells) > 4 else "",
+                publisher=cells[2] if len(cells) > 2 else "",
+                page_count=int(pages_match.group(0)) if pages_match else None,
                 format=cells[7].casefold() if len(cells) > 7 else "pdf",
                 size_bytes=_parse_size(size),
                 page_url=f"https://libgen.li/edition.php?id={edition_id}",

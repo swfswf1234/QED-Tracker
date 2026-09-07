@@ -31,7 +31,7 @@
 | --- | --- | --- |
 | 行为测试 | 配置解析、目录匹配、来源归一化、下载校验、资源登记、服务 API 与 CLI 行为 | `tests/test_config_catalog_matching.py`、`tests/test_services.py`、`tests/test_api.py`、`tests/test_cli_architecture.py` 等 |
 | 治理契约测试 | 文档治理、映射与任务治理（只解析仓库内文档与源码） | `tests/test_documentation.py` |
-| 真实环境冒烟 | 默认 skip 的 MySQL 三表冒烟，仅人工触发 | `tests/test_db_three_table_smoke.py` |
+| 真实环境冒烟 | 默认 skip 的 MySQL ensure_schema 冒烟（仅允许 qed_test 库），仅人工触发 | `tests/test_schema_mysql_smoke.py` |
 
 后续新增集成层（HTTP 适配器、系统级联调）时，参照根仓库与 Axiom-Flow 分层模式建立
 `integration/`、`system/`、`smoke/` 并登记 ADR。

@@ -13,7 +13,7 @@ import httpx
 from sqlalchemy import create_engine, text
 
 from qed_tracker.main_line.advisor import MainLineAdvisor
-from qed_tracker.models import Candidate, CatalogTarget, PaperProfile, ResourceKind
+from qed_tracker.models import BookExpectation, Candidate, CatalogTarget, PaperProfile, ResourceKind
 from qed_tracker.providers.bailian import BailianPaperAdvisor
 from qed_tracker.providers.book_advisor import BailianBookAdvisor
 
@@ -84,6 +84,24 @@ def test_book_assess_carries_template_id() -> None:
     )
     advisor.assess([Candidate("ia", "ia/book", "Principles of Mathematical Analysis")], target=target)
     assert _templates_written(engine) == ["book-eval/assess@v1"]
+
+
+def test_book_query_and_confirm_carry_template_ids() -> None:
+    """QED-050 书级检索词变体与确认评估同样落模板编号（qed_llm_calls 审计）。"""
+    engine = _engine()
+    responses = [
+        _dash({"queries": ["Rudin 数学分析原理"]}),
+        _dash({"confirmations": [{"provider_id": "ia/book", "verdict": "confirmed", "summary": "一致"}]}),
+    ]
+    advisor = BailianBookAdvisor(
+        api_key="k",
+        engine=engine,
+        client=httpx.Client(transport=httpx.MockTransport(lambda r: responses.pop(0))),
+    )
+    book = BookExpectation(title="数学分析原理", authors=("Rudin",), language="zh")
+    advisor.propose_queries(book)
+    advisor.confirm(book, [Candidate("ia", "ia/book", "数学分析原理")])
+    assert _templates_written(engine) == ["book-query/variants@v1", "book-confirm/assess@v1"]
 
 
 def test_mainline_prefill_carries_template_id() -> None:

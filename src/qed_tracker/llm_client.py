@@ -24,7 +24,7 @@ from typing import Any
 import httpx
 from sqlalchemy import Engine, text
 
-from qed_tracker.database import utc_now
+from qed_tracker.db.engine import utc_now
 
 logger = logging.getLogger(__name__)
 

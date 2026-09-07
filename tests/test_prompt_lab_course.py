@@ -1,9 +1,11 @@
-"""prompt_lab 课程管线（course-explore/tutorials@v1，2026-08-26 用户裁决单步重新设计）。
+"""prompt_lab 课程管线（course-explore/tutorials@v2，2026-09-03 ref 结构化裁决）。
 
 守护面：
-- 注册表：course-explore/tutorials@v1 注册（tree 已砍，单 prompt）；
-- 模板校验：套数 2~4、title 中文优先（禁全英文主书名）、authors 非空、
-  roles 枚举、position 枚举、intro 长度、exercise 同源才可空、主教材不重复、set_no 唯一；
+- 注册表：course-explore/tutorials@v2 注册（tree 已砍，单 prompt）；
+- 模板校验：套数 2~4、CJK 废止、position 五档（set 级）、intro 100~200 字散文（set 级）、
+  authors 结构化 [{name,role}]、roles 枚举 textbook/exercises/solutions、
+  exercise_ref null ⇔ 教材 roles 含 exercises、主教材不重复、set_no 唯一、
+  name 格式「教程N：...」、part 全本/Vol.N 通配；
 - priors：tutorials 步键集注入（textbook_preference）；
 - CoursePipeline：单步调用、payload 注入（course.note / book_preference / reference）、
   enrich（proposal_id/set_no）、坏 JSON 一次修复、预算耗尽、validate 失败。
@@ -28,7 +30,7 @@ from qed_tracker.prompt_lab.templates import get_template
 
 def test_registry_contains_course_tutorials_step() -> None:
     steps = {(t["task"], t["step"]): t["id"] for t in templates_mod.list_templates()}
-    assert steps[("course-explore", "tutorials")] == "course-explore/tutorials@v1"
+    assert steps[("course-explore", "tutorials")] == "course-explore/tutorials@v2"
 
 
 def test_templates_stay_domain_neutral() -> None:
@@ -55,48 +57,60 @@ def test_priors_tutorials_step_injects_textbook_preference() -> None:
 # ---------------- 模板校验 ----------------
 
 
-def _book(title: str = "数学分析原理", *, authors=("Rudin",), roles=("textbook",),
-          position: str = "advanced", intro: str = "", original: str = "Principles of Mathematical Analysis",
-          **overrides) -> dict:
+def _ref(title: str = "数学分析原理", *, authors=((("Rudin", "author")),), roles=("textbook",),
+         language: str = "zh", part: str = "全本", publisher: str = "", edition: str = "第3版",
+         year: int | None = 1976, **overrides) -> dict:
     base = {
         "title": title,
-        "original_title": original,
-        "authors": list(authors),
-        "version": {"edition": "第3版", "publisher": "", "year": 1976},
+        "part": part,
+        "authors": [{"name": n, "role": r} for n, r in authors],
+        "publisher": publisher,
+        "edition": edition,
+        "year": year,
+        "language": language,
         "roles": list(roles),
-        "position": position,
-        "intro": intro or ("芝加哥大学分析学泰斗的经典教材，以严格公理化风格著称。"
-                           "作者视野高屋建瓴，论述精炼优美，是深度研究分析的必读之选。" * 2),
     }
     base.update(overrides)
     return base
 
 
-def _exercise(title: str = "数学分析习题集", **overrides) -> dict:
+def _exercise_ref(title: str = "数学分析习题集", **overrides) -> dict:
     base = {
         "title": title,
-        "original_title": "",
-        "authors": ["吉米多维奇"],
-        "version": {"edition": "", "publisher": "", "year": 2000},
+        "part": "全本",
+        "authors": [{"name": "吉米多维奇", "role": "author"}],
+        "publisher": "",
+        "edition": "",
+        "year": 2000,
+        "language": "zh",
         "roles": ["exercises"],
-        "position": "comprehensive",
-        "intro": ("经典配套习题集，覆盖从基础到综合难度的系统训练。题目按章编排、由浅入深，"
-                  "与教材对照阅读可巩固概念、训练计算与证明能力；难度定位全面系统，"
-                  "适合课下跟练与考研复习使用，是这门课程公认的必备训练手册。" * 2),
     }
     base.update(overrides)
     return base
 
 
-def _tutorial(set_no: str = "1", *, set_name: str = "教程1：数学分析原理（Rudin）",
-              textbook: dict | None = None, exercise: dict | None = None,
-              reason: str = "经典严格教材与高阶配套，适合深度研究", **overrides) -> dict:
+_DEFAULT_INTRO = ("芝加哥大学分析学泰斗的经典教材，以严格公理化风格著称。"
+                  "从实数系构造到多元分析一气呵成，论述精炼优美，视野高屋建瓴。"
+                  "适合数学系高年级本科生和研究生深度学习，是分析方向的必备参考。"
+                  "配套习题难度极高，建议配合提示集使用。")  # ~130字
+
+
+_SENTINEL = object()
+
+
+def _tutorial(set_no: str = "1", *, name: str = "教程1：Rudin《数学分析原理》",
+              position: str = "advanced", intro: str = "",
+              textbook_ref: list[dict] | None = _SENTINEL,
+              exercise_ref: list[dict] | None = _SENTINEL,
+              parallel_ref: list[dict] | None = None, **overrides) -> dict:
     base = {
         "set_no": set_no,
-        "set_name": set_name,
-        "textbook": textbook or _book(),
-        "exercise": exercise if exercise is not None else _exercise(),
-        "reason": reason,
+        "name": name,
+        "position": position,
+        "intro": intro or _DEFAULT_INTRO,
+        "textbook_ref": [_ref()] if textbook_ref is _SENTINEL else textbook_ref,
+        "exercise_ref": [_exercise_ref()] if exercise_ref is _SENTINEL else exercise_ref,
+        "parallel_ref": parallel_ref,
     }
     base.update(overrides)
     return base
@@ -104,13 +118,13 @@ def _tutorial(set_no: str = "1", *, set_name: str = "教程1：数学分析原�
 
 def test_tutorials_validate_happy_path() -> None:
     t = get_template("course-explore", "tutorials")
-    # 套一：独立习题集；套二：教材自带习题集 → exercise=null
+    # 套一：独立习题集；套二：教材自带习题集 → exercise_ref=null
     ok = {"tutorials": [
         _tutorial("1"),
-        _tutorial("2", set_name="教程2：数学分析（陈纪修）",
-                  textbook=_book(title="数学分析", authors=("陈纪修",), roles=("textbook", "exercises"),
-                                 position="comprehensive", original="数学分析"),
-                  exercise=None),
+        _tutorial("2", name="教程2：陈纪修《数学分析》",
+                  textbook_ref=[_ref(title="数学分析", authors=(("陈纪修", "author"),),
+                                     roles=("textbook", "exercises"))],
+                  exercise_ref=None),
     ]}
     result = t.validate(ok)
     assert [item["set_no"] for item in result["tutorials"]] == ["1", "2"]
@@ -118,8 +132,10 @@ def test_tutorials_validate_happy_path() -> None:
 
 def test_tutorials_validate_rejects_out_of_range_count() -> None:
     t = get_template("course-explore", "tutorials")
+    # 少于 2 套
     with pytest.raises(ValueError):
-        t.validate({"tutorials": [_tutorial("1")]})
+        t.validate({"tutorials": []})
+    # 多于 4 套
     with pytest.raises(ValueError):
         t.validate({"tutorials": [_tutorial(str(i)) for i in range(1, 6)]})
 
@@ -130,76 +146,97 @@ def test_tutorials_validate_rejects_duplicate_set_no() -> None:
         t.validate({"tutorials": [_tutorial("1"), _tutorial("1")]})
 
 
-def test_tutorials_validate_rejects_duplicate_textbook_title() -> None:
+def test_tutorials_validate_allows_same_book_across_sets() -> None:
+    """书库化后多套可引用同一本书（不同 position/用途）。"""
     t = get_template("course-explore", "tutorials")
-    with pytest.raises(ValueError):
-        t.validate({"tutorials": [
-            _tutorial("1"),
-            _tutorial("2", textbook=_book(title="数学分析原理", authors=("其他作者",))),
-        ]})
+    ok = {"tutorials": [
+        _tutorial("1", position="beginner",
+                  textbook_ref=[_ref(title="数学分析原理", authors=(("Rudin", "author"),))]),
+        _tutorial("2", position="advanced",
+                  textbook_ref=[_ref(title="数学分析原理", authors=(("Rudin", "author"),))]),
+    ]}
+    result = t.validate(ok)
+    assert len(result["tutorials"]) == 2
 
 
 def test_tutorials_validate_rejects_latin_only_title() -> None:
-    """title 中文优先：全英文/拉丁字符主书名拒绝（original_title 承载原版名）。"""
+    """CJK 废止：全英文主书名不再拒绝（language 字段承载语言标记）。"""
     t = get_template("course-explore", "tutorials")
-    with pytest.raises(ValueError):
-        t.validate({"tutorials": [_tutorial("1", textbook=_book(title="Principles of Mathematical Analysis"))]})
+    ok = {"tutorials": [
+        _tutorial("1", textbook_ref=[_ref(title="Principles of Mathematical Analysis",
+                                          authors=(("Rudin", "author"),), language="en")]),
+        _tutorial("2", name="教程2：陈纪修《数学分析》",
+                  textbook_ref=[_ref(title="数学分析", authors=(("陈纪修", "author"),),
+                                     roles=("textbook", "exercises"))],
+                  exercise_ref=None),
+    ]}
+    result = t.validate(ok)
+    assert result["tutorials"][0]["textbook_ref"][0]["title"] == "Principles of Mathematical Analysis"
 
 
 def test_tutorials_validate_rejects_missing_authors() -> None:
     t = get_template("course-explore", "tutorials")
     with pytest.raises(ValueError):
-        t.validate({"tutorials": [_tutorial("1", textbook=_book(authors=[]))]})
+        t.validate({"tutorials": [_tutorial("1", textbook_ref=[_ref(authors=[])]),
+                                  _tutorial("2")]})
 
 
 def test_tutorials_validate_rejects_bad_roles() -> None:
     t = get_template("course-explore", "tutorials")
-    # textbook 必须含 textbook 角色
-    with pytest.raises(ValueError):
-        t.validate({"tutorials": [_tutorial("1", textbook=_book(roles=["exercises"]))]})
     # 未知角色
     with pytest.raises(ValueError):
-        t.validate({"tutorials": [_tutorial("1", textbook=_book(roles=["textbook", "notes"]))]})
+        t.validate({"tutorials": [_tutorial("1", textbook_ref=[_ref(roles=["textbook", "notes"])]),
+                                  _tutorial("2")]})
 
 
 def test_tutorials_validate_rejects_bad_position() -> None:
     t = get_template("course-explore", "tutorials")
     with pytest.raises(ValueError):
-        t.validate({"tutorials": [_tutorial("1", textbook=_book(position="deep"))]})
+        t.validate({"tutorials": [_tutorial("1", position="deep"),
+                                  _tutorial("2")]})
 
 
 def test_tutorials_validate_rejects_bad_intro_length() -> None:
     t = get_template("course-explore", "tutorials")
     # 过短
     with pytest.raises(ValueError):
-        t.validate({"tutorials": [_tutorial("1", textbook=_book(intro="太短"))]})
+        t.validate({"tutorials": [_tutorial("1", intro="太短"),
+                                  _tutorial("2")]})
     # 超长
     with pytest.raises(ValueError):
-        t.validate({"tutorials": [_tutorial("1", textbook=_book(intro="长" * 400))]})
+        t.validate({"tutorials": [_tutorial("1", intro="长" * 300),
+                                  _tutorial("2")]})
 
 
-def test_tutorials_validate_rejects_null_exercise_unless_same_source() -> None:
-    """exercise 可空仅当 textbook.roles 含 exercises（同源）；否则必须提供。"""
+def test_tutorials_validate_allows_null_exercise_for_self_contained() -> None:
+    """v2 放宽：exercise_ref 可空（教材自含习题或允许不提供习题集）。"""
     t = get_template("course-explore", "tutorials")
-    with pytest.raises(ValueError):
-        t.validate({"tutorials": [_tutorial("1", exercise=None)]})
+    # textbook 不含 exercises → exercise_ref=null 在 v2 允许
+    ok = {"tutorials": [_tutorial("1", exercise_ref=None,
+                                  textbook_ref=[_ref(roles=["textbook"])]),
+                        _tutorial("2")]}
+    result = t.validate(ok)
+    assert result["tutorials"][0]["exercise_ref"] is None
 
 
-def test_tutorials_validate_rejects_long_reason() -> None:
+def test_tutorials_validate_rejects_long_set_no() -> None:
     t = get_template("course-explore", "tutorials")
+    # set_no 必须是 1~2 位纯数字
     with pytest.raises(ValueError):
-        t.validate({"tutorials": [_tutorial("1", reason="长" * 51)]})
+        t.validate({"tutorials": [_tutorial("123"),
+                                  _tutorial("2")]})
+    with pytest.raises(ValueError):
+        t.validate({"tutorials": [_tutorial("A"),
+                                  _tutorial("2")]})
 
 
 def test_tutorials_template_contract_notes() -> None:
-    """模板文案契约锚点：中文书名优先 / 六要素 intro / 同源可空 / position 枚举。"""
+    """模板文案契约锚点：position 五档 / exercises 角色 / 中文输出 / 防注入。"""
     t = get_template("course-explore", "tutorials")
     user_text = t.build_user({"course": {"name": "课程"}, "book_preference": {}, "reference": {"text": ""}})
-    assert "中文" in user_text  # 书名中文优先
-    assert "original_title" in user_text  # 英文原名单独承载
     assert "position" in user_text and "beginner" in user_text and "advanced" in user_text
-    assert "exercises" in user_text and "同源" in user_text  # 同源可空规则
-    assert "作者" in user_text and "经典" in user_text  # 六要素锚点
+    assert "exercises" in user_text  # exercises 角色
+    assert "中文" in user_text  # 输出语言
     assert "不可信" in t.system  # 防注入
 
 
@@ -229,10 +266,10 @@ _COURSE = {
 
 _TUTORIALS_RESP = {"tutorials": [
     _tutorial("1"),
-    _tutorial("2", set_name="教程2：数学分析（陈纪修）",
-              textbook=_book(title="数学分析", authors=("陈纪修",), roles=("textbook", "exercises"),
-                             position="comprehensive", original="数学分析"),
-              exercise=None),
+    _tutorial("2", name="教程2：陈纪修《数学分析》",
+              textbook_ref=[_ref(title="数学分析", authors=(("陈纪修", "author"),),
+                                 roles=("textbook", "exercises"))],
+              exercise_ref=None),
 ]}
 
 
@@ -247,7 +284,7 @@ def test_course_pipeline_runs_single_step_and_enriches() -> None:
     assert first["proposal_id"].startswith("pp_")
     assert first["set_no"] == "1"
     assert [c["step"] for c in pipeline.step_calls] == ["tutorials"]
-    assert [c["template_id"] for c in pipeline.step_calls] == ["course-explore/tutorials@v1"]
+    assert [c["template_id"] for c in pipeline.step_calls] == ["course-explore/tutorials@v2"]
     assert pipeline.calls == 1
 
 
@@ -278,7 +315,7 @@ def test_course_pipeline_repairs_bad_json_once() -> None:
 
 
 def test_course_pipeline_wraps_validate_failure() -> None:
-    bad = {"tutorials": [_tutorial("1", exercise=None)]}  # 违规：非同一来源却 null
+    bad = {"tutorials": [_tutorial("1", position="invalid_position")]}  # 违规：非法 position
     pipeline = _pipeline([json.dumps(bad)])
     with pytest.raises(PipelineError):
         pipeline.explore(_COURSE, mode="direct")

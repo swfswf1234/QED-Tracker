@@ -2,8 +2,9 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-08-12
-关联代码：`src/qed_tracker/application/papers.py`、`src/qed_tracker/providers/bailian.py`、`src/qed_tracker/selection_store.py`
+确认状态：暂定
+最后更新：2026-09-07
+关联代码：`src/qed_tracker/application/papers.py`、`src/qed_tracker/providers/bailian.py`、`src/qed_tracker/db/selection_repository.py`
 关联测试：`tests/test_paper_application.py`、`tests/test_bailian_advisor.py`、`tests/test_paper_selection_cli.py`
 关联 ADR：—
 

@@ -1,7 +1,7 @@
 # 历史索引
 
 状态：Historical
-最后更新：2026-07-30
+最后更新：2026-09-07
 
 本目录只保存无法由当前代码和文档替代的历史基线。内容中的路径、命令、库存和状态可能已经失效，不得作为当前操作或实现依据。
 
@@ -14,5 +14,12 @@
 - [治理契约范本对齐归档](baselines/2026-08-governance-contract-alignment.md)：QED-022 承接根仓库 REQ-023（2026-09-01 归档，契约头六字段守护 + 守护面清单裁剪，确认状态暂定，已稳固实现）。
 - [QED-Engine 探索对齐承接设计归档](baselines/2026-08-engine-exploration-alignment.md)：根仓库 REQ-064/065 配合清单（2026-09-01 归档，QED-047 课程 dry-run + QED-048 写权限修订，四项配合事项全部落地，实现轮 339 passed）。
 - [qt_resources 退役归档](qed-030-retire-qt_resources/index.md)：QED-030 旧表 drop 证据快照（29 行全量备份、三表 4/12/16 现状、15 行清理备份）与一次性脚本归档说明。
+- [人工评审优化归档](baselines/2026-08-review-round-dedup.md)：QED-020 evaluate 同源去重 + review_note（2026-09-07 归档；机制随 QED-030 qt_resources 退役，评审备注语义由专用表 notes 字段承接）。
+- [生命周期脚本编码修复归档](baselines/2026-08-service-lifecycle-encoding-fix.md)：QED-035 `_pid_is_alive` GBK 解码修复（2026-09-07 归档；修复已合入 scripts/qed_tracker_service.py，test_service_scripts.py 持续回归守护）。
+- [下载与清单设计归档](baselines/2026-07-acquisition-and-inventory.md)：来源协议/选书要求/通用下载器与资源登记原语（2026-09-07 归档，ADR 0008 整篇并入 design/download-pipeline.md）。
+- [服务与外部接口设计归档](baselines/2026-08-tracker-service.md)：8901 端点/Axiom 消费面/配置/书单四职责（2026-09-07 归档，ADR 0008 拆散退役：Axiom 面→architecture/api.md、配置→design/service-management.md、书单→design/download-pipeline.md）。
+- [服务生命周期脚本设计归档](baselines/2026-08-service-lifecycle.md)：启停脚本契约与运行事实（2026-09-07 归档，ADR 0008 并入 design/service-management.md）。
+- [模型模式与密钥分置设计归档](baselines/2026-08-model-mode-config.md)：`.env` 密钥分置与模型模式（2026-09-07 归档，ADR 0008 并入 design/service-management.md）。
+- [教程命名规范设计归档](baselines/2026-08-tutorial-naming.md)：教程 name 统一格式（2026-09-07 归档，ADR 0008 并入 design/knowledge-import.md「教程命名规范」节）。
 
 逐日工作记录、旧 tracker 和被当前设计完整承接的文档不再复制归档，可从 Git 历史恢复。当前事实入口是[文档索引](../index.md)。

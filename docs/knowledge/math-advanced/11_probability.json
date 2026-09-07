@@ -1,53 +1,109 @@
 {
-  "meta": {
-    "contract": "course-knowledge/manual@v1",
-    "name": "概率论与数理统计课程知识（标准答案）",
-    "confirmed_at": "2026-08-29",
-    "purpose": "概率论与数理统计（11_probability）课程教材层标准答案：tutorials 套决定引用 + 期望落盘路径（target_path 基础名不含 sha，导入时按命名规则补 _<sha8>）",
-    "source": "docs/knowledge/course-tutorials-math-golden.json（2026-08-28 定稿范本）拆分",
-    "notes": [
-      "两套教材均自带习题（各自官方题解 Student Solutions Manual 均为英文书，tutorials 契约书名强制中文，不作独立 exercise 条目），exercise=null，exercise_count=0",
-      "target_path 为期望落盘相对路径（QED_DATA_ROOT 相对），不含 sha 后缀"
-    ]
-  },
-  "domain": "math-advanced",
-  "course": {
-    "course_id": "11_probability",
-    "name": "概率论与数理统计",
-    "aliases": ["概率统计", "Probability and Statistics"]
-  },
+  "domain_id": "math-advanced",
+  "course_id": "11_probability",
+  "course_name": "概率论与数理统计",
   "tutorials": [
     {
+      "knowledge_id": "kt-11pb-1",
+      "kind": "tutorial",
       "set_no": "1",
-      "set_name": "教程1：概率导论（Blitzstein）",
-      "textbook": {
-        "title": "概率导论",
-        "original_title": "Introduction to Probability",
-        "authors": ["Blitzstein", "Hwang"],
-        "version": {"edition": "第2版·修订版", "publisher": "人民邮电出版社", "year": null},
-        "roles": ["textbook", "exercises"],
-        "position": "beginner",
-        "intro": "约瑟夫·布里茨斯坦（哈佛统计系教授）与杰西卡·黄合著，哈佛 STAT 110 课程教材。侧重概率思维、直觉与模拟：不追求数学上的极端严谨，而是通过大量生动有趣的例子与故事，让你真正理解条件概率、贝叶斯公式等概念背后的意义，文笔风趣、引人入胜。配套 STAT 110 公开课由 Blitzstein 亲自讲授，被视为概率启蒙的「神作」。中译《概率导论》第2版修订版（图灵数学经典），对应 Introduction to Probability。概率论的最佳启蒙读物，适合建立概率直觉的初学者。习题是全书亮点：大量故事题与模拟题，鼓励用 R/Python 模拟验证理论，附官方解答——习题同源。",
-        "target_path": "raw/math-advanced/11_probability/概率导论.pdf"
-      },
-      "exercise": null,
-      "reason": "概率思维启蒙首选：故事题+模拟题建立直觉"
+      "name": "教程1：Bertsekas《概率导论》+ MIT OCW 6.041",
+      "position": "beginner",
+      "intro": "Bertsekas & Tsitsiklis 是 MIT 6.041「概率系统分析」课程教材，从直观自然的角度阐述概率模型、条件概率与随机变量，例题丰富、叙述平易，是理工科入门首选，目标是建立概率模型思维与贝叶斯直觉。MIT OCW 6.041（Tsitsiklis 主讲）与教材章节一一对应，且 athenasc.com 官网提供全部习题的官方完整解答 PDF——每题做完即能对标准答案，是全套中闭环质量最高的一环。直觉不足处可换看哈佛 STAT 110（Blitzstein 主讲）对应章节，其配套英文教材官网免费公开。",
+      "textbook_ref": [
+        {
+          "book_id": "11pb-b01",
+          "title": "概率导论",
+          "part": "",
+          "authors": [
+            { "name": "Dimitri P. Bertsekas", "role": "author" },
+            { "name": "John N. Tsitsiklis", "role": "author" },
+            { "name": "郑忠国", "role": "translator" },
+            { "name": "童行伟", "role": "translator" }
+          ],
+          "publisher": "人民邮电出版社",
+          "edition": "第2版·修订版",
+          "year": null,
+          "language": "zh",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": null
     },
     {
+      "knowledge_id": "kt-11pb-2",
+      "kind": "tutorial",
       "set_no": "2",
-      "set_name": "教程2：概率论基础教程（Ross）",
-      "textbook": {
-        "title": "概率论基础教程",
-        "original_title": "A First Course in Probability",
-        "authors": ["Ross"],
-        "version": {"edition": "原书第9版", "publisher": "机械工业出版社", "year": null},
-        "roles": ["textbook", "exercises"],
-        "position": "comprehensive",
-        "intro": "谢尔登·罗斯（Sheldon Ross），南加州大学教授，应用概率与仿真领域权威。本书是美国概率论课程最常用的教材之一：例题丰富、计算训练扎实，系统覆盖组合分析、公理化概率、条件概率、离散与连续随机变量、期望、极限定理等主干内容，叙述严谨清晰，与国内课程大纲最接近。中译《概率论基础教程》（原书第9版）由机械工业出版社出版，对应 A First Course in Probability。适合作为本科概率论的主教材进行全面系统的学习，也是应考与研究生的可靠基础。各章习题量大且难度分层，配套官方题解（Student Solutions Manual，精选习题详解）——习题同源。",
-        "target_path": "raw/math-advanced/11_probability/概率论基础教程.pdf"
-      },
-      "exercise": null,
-      "reason": "美国最常用教材：例题丰富计算扎实，贴国内大纲"
+      "name": "tutorial 2：Ross《概率论基础教程》",
+      "position": "comprehensive",
+      "intro": "Sheldon Ross 是美国本科概率课程最常用的教材：例题丰富、计算训练扎实，系统覆盖组合分析、公理化概率、条件概率、离散与连续随机变量、期望、极限定理，与国内课程大纲最接近，适合作为本课程主线全面学习。各章习题分三层（习题/理论习题/自检习题），自检习题书末附全部解答可直接自测，官方 Student Solutions Manual 流传广泛可作校验。与教程1 属同层并行而非递进：二选一作主线即可，以本套为统计推断（教程4）提供最扎实的前置。",
+      "textbook_ref": [
+        {
+          "book_id": "11pb-b02",
+          "title": "概率论基础教程",
+          "part": "",
+          "authors": [
+            { "name": "Sheldon M. Ross", "role": "author" },
+            { "name": "郑忠国", "role": "translator" }
+          ],
+          "publisher": "机械工业出版社",
+          "edition": "第8版",
+          "year": null,
+          "language": "zh",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": null
+    },
+    {
+      "knowledge_id": "kt-11pb-3",
+      "kind": "tutorial",
+      "set_no": "3",
+      "name": "tutorial 3：Mitzenmacher《概率与计算》",
+      "position": "elective",
+      "intro": "Mitzenmacher & Upfal《概率与计算：随机算法与概率分析》是随机算法方向的标准书：马尔可夫不等式、切诺夫界、随机算法与概率方法，展示概率论作为算法分析工具的全貌。概率论基础（教程1/2 前三章）学完即可切入，通往统计学习理论与随机化算法，衔接后续计算数学方向的兴趣。教材自带习题，以读通例题与算法证明为主线，训练量由概率主线承担。",
+      "textbook_ref": [
+        {
+          "book_id": "11pb-b03",
+          "title": "概率与计算：随机算法与概率分析",
+          "part": "",
+          "authors": [
+            { "name": "Michael Mitzenmacher", "role": "author" },
+            { "name": "Eli Upfal", "role": "author" }
+          ],
+          "publisher": "机械工业出版社",
+          "edition": "",
+          "year": null,
+          "language": "zh",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": null
+    },
+    {
+      "knowledge_id": "kt-11pb-4",
+      "kind": "tutorial",
+      "set_no": "4",
+      "name": "tutorial 4：Casella & Berger《Statistical Inference》",
+      "position": "comprehensive",
+      "intro": "Casella & Berger 是全球统计推断的标准研究生入门书：从概率模型过渡到数据决策，系统建立点估计（充分统计量、CRLB、贝叶斯估计）、假设检验（Neyman-Pearson 引理、UMP 检验）与区间估计的完整理论，与后续贝叶斯统计、高等概率论衔接最好，是「数理统计」半场的唯一承担者。概率论主线（教程2）极限定理学完即可切入。英文版无中译流通，以英文原版为决定；各章习题量大，社区题解资源成熟。",
+      "textbook_ref": [
+        {
+          "book_id": "11pb-b05",
+          "title": "Statistical Inference",
+          "part": "",
+          "authors": [
+            { "name": "George Casella", "role": "author" },
+            { "name": "Roger L. Berger", "role": "author" }
+          ],
+          "publisher": "Cengage Learning",
+          "edition": "2nd Edition",
+          "year": null,
+          "language": "en",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": null
     }
   ]
 }

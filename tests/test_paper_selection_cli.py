@@ -1,6 +1,6 @@
 from qed_tracker.application.papers import PaperSelectionError
 from qed_tracker.cli import main
-from qed_tracker.selection_store import SelectionStoreError
+from qed_tracker.db.selection_repository import SelectionStoreError
 
 SELECTION_ID = "sel-20260730T000000Z-12345678"
 

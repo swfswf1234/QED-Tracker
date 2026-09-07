@@ -2,13 +2,14 @@
 
 自身 `.env` 存于仓库根；根 `.env` 向上走查兜底。读取优先级：
 真实环境变量 > 自身 `.env` > 根 `.env` > 内置最小默认值。
-密钥（`API_KEY`、`DASHSCOPE_API_KEY`、`QED_DB_PASSWORD`）只经环境读取，
+密钥（`API_KEY`、`QED_DB_PASSWORD`）只经环境读取，
 不进入 `Settings` 的 repr。缺密钥时相关能力降级，不阻塞启动。
 """
 
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -33,7 +34,14 @@ class Settings:
     proxy: str = ""
     timeout_seconds: float = 30.0
     retries: int = 3
-    fetch_attempt_timeout: float = 600.0  # 书籍 fetch 每候选总预算：600s 无响应/未完成即切换下一候选（2026-08-28）
+    book_candidate_budget: float = 300.0  # QED-050：候选级预算（秒），取代 QED_FETCH_ATTEMPT_TIMEOUT（旧键一版别名后废弃）
+    book_min_pages: int = 10  # 机器验收硬门槛：页数下限
+    book_min_size_bytes: int = 204800  # 机器验收硬门槛：大小下限（200KB）
+    book_search_limit: int = 8  # 每 query 每渠道候选上限
+    book_query_variants: int = 3  # LLM 检索词变体上限（书级全局兜底一次）
+    book_llm_query: bool = True  # LLM 检索词兜底开关（关闭时零候选直接人工指引）
+    book_llm_confirm: bool = True  # LLM 确认开关（关闭时预筛通过即下载，匹配精度下降）
+    book_llm_budget: int = 8  # 单次 fetch 的 LLM 调用预算
     sources: tuple[str, ...] = DEFAULT_SOURCES
     axiom_url: str = "http://127.0.0.1:8902"
     tls_verify: bool = True
@@ -86,7 +94,15 @@ _ENV_MAP = {
     "QED_PROXY": ("proxy", str),
     "QED_TIMEOUT_SECONDS": ("timeout_seconds", float),
     "QED_RETRIES": ("retries", int),
-    "QED_FETCH_ATTEMPT_TIMEOUT": ("fetch_attempt_timeout", float),
+    "QED_FETCH_ATTEMPT_TIMEOUT": ("book_candidate_budget", float),  # 旧键一版别名（新键设置时被其覆盖）
+    "QED_BOOK_CANDIDATE_BUDGET": ("book_candidate_budget", float),
+    "QED_BOOK_MIN_PAGES": ("book_min_pages", int),
+    "QED_BOOK_MIN_SIZE_BYTES": ("book_min_size_bytes", int),
+    "QED_BOOK_SEARCH_LIMIT": ("book_search_limit", int),
+    "QED_BOOK_QUERY_VARIANTS": ("book_query_variants", int),
+    "QED_BOOK_LLM_QUERY": ("book_llm_query", _bool),
+    "QED_BOOK_LLM_CONFIRM": ("book_llm_confirm", _bool),
+    "QED_BOOK_LLM_BUDGET": ("book_llm_budget", int),
     "QED_TLS_VERIFY": ("tls_verify", _bool),
     "QED_LLM_BASE_URL": ("llm_base_url", str),
     "QED_LLM_TIMEOUT": ("llm_timeout_seconds", float),  # REQ-061 同步：根仓库同键名，原 60s 硬顶致长生成 ReadTimeout
@@ -95,11 +111,18 @@ _ENV_MAP = {
 }
 
 
+def strip_inline_comment(value: str) -> str:
+    """剥离 `.env` 值的内联注释：`#` 前有空白（如 ` #`）才视为注释并截断；
+    `#` 前无空白（如库名 `qed#x`、密码 `secret#pass`）保留，避免误伤真实值。"""
+    return re.split(r"\s+#", value, maxsplit=1)[0].rstrip()
+
+
 def _env_file_values(start: Path | None = None) -> dict[str, str]:
     """从 start 向上走查全部 `.env`，合并为视图（不修改 os.environ，避免测试环境污染）。
 
     先加载者（自身 .env）优先，根 `.env` 兜底；空值（如 `KEY=`）跳过留给兜底来源。
     键限 `QED_*` 与供应商密钥别名；已有环境变量优先于文件值（见 `_env_value`）。
+    值支持内联注释剥离（`value # comment` → `value`，见 `strip_inline_comment`）。
     """
     values: dict[str, str] = {}
     start = start or Path.cwd()
@@ -112,7 +135,7 @@ def _env_file_values(start: Path | None = None) -> dict[str, str]:
                 continue
             key, _, value = line.partition("=")
             key = key.strip()
-            value = value.strip().strip('"').strip("'")
+            value = strip_inline_comment(value.strip()).strip('"').strip("'")
             if not value:
                 continue
             if key.startswith("QED_") or key in _ENV_KEYS:
