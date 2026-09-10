@@ -1,16 +1,16 @@
 # QED-Tracker API 设计文档（8901）
 
 设计状态：Accepted
-确认状态：暂定
+确认状态：已确认
 实现状态：Implemented
-最后更新：2026-09-07
+最后更新：2026-09-09
 关联代码：`src/qed_tracker/api/main.py`、`src/qed_tracker/api/tasks.py`
 关联测试：`tests/test_api.py`、`tests/test_knowledge_api.py`、`tests/test_book_api.py`、`tests/test_knowledge_import.py`、`tests/test_prompt_lab_api.py`、`tests/test_book_fetch.py`、`tests/test_exploration_stage.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
 
-> **确认状态：暂定**——正式稿已成文（六要素表述由 QED-044 收口），转正待评审。
-> 端点口径：**主线 30 条按五组写六要素 + 非主线端点 7 条附录一览**；探索阶段端点 2 条已
-> 实现并入②组；代码注册 37 条以 `src/qed_tracker/api/main.py` 为准。DB 未配置时，五层端点
+> **确认状态：已确认**——2026-09-09 经用户转正评审（QED-044 收口），本文件为 8901 API 唯一事实源。
+> 端点口径：**主线 31 条按五组写六要素 + 非主线端点 7 条附录一览**；探索阶段端点 2 条已
+> 实现并入②组；代码注册 38 条以 `src/qed_tracker/api/main.py` 为准。DB 未配置时，五层端点
 > 按契约统一 409「数据库未配置」（下文各端点不再重复标注）。
 >
 > 本文件另含 **8902 消费面契约**（文末「外部接口」节）：QED-Tracker 作为客户端消费
@@ -28,7 +28,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | 组 | 说明 | 端点数 |
 | --- | --- | --- |
 | ① 服务与任务 | 健康检查 + 后台任务轮询契约 | 2 |
-| ② 领域与课程 | 共享表维护（领域/课程 CRUD + 手动导入，双轨[手动]）+ 探索阶段确认端点 + 课程体系只读 | 11 |
+| ② 领域与课程 | 共享表维护（领域/课程 CRUD + 手动导入，双轨[手动]）+ 探索阶段确认端点 + 课程体系与领域详情只读 | 12 |
 | ③ 探索评估与采纳 | 探索 dry-run（双轨[自动]）+ 课程知识采纳 + 探索审阅与重探（REQ-067-B12） | 7 |
 | ④ 教程 | 教程查询/定稿迁移（draft→confirmed 两态）+ 教程级批量取书 | 4 |
 | ⑤ 书籍与渠道 | 书库化创建 + 登记导入 + 渠道留痕 + 书级自动取书（双轨[自动]） | 6 |
@@ -39,6 +39,57 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 **六要素约定**：每个端点按 **接口 / 描述 / 输入 / 输出 / 范例 / 解释** 表述——「接口」即标题
 （方法 + 路径）；「输入」列路径参数、查询参数与请求体字段；「输出」列成功状态码与响应结构、
 错误状态码；「范例」给可复制的 JSON；「解释」给语义、幂等、状态机与设计文档链接。
+
+## 端点分类索引
+
+> **双轨约定**：`双轨[手动]` 表示用户直接操作（人工录入/审阅），`双轨[自动]` 表示 LLM 后台执行
+> （模型推理+自动下载）。定义详见[系统概览](system-overview.md)「手动/自动双轨在架构中的落点」节。
+
+| 方法/路径 | 分类 | 执行模式 | LLM | 说明 |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/health` | 只读 | 同步 | - | 健康检查 |
+| `GET /api/v1/tasks/{task_id}` | 只读 | 同步 | - | 后台任务轮询 |
+| `GET /api/v1/courses` | 只读 | 同步 | - | 课程体系列表 |
+| `GET /api/v1/courses/{domain_id}` | 只读 | 同步 | - | 单领域课程详情（待确认态优先回 courses.json） |
+| `GET /api/v1/domains/{id}` | 只读 | 同步 | - | 领域详情（已生成态优先回 domains.json） |
+| `GET /api/v1/knowledge` | 只读 | 同步 | - | 教程列表 |
+| `GET /api/v1/knowledge/{id}` | 只读 | 同步 | - | 教程详情 |
+| `GET /api/v1/books/{id}/sources` | 只读 | 同步 | - | 书籍渠道列表 |
+| `POST /api/v1/domains` | 双轨[手动] | 同步 | - | 创建领域 |
+| `PATCH /api/v1/domains/{id}` | 双轨[手动] | 同步 | - | 更新领域 |
+| `DELETE /api/v1/domains/{id}` | 双轨[手动] | 同步 | - | 删除领域 |
+| `POST /api/v1/domains/import` | 双轨[手动] | 同步 | - | 手动领域 JSON 导入 |
+| `POST /api/v1/domains/{id}/courses/import` | 双轨[手动] | 同步 | - | 手动导入课程 |
+| `POST /api/v1/domains/{id}/courses` | 双轨[手动] | 同步 | - | 创建课程 |
+| `PATCH /api/v1/courses/{id}` | 双轨[手动] | 同步 | - | 更新课程 |
+| `DELETE /api/v1/courses/{id}` | 双轨[手动] | 同步 | - | 删除课程 |
+| `POST /api/v1/courses/{id}/knowledge` | 双轨[手动] | 同步 | - | 采纳推荐建教程 |
+| `POST /api/v1/knowledge/{id}/confirm` | 双轨[手动] | 同步 | - | 确认教程（draft→confirmed） |
+| `POST /api/v1/books` | 双轨[手动] | 同步 | - | 书库化创建 |
+| `POST /api/v1/books/{id}/sources` | 双轨[手动] | 同步 | - | 添加渠道记录 |
+| `POST /api/v1/books/{id}/register` | 双轨[手动] | 同步 | - | 原地登记已有 PDF |
+| `POST /api/v1/books/{id}/import` | 双轨[手动] | 同步 | - | 人工导入 PDF |
+| `POST /api/v1/domains/{id}/apply-results` | 双轨[手动] | 同步 | - | 确认领域探索结果 |
+| `POST /api/v1/courses/{id}/apply-results` | 双轨[手动] | 同步 | - | 确认课程探索结果 |
+| `POST /api/v1/prompt-explores/dry-run` | 双轨[自动] | 同步 | Yes | 领域探索评估（domain@v4） |
+| `POST /api/v1/courses/{id}/prompt-explores/dry-run` | 双轨[自动] | 同步 | Yes | 课程探索评估（tutorials@v2） |
+| `POST /api/v1/domains/{id}/confirm` | 混合（手动触发→异步 LLM） | 同步触发 | 条件 | domains.json 含 courses 时同步写 courses.json（待确认，无 LLM）；否则异步提交 courses@v8 |
+| `POST /api/v1/domains/{id}/re-explore` | 双轨[自动] | 202 异步 | Yes | 重置领域探索（domain@v4） |
+| `POST /api/v1/courses/{id}/re-explore` | 双轨[自动] | 202 异步 | Yes | 重置课程探索（tutorials@v2） |
+| `POST /api/v1/knowledge/{id}/fetch` | 双轨[自动] | 202 异步 | Yes | 教程级批量取书 |
+| `POST /api/v1/books/{id}/fetch` | 双轨[自动] | 202 异步 | Yes | 书级自动取书 |
+| `GET /api/v1/books/search` | 非主线 | 同步 | - | 教材候选搜索 |
+| `GET /api/v1/papers/search` | 非主线 | 同步 | - | 论文候选搜索 |
+| `GET /api/v1/catalogs` | 非主线 | 同步 | - | 目录列表 |
+| `GET /api/v1/catalogs/{id}` | 非主线 | 同步 | - | 目录详情 |
+| `GET /api/v1/domains` | 非主线 | 同步 | - | 领域列表（扁平） |
+| `GET /api/v1/tasks` | 非主线 | 同步 | - | 任务列表 |
+| `POST /api/v1/tasks/{task_type}` | 非主线 | 202 异步 | - | 提交后台任务（基础设施） |
+
+**执行模式说明**：
+- **同步**：请求阻塞等待结果返回
+- **202 异步**：请求立即返回 `task_id`，需轮询 `GET /tasks/{task_id}` 获取结果
+- **混合**：用户操作同步完成，内部异步提交 LLM 任务
 
 ## ① 服务与任务
 
@@ -120,14 +171,20 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 ### `GET /api/v1/courses/{domain_id}`
 
-- **描述：** 单领域课程体系详情（响应结构同上，单元素数组）。
+- **描述：** 单领域课程体系详情（响应结构同上，单元素数组）；`待确认` 状态优先返回
+  `courses.json` 文件数据（探索结果以 JSON 文件为唯一事实源，apply-results 前尚未落库）。
 - **输入：** 路径参数 `domain_id` — 领域标识（如 `math`）。
-- **输出：** 200 同上单元素数组；404 未知领域。
+- **输出：** 200 同上单元素数组；`待确认` 且 `raw/{domain_id}/courses.json` 存在时，课程数组
+  为 JSON 文件原样结构（字段含 `summary`，与落库后的 `description` 不同名）并附加
+  `path`（探索派生路径）与 `source: "json_file"` 标记；文件缺失时回退数据库视图。
+  404 未知领域。
 - **范例：**
   ```json
   [{"domain_id": "math", "name": "数学", "courses": ["…同 GET /api/v1/courses 单门课程结构…"]}]
   ```
-- **解释：** 前端按领域拉取课程体系的视图端点；字段语义与共享表列一一对应。
+- **解释：** 前端按领域拉取课程体系的视图端点；字段语义与共享表列一一对应；`json_file`
+  分支使审阅页在 apply-results 落库前即可读到探索产出（与②组 confirm 写 `courses.json`、
+  ③组 apply-results 的「先同步后采纳」语义配套）。
 
 ### `POST /api/v1/domains`
 
@@ -182,72 +239,96 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   ```
 - **解释：** 硬删除；守卫防止课程体系连带误删（删课程须先清领域下课程）。
 
+### `GET /api/v1/domains/{domain_id}`
+
+- **描述：** 领域详情；`已生成` 状态优先返回 `domains.json` 文件数据（手动导入后的待确认
+  第一轮，报告以 JSON 文件为唯一事实源），其余状态从数据库读取。
+- **输入：** 路径参数 `domain_id` — 领域标识（如 `math`）。
+- **输出：** 200 领域字典 + `courses[]`；`已生成` 且 `raw/{domain_id}/domains.json` 存在时，
+  name/description/stages/level/scope/classic_tracks/courses 以 JSON 文件为准并附
+  `source: "json_file"`，`exploration_stage` 仍取自数据库；文件缺失时回退数据库视图
+  （字段同 `GET /api/v1/courses` 单领域视图，无 `scope`）。404 `DOMAIN_NOT_FOUND`。
+- **范例：**
+  ```json
+  // 响应 200（已生成 + domains.json 存在）
+  {
+    "domain_id": "math-advanced", "name": "数学（高等数学）",
+    "description": "…", "stages": ["基础", "主干", "分支", "前沿"],
+    "level": "本科", "scope": "…", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}],
+    "courses": [{"course_id": "01_math_analysis", "name": "数学分析", "summary": "..."}],
+    "exploration_stage": "已生成", "source": "json_file"
+  }
+  ```
+- **解释：** 六步流程第 1 步（`POST /domains/import`）后的审阅视图端点：前端在 confirm 前
+  经此读取导入文件内容；confirm 后（探索中/待确认/已完成）回到数据库视图。
+
 ### `POST /api/v1/domains/import`【手动导入】
 
-- **描述：** 手动领域 JSON 导入（QED-050，2026-09-03 六步流程）：校验 manual@v1 契约，
-  是**一整份知识定稿**的一次性落库入口（与领域探索 apply 的逐项写入不同）。
-- **输入：** 请求体（二选一）+ `source` 参数：
+- **描述：** 手动领域 JSON 导入（QED-050，2026-09-03 六步流程第 1 步）：校验 manual@v1 契约 →
+  写入 `raw/{domain_id}/domains.json` 文件暂存 → 更新既有领域 `exploration_stage=已生成`。
+  **只写文件不落库**（课程落库由第 2/3 步 confirm / courses/import 承接）；领域行必须已存在，
+  本端点不创建领域。
+- **输入：** 请求体（二选一）：
 
   | 字段 | 类型 | 必填 | 说明 |
   |---|---|---|---|
   | domain | object | * | 内联领域 JSON（manual@v1 契约） |
   | file_path | string | * | 本机可读文件路径（与 domain 二选一） |
-  | source | string | 否 | `manual`（人工录入，默认）/ `explore`（自动探索，仅作来源记录不落列）/ `cli`（CLI 提交，直接定稿） |
 
   领域 JSON 契约要点：`domain`（标识）/ `name` / `description` / `level` / `scope` /
   `classic_tracks[{name,summary,kind}]` / `stages`（四档）/
-  `courses[{course_id,name,track,stage,aliases,summary,prerequisites}]`。
-- **输出：** 200 落库摘要 `{"domain_id", "courses_created", "courses_updated", "exploration_stage"}`；
-  400 `INVALID_PARAMS`（校验失败/文件不可读/JSON 解析失败）；422 缺 domain/file_path。
+  `courses[{course_id,name,track,stage,aliases,summary,prerequisites}]`（courses 可空，空时
+  confirm 走 LLM 探索分支）。
+- **输出：** 200 `{"domain_id", "file_path", "exploration_stage": "已生成", "message"}`；
+  400 `INVALID_PARAMS`（校验失败/文件不可读/JSON 解析失败）；404 `DOMAIN_NOT_FOUND`
+  （领域不存在，须先 `POST /domains` 创建）；422 缺 domain/file_path。
 - **范例：**
   ```json
   // 请求
-  {"domain": {"domain": "math-advanced", "name": "数学（高等数学）", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}], "stages": ["基础", "主干", "分支", "前沿"], "courses": [{"course_id": "01_math_analysis", "name": "数学分析", "track": "分析学", "stage": "基础", "summary": "..."}]}, "source": "manual"}
+  {"domain": {"domain": "math-advanced", "name": "数学（高等数学）", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}], "stages": ["基础", "主干", "分支", "前沿"], "courses": [{"course_id": "01_math_analysis", "name": "数学分析", "track": "分析学", "stage": "基础", "summary": "..."}]}}
 
-  // 响应（source=cli）
-  {"domain_id": "math-advanced", "courses_created": 12, "courses_updated": 0, "exploration_stage": "已完成"}
+  // 响应 200
+  {"domain_id": "math-advanced", "file_path": "raw/math-advanced/domains.json", "exploration_stage": "已生成", "message": "领域知识已写入文件，状态更新为已生成"}
   ```
-- **解释：** 语义随 `source`：
-  - `source=cli`：一次写 qed_domain + qed_course（幂等 upsert），探索立即定稿
-    `domain.exploration_stage=已完成`（跳过已生成/待确认两极）。
-  - 其余（无 source / `manual`）：**只登记域（qed_domain）**，置 `exploration_stage=已生成` +
-    `explore_pending=review_results`（step=domain），进入六步流程第 1 步；课程由后续
-    `POST /domains/{id}/courses/import` 写入（见[知识录入设计](../design/knowledge-import.md)六步流程）。
-  - 落库语义（D8）：domain 不存在→创建、存在→更新维护字段（name 不可变）；courses 逐条
-    upsert（详情字段 update，sort_order=课程数组顺序用于新建），既有课程
-    exploration_stage/related_targets 不触碰。
+- **解释：**
+  - 落盘语义：写入 `QED_DATA_ROOT/raw/{domain_id}/domains.json`（重复导入覆盖，幂等）；
+    仅更新既有领域的 `exploration_stage=已生成`，不写任何表行、不写 explore_pending。
+  - 历史口径（2026-09-08 前）曾有 `source` 参数（`manual`/`explore`/`cli`）与 D8 一次落库
+    语义，现均已退役：`source` 参数不再读取，CLI `domains import` 与 API 走同一六步流程
+    （见[知识录入设计](../design/knowledge-import.md)）。
   - 契约守护：`src/qed_tracker/application/knowledge_import.py`（manual@v1 校验器）+
     `tests/test_knowledge_import.py`。
-  - **实现差异（待 Phase 2 对齐）**：当前实现非 cli 路径仍同批写 courses（未按六步流程拆分），
-    需改为只写 qed_domain，课程写入交由 `POST /domains/{id}/courses/import`。
 
 ### `POST /api/v1/domains/{domain_id}/confirm`
 
-- **描述：** 确认领域知识（双轨[手动]确认步）：读取 domains.json → upsert QedDomain +
-  异步提交 courses@v8 后台任务。
+- **描述：** 确认领域知识（双轨[手动]确认步，六步流程第 2 步）：读取 domains.json →
+  upsert QedDomain；**双分支**——domains.json 已含 courses（手动导入）时直接同步写
+  `courses.json`（不触发 LLM）；无 courses（LLM 探索轨）时异步提交 courses@v8 后台任务。
 - **输入：** 路径参数 `domain_id`；无 body。
-- **输出：** 200 `{domain_id, task_id, exploration_stage, message}`；404 `FILE_NOT_FOUND`。
+- **输出：** 200 `{domain_id, task_id, exploration_stage, message}`（`task_id` 手动分支为
+  `null`）；404 `FILE_NOT_FOUND`。
 - **范例：**
   ```json
-  // 响应 200
-  {
-    "domain_id": "math",
-    "task_id": "task_domain_explore_courses_001",
-    "exploration_stage": "探索中",
-    "message": "已提交 courses@v8 后台任务，轮询 GET /api/v1/tasks/{task_id} 等待完成"
-  }
+  // 响应 200（domains.json 含 courses —— 手动导入分支）
+  {"domain_id": "math", "task_id": null, "exploration_stage": "待确认", "message": "领域已确认，课程已从导入文件同步"}
+
+  // 响应 200（无 courses —— LLM 探索分支）
+  {"domain_id": "math", "task_id": "task_domain_explore_courses_001", "exploration_stage": "探索中", "message": "已提交 courses@v8 后台任务，轮询 GET /api/v1/tasks/{task_id} 等待完成"}
   ```
-- **解释：** 读取 `raw/{domain_id}/domains.json` → upsert domain → 异步提交
-  `domain_explore_courses` 后台任务（只跑 courses@v8）→ 返回 task_id 供轮询；状态变为
-  `探索中`。幂等（重复 confirm 只覆盖不重复创建）；六步流程第 2 步，见
-  [知识录入设计](../design/knowledge-import.md)。
+- **解释：** 读取 `raw/{domain_id}/domains.json` → upsert domain：
+  - **手动导入分支**：domains.json `courses` 非空 → 原样组装写入
+    `raw/{domain_id}/courses.json`，状态直接置 `待确认`（跳过 LLM 与探索中），`task_id=null`；
+  - **LLM 探索分支**：`courses` 为空 → 异步提交 `domain_explore_courses` 后台任务
+    （只跑 courses@v8）→ 状态置 `探索中`，返回 task_id 供轮询。
+  幂等（重复 confirm 只覆盖不重复创建）；见[知识录入设计](../design/knowledge-import.md)。
 
 ### `POST /api/v1/domains/{domain_id}/courses/import`
 
 - **描述：** 从 domains.json 读取 courses 并写入 qed_course（双轨[手动]确认步）。
 - **输入：** 路径参数 `domain_id`；无 body。
-- **输出：** 200 `{domain_id, courses_created, courses_updated, exploration_stage}`；
-  404 `FILE_NOT_FOUND`；409 `INVALID_TRANSITION`。
+- **输出：** 200 `{domain_id, courses_created, courses_updated, exploration_stage: "待确认"}`；
+  400 `INVALID_PARAMS`（domains.json 无课程数据）；404 `FILE_NOT_FOUND` /
+  `DOMAIN_NOT_FOUND`；409 `INVALID_TRANSITION`（状态须为 `已生成` 或 `探索中`）。
 - **范例：**
   ```json
   // 响应 200
@@ -258,8 +339,10 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
     "exploration_stage": "待确认"
   }
   ```
-- **解释：** 读取 `raw/{domain_id}/domains.json` → 逐条 upsert `qed_course` → 状态变为
-  `待确认`。用于 confirm-domain 后手动导入课程的场景（六步流程第 3 步落地物）。
+- **解释：** 读取 `raw/{domain_id}/domains.json` → 逐条 upsert `qed_course`（新课程
+  `sort_order`=数组序；既有课程更新详情字段，`exploration_stage`/`related_targets` 不触碰）
+  → 状态变为 `待确认`。守卫接受 `已生成`（手动导入第 1 步后）与 `探索中`（LLM 探索中）——
+  2026-09-09 自「仅探索中」放宽（QED-055，根仓库 REQ-067 手动导入六步流程第 3 步）。
 
 ### `POST /api/v1/domains/{domain_id}/courses`
 
@@ -277,7 +360,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   | track | string | 否 | 课程所属学术方向（classic_tracks 之一） |
   | prerequisites | string[] | 否 | 先修 course_id 数组 |
 
-- **输出：** 201 完整课程字典（`row.to_dict()` 含全部 15 列）；404 `DOMAIN_NOT_FOUND`；
+- **输出：** 201 完整课程字典（`row.to_dict()` 含全部 16 列）；404 `DOMAIN_NOT_FOUND`；
   409 `COURSE_ALREADY_EXISTS`；422 `INVALID_PARAMS`。
 - **范例：**
   ```json
@@ -330,7 +413,6 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   | 字段 | 类型 | 必填 | 说明 |
   |---|---|---|---|
   | domain_name | string | 是 | 领域名称（非空且 ≤100 字符） |
-  | source | string | 否 | `explore`（默认）/ `manual`，仅作来源记录 |
   | scope_hint | string | 否 | 范围说明（默认"本科-硕士"） |
   | mode | string | 否 | `direct` / `text` / `doc`，默认 `direct` |
   | ref_text | string | 否 | 参考文本（mode=text 时必填，≤10000 字符） |
@@ -437,7 +519,9 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 ### `POST /api/v1/domains/{domain_id}/apply-results`
 
 - **接口：** POST `/api/v1/domains/{domain_id}/apply-results`，路径参数 `domain_id`。
-- **描述：** 确认领域探索结果（待确认 → 已完成）：选择要保留的课程，删除其余。
+- **描述：** 确认领域探索结果（待确认 → 已完成）：先从 `courses.json` 幂等同步课程入
+  qed_course（courses@v8 与手动 confirm 分支只写 JSON 文件不写库），再选择要保留的课程，
+  删除其余。
 - **输入：** body `{selected_courses: string[]}`（必填，选中的课程 ID 列表）。
 - **输出：** 200 `{domain_id, courses_kept}`；404 领域不存在；409 当前状态非「待确认」；422 selected_courses 非数组。
 - **范例：**
@@ -448,8 +532,11 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   // 响应
   {"domain_id": "math", "courses_kept": 2}
   ```
-- **解释：** 探索完成后写「待确认」（explore_pending 载荷），由用户在前端审阅后触发采纳
-  或重探；设计见 [REQ-067-B10/B12 探索阶段设计](../history/baselines/2026-08-31-req067-b10-b12-exploration-stage.md)，
+- **解释：** 前置同步（2026-09-08 修复，问题 4）：`_sync_courses_from_json_to_db` 在采纳前
+  把 `raw/{domain_id}/courses.json` 的课程逐条 upsert 入库（无文件则跳过）——courses@v8
+  任务与 confirm 手动分支均只产出 JSON 文件，未经同步直接查询 qed_course 会得到 0 门
+  （courses_kept=0 事故根因）。随后进入采纳：删除未选课程；设计见
+  [REQ-067-B10/B12 探索阶段设计](../history/baselines/2026-08-31-req067-b10-b12-exploration-stage.md)，
   状态机登记见[数据库共享表设计](database-shared-tables.md)状态机节。
 
 ### `POST /api/v1/domains/{domain_id}/re-explore`
@@ -743,7 +830,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 ## 非主线端点附录
 
 以下 7 条端点**全链路流程（评估→确认→下载→验收→登记→展示）未消费**，代码保留不删，
-登记于此以对齐「主线 30 条 + 非主线 7 条 = 代码 37 条」口径：
+登记于此以对齐「主线 31 条 + 非主线 7 条 = 代码 38 条」口径：
 
 | 方法/路径 | 说明 | 备注/消费方 |
 | --- | --- | --- |
@@ -751,7 +838,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | `GET /api/v1/papers/search` | 论文候选搜索（arXiv；参数 q/category/author/limit） | search 类直连端点；论文链见[论文发现设计](../design/paper-discovery.md) |
 | `GET /api/v1/catalogs` | 已注册目录列表（`[{"id": "math-qe"}]`） | [下载管线设计](../design/download-pipeline.md)「math-qe 冻结书单与 catalog 冻结目录链」（frozen JSON 下载清单） |
 | `GET /api/v1/catalogs/{catalog_id}` | 目录详情（含全部 targets） | 同上；404 目录不存在 |
-| `GET /api/v1/domains` | 领域列表（扁平视图，不含嵌套课程） | 领域维度视图；主线课程体系视图为 `GET /api/v1/courses` |
+| `GET /api/v1/domains` | 领域列表（扁平视图，不含嵌套课程） | 领域维度视图；主线课程体系视图为 `GET /api/v1/courses`，领域详情为 `GET /api/v1/domains/{domain_id}`（②组） |
 | `GET /api/v1/tasks` | 任务列表（全部） | 任务基础设施；主线只按 task_id 轮询 |
 | `POST /api/v1/tasks/{task_type}` | 提交后台任务（202；类型 book_download/tutorial_fetch/domain_explore/domain_explore_courses/course_explore） | 任务基础设施；取书两类建议走④⑤组专用端点以获得 dedup 查重 |
 
@@ -793,8 +880,9 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 - **CLI 已实现**：`src/qed_tracker/axiom.py`（`AxiomClient`）、`src/qed_tracker/cli.py`
   `axiom push` 命令（提交与执行）、`src/qed_tracker/inventory.py`（传输记录落点）、
   `QED_AXIOM_URL` 默认 `http://127.0.0.1:8902`（`config.py`）。
-- **8901 API 未暴露**：`src/qed_tracker/api/main.py` 无任何 axiom 路由，`POST /tasks/axiom/push`
-  为 QED-010「CLI 转 HTTP 客户端」规划项（见[待办列表](../trackers/todo.md)）。
+- **8901 API 未暴露**：`src/qed_tracker/api/main.py` 无任何 axiom 路由。原 QED-010 规划项
+  `POST /tasks/axiom/push` 未在 QED-010（已按主链路范围验收关闭，2026-09-09）中实现；
+  如需 axiom 端点服务化另行立项。
 
 ### 端点契约（消费面 3 端点）
 

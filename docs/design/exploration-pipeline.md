@@ -3,7 +3,7 @@
 设计状态：Accepted
 实现状态：In Progress
 确认状态：已确认
-最后更新：2026-09-07
+最后更新：2026-09-09
 关联代码：`src/qed_tracker/prompt_lab/`（pipeline/templates/priors）、`src/qed_tracker/providers/explore_advisor.py`、`src/qed_tracker/api/main.py`（探索段）、`src/qed_tracker/cli.py`（domains explore）
 关联测试：`tests/test_prompt_lab.py`、`tests/test_prompt_lab_course.py`、`tests/test_prompt_lab_api.py`、`tests/test_task_handlers.py`、`tests/test_cli_domains_explore.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -151,10 +151,12 @@ QED-Tracker 的探索能力基于 **LLM 模板管线**，用于自动发现领�
 
 ### 领域探索落盘
 
+dry-run **不落盘**（只同步返回报告）；落盘发生在 run 后台任务、手动导入与 confirm 双分支：
+
 | 阶段 | 文件路径 | 内容 |
 | --- | --- | --- |
-| dry-run / domain_explore | `raw/{domain_id}/domains.json` | 领域 JSON（含 classic_tracks/stages/level，courses 为空） |
-| courses@v8 完成 | `raw/{domain_id}/courses.json` | 课程列表 JSON（含 courses[]/path） |
+| run 第一轮（domain_explore handler）/ 手动导入 `POST /domains/import` | `raw/{domain_id}/domains.json` | 领域 JSON（含 classic_tracks/stages/level，courses 为空或手动导入自带） |
+| courses@v8 完成（domain_explore_courses handler）/ confirm 含 courses 分支 / `courses/import` 捷径 | `raw/{domain_id}/courses.json` | 课程列表 JSON（含 courses[]/path） |
 
 ### 课程探索落盘
 
@@ -262,8 +264,11 @@ QED-Tracker 的探索能力基于 **LLM 模板管线**，用于自动发现领�
 
 - 领域与课程共用 6 态状态机（`未开始 → 已生成 → 探索中 → 待确认 → 已完成`，`探索中/待确认 → 失败`），
   写主体分工、`explore_pending` 载荷 structure 见[数据库共享表设计](../architecture/database-shared-tables.md)状态机节。
-- 手动导入（`/domains/import`）复用同一状态机：API 路径走 `已生成` 与 `待确认` 两极（分别对应
-  第一轮/第二轮待确认点）；CLI 路径跳过两极直接 `已完成`（见[知识录入设计](knowledge-import.md)）。
+  （`失败` 为契约保留态，当前代码无写入点：错误路径写 `待确认` + `explore_pending={kind:"error"}`，
+  实现口径见共享表设计头注。）
+- 手动导入（`/domains/import`）复用同一状态机：API 与 CLI 均走 `已生成` 与 `待确认` 两极
+  （confirm 双分支 / `courses/import` 捷径，见[知识录入设计](knowledge-import.md)六步流程；
+  CLI 直接定稿语义已退役）。
 
 ## CLI（domains explore）
 
@@ -280,14 +285,21 @@ qed-tracker domains explore 高等数学 --confirm-name 高等数学
 - `confirmation_required`（名称需人工确认）→ 打印 `name_check` 并以退出码 2 结束，带
   `--confirm-name` 重跑；8901 服务不可达 → 退出码 6；HTTP 错误 → 退出码 2。
 
-## 实现状态与待对齐（Phase 2 清单）
+## 实现状态与待对齐（Phase 2 清单，2026-09-09 核对）
+
+已落地：
+
+| 项 | 结果 |
+| --- | --- |
+| 领域 run 审阅轮数 | 已实现两轮：`domain_explore` handler 第一轮置 `已生成`、`domain_explore_courses` handler 第二轮置 `待确认`（`explore_pending.stage=domain/courses`） |
+| 模板版本残留 | 已统一 `tutorials@v2`/`courses@v8`/两步（本文档与代码一致） |
+| 探索"发起端点"（prompt-explores/prompt-runs） | 已随 0013 退役，无残留 |
+
+待对齐（跟踪于[遗留问题清单](../plans/2026-09-doc-cleanup-leftovers.md)）：
 
 | 项 | 当前 | 目标 |
 | --- | --- | --- |
-| 领域 run 审阅轮数 | 单轮 pending（domain+courses+path 合一） | 两轮（本轮裁决） |
-| `re-explore` mode 默认值 | `web`（旧契约，属非法 mode） | `direct` |
-| 模板版本残留 | 文档多处仍记 `tutorials@v1`/`path@v5`/三步 | 统一 `tutorials@v2`/`courses@v8`/两步 |
-| 探索"发起端点"（prompt-explores/prompt-runs） | 文档残留 | 已随 0013 退役，删除残留 |
+| `re-explore`/run 路径 `mode` 默认值 | `web`（旧契约、非法 mode：`_domain_explore_handler`/`_course_explore_handler` 与两个 re-explore 提交均默认 `web`，`_read_reference` 直接拒绝 → 不带 mode 提交即失败写 error 载荷） | `direct` |
 
 ## 关联文档
 

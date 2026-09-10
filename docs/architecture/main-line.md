@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-09-06
+最后更新：2026-09-09
 关联代码：src/qed_tracker/courses.py、src/qed_tracker/main_line/（advisor.py）、src/qed_tracker/db/knowledge_repository.py、src/qed_tracker/application/book_fetch.py、src/qed_tracker/cli.py（courses/mainline/books 命令组）
 关联测试：tests/test_courses.py、tests/test_main_line_advisor.py、tests/test_main_line_cli.py、tests/test_book_fetch.py、tests/test_encoding_regression.py
 关联 ADR：—
@@ -10,8 +10,8 @@
 执行方：QED-Tracker
 
 > 本文件是主链路的架构文档。设计细节（数据模型、端点契约、评审表单）见
-> [主链路设计](../design/main-line-curriculum.md)；实现按 [实现计划](../plans/2026-08-main-line-curriculum.md)
-> 完成（QED-026，提交链 948fa88~ea905b9，全量 221 passed + 3 skipped）。
+> [主链路设计](../design/main-line-curriculum.md)；实现按主链路计划完成（QED-026 已关闭，
+> 见[已完成任务台账](../trackers/completed.md)；提交链 948fa88~ea905b9，全量 221 passed + 3 skipped）。
 >
 > **QED-050-D 书库化重接（2026-09-06）**：条目存储由 `meta/main-line/` JSON 改为
 > `qt_knowledge`/`qt_books`（0018 重建契约）；取书重接为五阶段链（检索→确认→下载→机器验收→
@@ -37,15 +37,16 @@
 - **课程**：只梳理并跑通 3 门基础课——**数学分析（01）、高等代数（02）、概率论与数理统计（00）**
   （数学专业本科核心三课，均无前置；后续课程按用户正式确认再扩展，不自动推广）。
 - **教材**：每门课程找到并标注最佳经典教材 + 配套习题集（沿用「2–4 套，贵精不贵多」原则）。
-- **落位**：下载文件先进本仓库临时数据根（可删可重建）；**人工验收通过后正式移交根仓库
-  `dataset/qed-tracker/`**（正式落地，唯一持久位置）。
+- **落位**：下载文件先进本仓库临时数据根（可删可重建）；机器验收通过即落 `raw/` 成品区，
+  `mark_owned` 登记 owned 即完成（QED-050-D 后无「复制移交根仓库」步骤，原第一版移交语义已退役）。
 - **渠道**：主链路内记录每次渠道尝试（来源/成功/失败/耗时），人工可据记录剔除无效渠道；
   与 [来源评估矩阵](../plans/2026-09-source-discovery.md)（人工评估结论）互补，不重复。
 
 ## 课程体系（用户 2026-08-12 审理）
 
-- 数据文件：src/qed_tracker/migrations/data/math.json（包内静态数据；2026-08-16 起课程数据
-  迁入 `qed_course` 共享表，JSON 退役为迁移种子，运行时读表）。
+- 数据文件：`docs/knowledge/*.json`（math/computer-science 标准答案 JSON）经
+  `qed-tracker knowledge import` 确认导入 `qed_course` 共享表，运行时读表
+  （原包内迁移种子 math.json 已随 ADR 0006 迁移链退役，无迁移种子）。
 - **三大无前置基础课**：00 概率论与数理统计（新增课程）、01 数学分析、02 高等代数
   （= catalog 线性代数，同一课程不同名称）。
 - 14 门课程完整清单、先修关系（DAG）、阶段划分见
@@ -73,7 +74,7 @@ flowchart LR
 
 | 层 | 内容 |
 | --- | --- |
-| 课程体系（`courses.py`） | 课程体系读取：`qed_course` 共享表（迁移种子 `migrations/data/math.json`）：学科课程清单 + 前置关系（先修→后修 DAG）+ 学习阶段 + 名称映射。 |
+| 课程体系（`courses.py`） | 课程体系读取：`qed_course` 共享表（数据经 `docs/knowledge/` 标准答案 JSON 确认导入，无迁移种子）：学科课程清单 + 前置关系（先修→后修 DAG）+ 学习阶段 + 名称映射。 |
 | 教程/书行（QED-031 起，QED-050-D 书库化） | 存储 = `qt_knowledge`（教程两态 draft/confirmed + refs 决定引用）+ `qt_books`（书库化：四选用态 candidate/decided/parallel/retired + 持有态 holding owned/missing），归属由 refs 承载；条目服务在 `db/knowledge_repository.py`。 |
 | 取书链（`application/book_fetch.py`，QED-050-D） | 书级/教程级 fetch：五阶段（检索→确认→下载→staging 机器验收→登记 owned），人工导入经 `/books/{id}/import` 汇合同一登记服务。 |
 | 渠道记录 | qt_sources 运行时事实（来源、成功/失败、文件、备注），支撑「渠道有效性表」（`mainline channels` 聚合）。 |
@@ -92,8 +93,9 @@ flowchart LR
 
 ## 关键设计决策（已确认）
 
-1. **课程体系 = 共享表 + API 透出**：课程数据迁入 `qed_course`（种子 `migrations/data/math.json`，
-   2026-08-16 用户裁决 JSON 退役）→ `GET /courses`（8901，QED-033 已实现）→ 8903 知识链路。catalog 不动。
+1. **课程体系 = 共享表 + API 透出**：课程数据迁入 `qed_course`（2026-08-16 用户裁决 JSON 退役；
+   原迁移种子 `migrations/data/math.json` 已随 ADR 0006 退役，现行导入源为 `docs/knowledge/` 标准答案 JSON）→
+   `GET /courses`（8901，QED-033 已实现）→ 8903 知识链路。catalog 不动。
 2. **主链路教材条目 = 独立数据**：五要素（课程 + 版本/评价/建议 + 渠道记录 + 验收状态），
    存储于 `meta/main-line/`，与现有候选/资源解耦。（**QED-050-D 书库化后失效**：条目改落
    `qt_knowledge`/`qt_books`，JSON 条目模型退役。）

@@ -2,8 +2,8 @@
 
 设计状态：Accepted
 实现状态：Implemented
-确认状态：暂定
-最后更新：2026-09-07
+确认状态：已确认
+最后更新：2026-09-09
 需求方：QED-Engine
 关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/db/schema.py`（ensure_schema 自愈）、`src/qed_tracker/courses.py`
 关联测试：`tests/test_db_models.py`、`tests/test_schema.py`、`tests/test_courses.py`
@@ -18,8 +18,13 @@
 > ——DDL、列语义、状态机契约、写权限与 Schema 变更流程均以本文件为准。实施事实源为 ORM
 > 模型 `src/qed_tracker/db/models.py`（ADR 0006：模型即 schema，`ensure_schema` 启动自愈，
 > 表/列中文注释事实源 = 模型 `comment=`）；本文 DDL 为设计展示，行尾 `--` 注释为设计注释，
-> 与模型 `comment=` 解耦。**确认状态：暂定**——转正评审由 QED-044 收口。
+> 与模型 `comment=` 解耦。**确认状态：已确认**——2026-09-09 经用户转正评审（QED-044 收口）。
 > 项目专用表（`qt_*`）的契约见[数据库专用表设计](database-private-tables.md)，本文不重复。
+> **实现口径注（2026-09-09 与代码核对）**：① `explore_pending` 错误载荷实际为
+> `{kind:"error"}`（另含 `{kind:"name_confirmation"}`），设计期的 `{kind:"failed"}` 措辞退役；
+> ② `exploration_stage` 的「失败」值当前无代码写入点（错误路径写 `待确认`+error 载荷），
+> 保留为契约值；③ qed_course.stage 值域以本表 `基础/主干/分支/前沿` 为准（模型注释已
+> 同步四档措辞，2026-09-09 遗留项 L-05 修复；存量表列注释随下次表重建自愈刷新）。
 
 ## 背景与目标
 
@@ -89,7 +94,7 @@ CREATE TABLE qed_domain (
 | 7 | `classic_tracks` | JSON | `[]` | 课程方向，JSON 数组 [{name, summary, kind}]，0~4 项。`kind`：`main`=主干方向 / `branch`=分支方向（2026-08-29 语义升级）。管线 domain@v4 输出 |
 | 8 | `stages` | JSON | —（无默认值） | 学习阶段顺序列表，值为四档 `["基础","主干","分支","前沿"]`（2026-08-29 用户裁定；基础=入门基石；主干=方向主干；分支=方向细分/拓展；前沿=研究前沿/论文驱动）。之后可变更 |
 | 9 | `path_results` | JSON | `null` | 学习流程，可空。领域探索管线输出（courses@v8 起由服务端按 prerequisites 推导），包含 notes/edges[{from,to}]/graph_td |
-| 10 | `explore_pending` | JSON | `null` | 探索待确认载荷（REQ-067-B12）：`待确认` = `{kind:"review_results", courses:[...], domain_report}`；`失败` = `{kind:"failed", error:"..."}`；其余状态 NULL |
+| 10 | `explore_pending` | JSON | `null` | 探索待确认载荷（REQ-067-B12）：`待确认` = `{kind:"review_results", stage, courses:[...], domain_report}` / `{kind:"name_confirmation", name_check}` / `{kind:"error", error}`；其余状态 NULL（领域第二轮课程结果现落 `raw/{id}/courses.json`，载荷为空） |
 | 11-14 | audit | — | — | created_by/updated_by/created_at/updated_at |
 
 ### exploration_stage 状态机（6 态，REQ-067-B12 契约）
@@ -110,10 +115,10 @@ CREATE TABLE qed_domain (
 |---|---|---|---|
 | 未开始 | 手动创建 | 创建方（8900 直建或本仓库 API） | NULL |
 | 已生成 | 领域探索**第一轮**（domain@v4 半场）报告就绪，等待用户确认（可修改） | **8901**（domain_explore_handler 只跑 domain@v4）；手动路径由本仓库 `POST /domains/import` 驱动 | NULL（领域第一轮） |
-| 探索中 | 第一轮已确认，**第二轮**（courses@v8 半场）进行中 | **8901**（confirm-domain 后异步提交 domain_explore_courses 任务） | NULL |
-| 待确认 | 领域探索**第二轮**报告就绪，等待用户采纳；或课程探索单轮报告就绪（REQ-067-B12） | **8901**（domain_explore_courses_handler 完成）；手动路径 课程写入 `探索中→待确认` | `{kind:"review_results", stage, courses:[...], domain_report}`（领域第二轮）或 `{kind:"review_results", tutorials:[...]}`（课程）；`stage` 标记：`domain`/`courses` |
-| 已完成 | 第二轮审阅采纳落库（本仓库 `POST /domains/{id}/apply-results`）或课程 apply-results；手动导入 CLI（`/domains/import` source=cli） | **本仓库 8901** | NULL（采纳时清空） |
-| 失败 | 探索失败 / 服务重启中断（8901 lifespan 启动清理） | **本仓库 8901** | `{kind:"failed", error:"..."}` |
+| 探索中 | 第一轮已确认，**第二轮**（courses@v8 半场）进行中 | **8901**（confirm-domain 后异步提交 domain_explore_courses 任务；re-explore 亦置此态） | NULL |
+| 待确认 | 领域探索**第二轮**报告就绪，等待用户采纳；或课程探索单轮报告就绪（REQ-067-B12）；或探索任务失败落此态+error 载荷 | **8901**（domain_explore_courses_handler 完成置此态但不写载荷，结果落 `raw/{id}/courses.json`；手动导入路径经 confirm 双分支 / courses/import 直达此态；任务错误路径写 error 载荷） | 领域第二轮：NULL（结果在 courses.json）；课程：`{kind:"review_results", tutorials:[...]}`；错误：`{kind:"error", error}`；名称待确认：`{kind:"name_confirmation", name_check}` |
+| 已完成 | 第二轮审阅采纳落库（本仓库 `POST /domains/{id}/apply-results`）或课程 apply-results | **本仓库 8901** | NULL（采纳时清空） |
+| 失败 | **契约保留值，当前无代码写入点**（错误路径写 `待确认`+`{kind:"error"}`；设计期的「服务重启 lifespan 启动清理」未实现——遗留问题已登记） | （无） | （无） |
 
 ### 领域探索两轮审阅时序（2026-09-03 用户裁决）
 
@@ -134,8 +139,11 @@ CREATE TABLE qed_domain (
 - **已生成** = 第一轮报告就绪的待确认点；**探索中** = 第一轮已确认、第二轮进行中；
   **待确认** = 第二轮报告就绪的待确认点；**已完成** = 第二轮确认采纳，领域探索结束。
 - 第 1 轮确认（已生成→探索中）由 `POST /domains/{id}/confirm` 驱动（读取 domains.json →
-  upsert domain + 异步提交 courses@v8 任务）。
-- 第 2 轮确认（待确认→已完成）由 `POST /domains/{id}/apply-results` 驱动（选择保留的课程）。
+  upsert domain + 异步提交 courses@v8 任务）。**手动导入捷径（2026-09-09）**：domains.json
+  已含 courses 时，confirm 跳过 courses@v8 直接把 courses 写入 courses.json 并置 `待确认`
+  （两轮压缩为同步两步，`task_id=null`）。
+- 第 2 轮确认（待确认→已完成）由 `POST /domains/{id}/apply-results` 驱动（选择保留的课程；
+  采纳前先把 courses.json 幂等同步入 qed_course——courses@v8 与手动分支都只写 JSON 文件）。
 - 课程探索为单步、单轮：`探索中 → 待确认`（报告就绪，等待确认，可修改）→ `确认 → 已完成`。
 - dry-run 端点保持单次同步评估（只跑 domain@v4），不拆两轮。
 
@@ -190,7 +198,7 @@ CREATE TABLE qed_course (
   created_at         DATETIME      NOT NULL,
   updated_at         DATETIME      NOT NULL,
   PRIMARY KEY (course_id),
-  KEY ix_qed_course_domain (domain_id)
+  KEY ix_qed_course_domain_id (domain_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='课程表：登记一门课程，记录课程名称、所属阶段、先修关系与学习顺序';
 ```
 
@@ -209,7 +217,7 @@ CREATE TABLE qed_course (
 | 9 | `related_targets` | JSON | `[]` | 已通过验收的关联 catalog 目标（随验收回填） |
 | 10 | `description` | VARCHAR(1000) | `""` | 课程介绍（原 note 字段，2026-08-27 重命名） |
 | 11 | `exploration_stage` | VARCHAR(20) | `"未开始"` | 流程状态枚举（6 态，同 qed_domain，见上文状态机） |
-| 12 | `explore_pending` | JSON | `null` | 探索待确认载荷（REQ-067-B12）：`待确认` = `{kind:"review_results", tutorials:[...]}`；`失败` = `{kind:"failed", error:"..."}`；其余状态 NULL |
+| 12 | `explore_pending` | JSON | `null` | 探索待确认载荷（REQ-067-B12）：`待确认` = `{kind:"review_results", tutorials:[...]}` / `{kind:"error", error}`；其余状态 NULL |
 | 13-16 | audit | — | — | created_by/updated_by/created_at/updated_at |
 
 ### stage 字段说明
@@ -230,10 +238,10 @@ CREATE TABLE qed_course (
 |---|---|---|
 | 未开始 | 手动创建 | 创建方（8900 直建或本仓库 API） |
 | 已生成 | 课程探索会话产出报告 | **8900**（写权限例外，见下） |
-| 探索中 | 正式探索启动（异步场景） | **8900**（同上） |
-| 待确认 | 课程探索（tutorials@v2）报告生成，等待用户确认（可修改，REQ-067-B12） | **8900**（同上） |
+| 探索中 | 正式探索启动（异步场景） | **8900**（写权限例外）与 **8901**（re-explore 端点） |
+| 待确认 | 课程探索（tutorials@v2）报告生成（course_explore handler 写 explore_pending 载荷） | **8900**（写权限例外）与 **8901**（后台 handler、错误路径 error 载荷） |
 | 已完成 | 用户确认教材方案（`POST /courses/{id}/apply-results`） | **本仓库 8901** |
-| 失败 | 探索失败 / 服务重启中断（8901 lifespan 启动清理） | **本仓库 8901** |
+| 失败 | **契约保留值，当前无代码写入点**（错误路径写 `待确认`+`{kind:"error"}`） | （无） |
 
 > 写主体口径（2026-08-28 澄清，根仓库 REQ-064⑤；2026-08-31 按 REQ-067-B12 修订）：**8900 负责
 > 探索过程状态流转（探索中/已生成/待确认），本仓库负责验收终态（已完成）与失败清理
@@ -382,6 +390,8 @@ Alembic 迁移链已退役（ADR 0006）：`ensure_schema(engine)` 启动自愈�
 - **qed_llm_calls 特判**：根仓库建表维护的共享审计表，本仓库 `ensure_schema` 仅在缺失时按
   权威 DDL（对齐根仓库 `call_log.py`）建表；已有表缺 REQ-060 扩展列（task/step/review_status/
   review_note）则 `ALTER ADD COLUMN` 补齐；**绝不 DROP 重建**（保护三项目审计历史）。
+  兜底建表的 `prompt`/`response` 列以 SQLAlchemy `Text()`（TEXT）声明，与根仓库
+  MEDIUMTEXT 展示略有宽度差异——生产表以根仓库 `call_log.py` 建表为准。
 - **历史关键节点（仅追溯，非实现依据）**：0006 建 qed_domain/qed_course（math.json 种子迁入）；
   0011/0012 扩列与改名（level/scope/classic_tracks/path_results、track、description）；
   0013 DROP qt_explore_runs/qt_prompt_runs；0015 增 explore_pending（6 态状态机，REQ-067-B12）。

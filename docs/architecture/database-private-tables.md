@@ -2,8 +2,8 @@
 
 设计状态：Accepted
 实现状态：Implemented
-确认状态：暂定
-最后更新：2026-09-07
+确认状态：已确认
+最后更新：2026-09-09
 需求方：QED-Engine（根仓库 REQ-026/REQ-029/REQ-030；2026-08-16 用户裁决知识层次重构）
 关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/db/schema.py`、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/db/selection_repository.py`、`src/qed_tracker/db/tasks_repository.py`
 关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、`tests/test_schema.py`、`tests/test_schema_mysql_smoke.py`（实现轮同步更新）
@@ -19,7 +19,11 @@
 > 实施事实源为 ORM 模型 `src/qed_tracker/db/models.py`（ADR 0006：模型即 schema，
 > `ensure_schema` 启动自愈，表/列中文注释事实源 = 模型 `comment=`）；本文 DDL 为设计展示
 > （行尾 `--` 注释、comment 不换行、表名/用途在代码块外），与模型 `comment=` 解耦。
-> **确认状态：暂定**——转正评审由 QED-044 收口。共享表（`qed_*`）契约见
+> **展示口径（2026-09-09 与 ORM 核对）**：DDL 中 `ENUM`/`SMALLINT`/`TINYINT` 为设计展示，
+> ORM 实际以 `String`+长度 / `Integer` 声明（`ensure_schema` 建表按 ORM），值域约束在应用层；
+> 「FK →」为**逻辑外键**（应用层保证引用一致性），数据库级 FOREIGN KEY 仅 `qt_sources.book_id`
+> 一处真实声明。
+> **确认状态：已确认**——2026-09-09 经用户转正评审（QED-044 收口）。共享表（`qed_*`）契约见
 > [数据库共享表设计](database-shared-tables.md)，本文不重复。
 
 ## 背景与动机
@@ -294,7 +298,7 @@ CREATE TABLE qt_sources (
 ```sql
 CREATE TABLE qt_tasks (
   task_id         VARCHAR(100)  NOT NULL,         -- PK：任务标识
-  type            VARCHAR(50)   NOT NULL,         -- 任务类型（book_download / tutorial_fetch / domain_explore / course_explore）
+  type            VARCHAR(50)   NOT NULL,         -- 任务类型（book_download / tutorial_fetch / domain_explore / domain_explore_courses / course_explore）
   status          VARCHAR(24)   NOT NULL,         -- queued / running / succeeded / failed
   params          JSON          NOT NULL,         -- 任务参数
   progress        INT           NOT NULL DEFAULT 0, -- 进度（0-100）

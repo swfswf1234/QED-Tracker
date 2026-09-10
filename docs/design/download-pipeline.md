@@ -16,8 +16,9 @@
 > [数据库专用表设计](../architecture/database-private-tables.md)
 > 为准，本文档只链接不复制；论文链与 8901 端点契约、8902 Axiom 消费面不在本文档范围
 > （见[架构 API](../architecture/api.md)）。
-> 实现方案（代码模块、schema 落地由 ensure_schema 承担（ADR 0006，无迁移 0018）、端点
-> 签名）见[下载登记实现计划](../plans/2026-09-download-implementation.md)。
+> 实现按下载登记计划完成（QED-050-D 已关闭，见[已完成任务台账](../trackers/completed.md)）；
+> schema 落地由 ensure_schema 承担（ADR 0006，无迁移 0018），代码模块与端点签名以
+> `src/qed_tracker/application/` 与[架构 API](../architecture/api.md) 为准。
 
 ## 背景与问题
 
@@ -38,8 +39,9 @@
 失效端点与 mainline 命令的处置方向。
 
 **不管**：论文链（[论文发现设计](paper-discovery.md)）、探索管线
-（[探索管线设计](exploration-pipeline.md)）、数据生命周期与清理
-（[数据生命周期设计](../plans/2026-09-data-lifecycle.md)）、知识录入主体
+（[探索管线设计](exploration-pipeline.md)）、知识/探索/书籍生命周期状态机契约
+（[数据库专用表设计](../architecture/database-private-tables.md) 与
+[数据库共享表设计](../architecture/database-shared-tables.md)）、知识录入主体
 （[知识录入设计](knowledge-import.md)，本文档只承接其「书籍 PDF 导入」一段）、
 服务运行面与配置（[服务管理中心设计](service-management.md)）、8901 端点契约与
 8902 Axiom 交付（[架构 API](../architecture/api.md)）。
@@ -444,23 +446,21 @@ catalog run 冻结目录链与严格匹配、资源 JSON/Inventory 原语为 QED
 （`src/qed_tracker/catalog.py`、`src/qed_tracker/matching.py`、`src/qed_tracker/inventory.py`），
 本文档 2026-09-07 收编其契约（ADR 0008），行为不变。
 
-剩余在途收尾（定向测试预存在失败修复、00/01/02 真实环境闭环）跟踪于
-[待办列表](../trackers/todo.md) QED-050-D 行，不在本设计文档声明范围；分阶段执行过程见
-[下载登记实现计划](../plans/2026-09-download-implementation.md)。
+原在途收尾项（00/01/02 真实环境闭环）已随 QED-014 验收关闭（2026-09-09，见[完成台账](../trackers/completed.md)）；
+定向测试预存在失败修复（签名对齐）跟踪于[遗留问题清单](../plans/2026-09-doc-cleanup-leftovers.md) L-14（归 QED-057），
+不在本设计文档声明范围。
 
 ## 关联文档
 
 | 文档 | 关系 |
 |---|---|
 | [知识录入设计](knowledge-import.md) | 上游：qt_books 行与 refs 的产生；书籍 PDF 导入另一入口 |
-| [数据库专用表设计](../architecture/database-private-tables.md) | qt_books/qt_sources DDL、状态机、Schema 自愈（唯一事实源） |
-| [数据生命周期设计](../plans/2026-09-data-lifecycle.md) | 三条生命周期与清理策略（QED-050-E） |
+| [数据库专用表设计](../architecture/database-private-tables.md) | qt_books/qt_sources DDL、状态机、Schema 自愈（唯一事实源）；三条生命周期状态机以该文档与本文档为准（原数据生命周期计划 2026-09-09 随 QED-050-E 关闭删除） |
 | [架构 API](../architecture/api.md) | 端点契约（④ 组重接线后同步）；8902 Axiom 交付消费面 |
 | [来源探索与评估计划](../plans/2026-09-source-discovery.md) | 渠道评估矩阵与持续探索工作（2026-09-07 自 design/ 移入 plans，ADR 0008） |
 | [服务管理中心设计](service-management.md) | 下载链运行面（服务启停、`.env` 与模型模式） |
 | [下载与清单设计（已归档）](../history/baselines/2026-07-acquisition-and-inventory.md) | 已并入本文档（2026-09-07，ADR 0008）：来源协议、选书要求、通用下载器与资源登记原语 |
 | [服务与外部接口设计（已归档）](../history/baselines/2026-08-tracker-service.md) | 已拆散退役（2026-09-07，ADR 0008）：math-qe 书单规格迁入本文档 |
-| [下载流程现状分析](../plans/2026-08-download-flow.md) | 前置现状分析（下载链部分由本设计承接） |
 
 ## 变更记录
 

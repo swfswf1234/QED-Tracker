@@ -1,36 +1,27 @@
 # 待办列表
 
 状态：Current
-最后更新：2026-09-07
+最后更新：2026-09-09
 
 ## 本期计划（全链路跑通）
 
-### 核心目标
-1. 跑通全链路（探索→评估→下载→验收）
-2. 完善文档评估逻辑链路
-3. 完善文档下载链路
-4. QED-014 验证最终效果
+### 核心目标（已收口，2026-09-09）
+
+原四项目标（跑通全链路 / 完善文档评估逻辑链路 / 完善文档下载链路 / QED-014 验证最终效果）
+已全部完成并验收关闭，见[完成台账](completed.md)。
 
 ### 任务清单
 
 
-#### 阶段二：主链路完善
+#### 阶段二：主链路完善（已收口，2026-09-09）
 
-| ID | 类型 | 状态 | 事项 | 成功标准 | 关联计划 |
-| --- | --- | --- | --- | --- | --- |
-| QED-026 | Plan | 进行中 | 主链路第一版（CLI 跑通 3 门基础课验证）：课程体系加载、教材条目五要素存储、LLM 预填评价、mainline new/review/download/verify/channels（approve/reject 已随 QED-050-D 删除，取书经 8901 五阶段链，登记 owned 即完成） | 00/01/02 三门课程闭环；全量门禁全绿 | [2026-08-main-line-curriculum.md](../plans/2026-08-main-line-curriculum.md)、[2026-08-download-flow.md](../plans/2026-08-download-flow.md) |
-| QED-050 | Plan | 进行中 | 教材探索与下载手动+自动双轨 + 知识体系梳理：方案 A 薄壳导入层复用现有能力；QED-043 语义升级；docs/knowledge/ 标准答案知识目录；手动探索（POST /domains/import）；手动下载（POST /books/{id}/import） | M1~M7 全部完成（prompt 模板升级、math.json 重整理、流程文档、导入链、下载链、文档同步） | [2026-08-knowledge-dual-flow.md](../history/baselines/2026-08-knowledge-dual-flow.md) |
-| QED-050-D | Plan | 进行中 | 下载与登记链路优化（自动下载 + 手动导入 + 验收）：三门基础课下载闭环 + 渠道记录完备 + target_path 落盘验证。2026-09-04 设计确认晋升[下载管线设计](../design/download-pipeline.md)（五阶段下载链 + 九项裁决），实现按[下载登记实现计划](../plans/2026-09-download-implementation.md)分阶段执行；2026-09-06 Phases 0~6 实现完成（0018 书库化重建 + original_title、QED_BOOK_* 8 键 + accept_pdf 验收门、LLM 顾问扩展与渠道 enrich、五阶段编排与 mark_owned 登记服务、API 35 路由重接 + 并发 409 防护、CLI mainline/books 重接 + migrate 退役、文档同步 + 门禁全绿）；2026-09-07 CLI 手动上传人工闭环验证（qed_test 库）：domains import math-advanced（12 门）→ knowledge import 01/02/11（11 套 confirmed、21 书行）→ books import 手动导入 17 本（数学分析 11 / 高等代数 3 / 概率论 3，渠道 local_import 18 条全 ok）→ mainline verify 逐套复核全 ok；未导入：01ma-b02/b03（Apostol 两卷，用户暂缓）、02la-b06（普罗斯库烈柯夫习题集，目录无 PDF）、11pb-b05（Casella & Berger，目录无 PDF）；01 json 增行 b16 谢惠民下册/b17 Rudin 英文习题答案/b18 Fitzpatrick（parallel_ref）并校验通过；既有失败不阻塞：正本守护 test_knowledge_docs_courses_conform_to_contract 因 template.json 与正本同目录被误扫、test_validate_course_rejects 用 tutorials@v1 旧数据；2026-09-07 qed_test 清库后纯 8901 API 链重放冒烟完成（POST /domains/import 12 门 → /courses/{id}/knowledge 采纳 11 套/21 书行 → /knowledge/{id}/confirm 11/11 → /books/{id}/import 17 本 owned → verify 17/17 ok；同 sha 幂等复用与 local_import 渠道留痕验证；回执已登记根仓库 ARCH-019）；剩余：00/01/02 三门真实环境闭环验证 | 00/01/02 课程下载→验收→登记全链路通过；渠道记录完整 | [2026-09-download-implementation.md](../plans/2026-09-download-implementation.md) |
-| QED-050-E | Plan | 待开始 | 数据生命周期验证（状态机全路径 + 清理策略）：知识/探索/书籍三条生命周期各状态路径测试 + 交叉点验证 + 清理策略端到端验证 | 全状态路径测试通过；交叉点联动验证；清理策略验证 | [2026-09-data-lifecycle.md](../plans/2026-09-data-lifecycle.md) |
-| QED-053 | Plan | 进行中 | v0.1 数据库重构（[ADR 0006](../adr/0006-database-model-as-schema-rebuild.md)）：模型即 schema + 重建式自愈，Alembic 链退役。实施：[2026-09-db-schema-rework.md](../plans/2026-09-db-schema-rework.md)。阶段一（代码+文档）进行中；确认时写 JSON 为阶段二 | 全量门禁全绿；qed_test 库冒烟通过（ensure_schema 缺表补建/不一致重建/幂等/qed_llm_calls 增量自愈）；真实 qed 库经人工确认后更新 | [2026-09-db-schema-rework.md](../plans/2026-09-db-schema-rework.md) |
+本阶段任务（QED-050 全子轮 / QED-050-E / QED-053）已全部验收关闭，见[完成台账](completed.md)。
 
 #### 阶段三：验证与回执
 
 | ID | 类型 | 状态 | 事项 | 成功标准 | 关联计划 |
 | --- | --- | --- | --- | --- | --- |
-| QED-010 | Plan | 待开始 | [跨项目] CLI 转 HTTP 客户端 + 基于真实 8901 服务的冒烟测试（需求方：QED-Engine） | `qed-tracker` 命令经 8901 完成任务；启动 → 建任务 → 轮询 → 校验文件落位全链路冒烟通过；`--no-wait` 输出 task_id；论文链路真实冒烟 | [2026-08-engine-exploration-alignment.md](../history/baselines/2026-08-engine-exploration-alignment.md) |
-| QED-011 | Validation | 待开始 | 重复下载链路验证（用户约定在 QED-008~010 冒烟后执行） | 同一资源二次下载返回既有资源记录，不产生重复文件，任务幂等 | — |
-| QED-014 | Validation | 待开始 | [跨项目] 联调冒烟与回执：真实 8901 全链路（评估→确认→下载→验收/删除→登记→qed CLI/8903 前端展示）（**最终验证**） | 8901 服务 + qed CLI + QED-Engine 下载工作台数据贯通；根仓库 todo REQ-004/REQ-011/REQ-013/REQ-014/REQ-026 收到回执 | — |
+| QED-011 | Validation | 待开始 | 重复下载链路验证（前置 QED-010 真实 8901 冒烟已于 2026-09-09 验收通过，解除阻塞） | 同一资源二次下载返回既有资源记录，不产生重复文件，任务幂等 | — |
 
 ---
 
@@ -53,8 +44,9 @@
 | ID | 类型 | 状态 | 事项 | 说明 |
 | --- | --- | --- | --- | --- |
 | QED-043 | Plan | 进行中 | prompt 优化模块（领域/课程知识探索工作台）：领域管线 v2/v4/v8 已验证（13 门）；课程 tutorials@v2 实现完成 | 长期任务，持续优化 |
-| QED-044 | Plan | 进行中 | 完整数据库设计文档与 API 设计文档：主线 30 条路由五组六要素 + 非主线 7 条附录一览成文（architecture/api.md）；数据库文档按表族拆分两文（[ADR 0007](../adr/0007-database-docs-split-by-table-family.md)：architecture/database-private-tables.md / architecture/database-shared-tables.md）（[实施计划](../plans/2026-08-db-api-docs-completion.md)） | 正式稿已成文（2026-09-07）；转正评审与根仓库同步回执待办 |
-| QED-054 | Plan | 进行中 | 来源探索与评估（持续工作）：来源评估矩阵维护、渠道连通性/中文覆盖/候选质量实测、待探索清单推进；libgen_li 保持发现专用（metadata_only，永不自动落盘），annas_archive/zlib 保持退役 | 评估结论持续更新进计划矩阵；新来源按来源协议接入经通用下载器 | [2026-09-source-discovery.md](../plans/2026-09-source-discovery.md) |
+| QED-054 | Plan | 进行中 | 来源探索与评估（持续工作）：来源评估矩阵维护、渠道连通性/中文覆盖/候选质量实测、待探索清单推进；libgen_li 保持发现专用（metadata_only，永不自动落盘），annas_archive/zlib 保持退役 | 评估结论持续更新进计划矩阵；新来源按来源协议接入经通用下载器；REQ-020①② 承接口径已并入计划（L-04 已通过，找得率基线具备采集条件，随本任务采集并回执根仓库） | [2026-09-source-discovery.md](../plans/2026-09-source-discovery.md) |
+| QED-056 | Defect | 进行中 | 文档清理遗留问题跟踪（2026-09-09 清理轮产出）：L-02/03/04 随 QED-014 验收关闭、L-05/06 注释级修复完成（2026-09-09）；剩 L-01/L-14（代码级修复，归 QED-057）、裁决项 L-07/08/09/10（待用户）、知会 L-11、找得率基线 L-13（随 QED-054）；全部事项的证据与去向见清单 | 全部遗留项关闭或分派至对应任务/裁决 | [2026-09-doc-cleanup-leftovers.md](../plans/2026-09-doc-cleanup-leftovers.md) |
+| QED-057 | Defect | 进行中 | 遗留问题清单代码级修复执行：注释级修复已完成（L-05 `QedCourse.stage` 注释改四档 基础/主干/分支/前沿、L-06 dry-run docstring tutorials@v2，2026-09-09）；待执行 L-01 re-explore/run `mode` 默认值 `"web"`→`direct`（`api/main.py:800`/`:833`）与 L-14 预存在测试失败签名对齐（`create_knowledge` 等旧签名调用） | L-01/L-14 修复，相关测试恢复通过；全量测试恢复基线 | [2026-09-doc-cleanup-leftovers.md](../plans/2026-09-doc-cleanup-leftovers.md) |
 
 ---
 

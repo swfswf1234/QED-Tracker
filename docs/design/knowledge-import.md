@@ -1,10 +1,10 @@
 # 知识录入设计（手动入口与标准答案目录）
 
 设计状态：Accepted
-实现状态：In Progress
+实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-07
-关联代码：`src/qed_tracker/application/knowledge_import.py`、`src/qed_tracker/db/knowledge_repository.py`（含 `tutorial_name` 命名函数与 `adopt_tutorials` 先查后建幂等）、`src/qed_tracker/api/main.py`（domains/import、courses/knowledge、knowledge/{id}/confirm）、`src/qed_tracker/cli.py`（domains/knowledge import、mainline new/review 命名路径）
+最后更新：2026-09-09
+关联代码：`src/qed_tracker/application/knowledge_import.py`、`src/qed_tracker/application/domain_file.py`（domains.json/courses.json/tutorials.json 读写层）、`src/qed_tracker/db/knowledge_repository.py`（含 `tutorial_name` 命名函数与 `adopt_tutorials` 先查后建幂等）、`src/qed_tracker/api/main.py`（domains/import、domains/{id}/confirm 双分支、domains/{id}/courses/import、courses/knowledge、knowledge/{id}/confirm）、`src/qed_tracker/cli.py`（domains/knowledge import、mainline new/review 命名路径）
 关联测试：`tests/test_knowledge_import.py`、`tests/test_cli_knowledge_import.py`、`tests/test_prompt_lab_api.py`（A2）、`tests/test_main_line_cli.py`（mainline 命名）、`tests/test_knowledge_repository.py` 与 `tests/test_knowledge_api.py`（教程命名规范）
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0008](../adr/0008-design-doc-scope-reshuffle.md)
 
@@ -18,7 +18,8 @@
 
 QED-050 设计手动+自动双轨知识获取：
 - **自动轨**：LLM 探索管线（见[探索管线设计](exploration-pipeline.md)）。
-- **手动轨**：人工整理 JSON 后经 API/CLI 导入，**跳过 LLM 探索直接给答案写库**，但**流程
+- **手动轨**：人工整理 JSON 后经 API/CLI 导入，**跳过 LLM 探索直接给答案**（confirm 含
+  courses 分支 / courses/import 捷径可零 LLM 消耗推进到审阅点），但**流程
   语义仍走 LLM 探索流程**（同状态机、同审阅阶段），仅"答案来源"不同。
 
 手动轨适用于：已有标准答案知识目录的领域（如 math-advanced）、人工整理的课程体系、
@@ -28,7 +29,7 @@ QED-050 设计手动+自动双轨知识获取：
 
 | 模式 | API 端点 | CLI 命令 | 写入表 | 来源标记 |
 | --- | --- | --- | --- | --- |
-| 领域 JSON 导入 | `POST /api/v1/domains/import` | `qed-tracker domains import <json>` | qed_domain（可含 qed_course，见六步流程） | `source=manual` |
+| 领域 JSON 导入 | `POST /api/v1/domains/import` | `qed-tracker domains import <json>` | 不直接写表（只落 `raw/{domain_id}/domains.json` + 置**已生成**，经 confirm 双分支后写库，见六步流程） | `—`（source 参数已退役） |
 | 课程 JSON 导入 | `POST /api/v1/courses/{course_id}/knowledge` | `qed-tracker knowledge import <json>` | qt_knowledge + qt_books | `source=manual` |
 | 书籍 PDF 导入 | `POST /api/v1/books/{book_id}/import` | `qed-tracker books import <id> <path>` | qt_books + qt_sources | `channel=local_import` |
 
@@ -191,45 +192,53 @@ QED-050 设计手动+自动双轨知识获取：
 `GET /api/v1/knowledge/{knowledge_id}` 的 `books[]` 不再按 `knowledge_id` 查书库（qt_books 已
 无该列），改为从 `textbook_ref[]`/`exercise_ref[]`/`parallel_ref[]` 内的 `book_id` 聚合展示。
 
-## 手动六步流程（API 路径含两态，CLI 跳过）
+## 手动六步流程（API 与 CLI 同路径）
 
 手动录入复用 LLM 探索状态机（线性链路，与[探索管线设计](exploration-pipeline.md)两轮时序一致）；
-**API 路径**需要 `已生成` 与 `待确认` 两极（分别对应第一轮/第二轮待确认点，用户可修改再确认），
-**CLI 路径**跳过这两极直接推进：
+**API 路径**需要 `已生成` 与 `待确认` 两极（分别对应第一轮/第二轮待确认点，用户可修改再确认）；
+**CLI 路径**同样经 8901 走同一流程（CLI 直接定稿语义与 `source=cli` 已退役，见「CLI 语义」）：
 
 | 步 | 触发 | 端点 | 状态转移 | 写表 |
 | --- | --- | --- | --- | --- |
-| 1 | 上传领域 JSON（只登记 domain，不含课程写入） | `POST /api/v1/domains/import`（无 source） | 无 → **已生成**（第一轮报告就绪） | 写 JSON 文件 |
-| 2 | 用户确认 domain（可先 PATCH 修改） | `POST /api/v1/domains/{id}/confirm` | 已生成 → **探索中**（异步提交 courses@v8） | — |
-| 3 | courses@v8 完成（后台任务） | `GET /api/v1/tasks/{task_id}`（轮询） | 探索中 → **待确认** | 写 courses.json |
+| 1 | 上传领域 JSON（只落盘，不含课程写入） | `POST /api/v1/domains/import`（无 source） | 无 → **已生成**（第一轮报告就绪） | 写 domains.json |
+| 2 | 用户确认 domain（可先 PATCH 修改） | `POST /api/v1/domains/{id}/confirm`（双分支） | 含 courses → **待确认**（task_id=null）；不含 → **探索中**（异步 courses@v8） | 含 courses 分支写 courses.json |
+| 3 | 课程名单就绪（两条到达路径） | a) 轮询 `GET /api/v1/tasks/{task_id}`；b) 捷径 `POST /api/v1/domains/{id}/courses/import` | 探索中 → **待确认** | 写 courses.json（捷径分支） |
 | 4 | 用户确认课程名单（apply 全保留语义） | `POST /api/v1/domains/{id}/apply-results` | 待确认 → **已完成** | 领域探索管线完成 |
 | 5 | 逐门课程探索（tutorials@v2） | `POST /api/v1/courses/{course_id}/prompt-explores/dry-run` + 后台 run | 课程行：→ 探索中 → 待确认 | 教程 pending |
 | 6 | 用户审阅教程（确认或修改并确认） | `POST /api/v1/courses/{course_id}/apply-results` | 待确认 → **已完成** | tutorials 落库 |
 
-- **步骤 1**：`POST /domains/import` 写入 `raw/{domain_id}/domains.json`，不直接写库。
-- **步骤 2**：`POST /domains/{id}/confirm` 读取 JSON → upsert domain + 异步提交 courses@v8 任务 →
-  返回 `task_id` 供轮询；状态变为 `探索中`。
-- **步骤 3**：轮询 `GET /tasks/{task_id}` 等待 courses@v8 完成；完成后写入
-  `raw/{domain_id}/courses.json`，状态变为 `待确认`。
+- **步骤 1**：`POST /domains/import` 写入 `raw/{domain_id}/domains.json`，不直接写库
+  （领域须已存在，不存在 → 404 DOMAIN_NOT_FOUND）。
+- **步骤 2（confirm 双分支）**：读取 `raw/{domain_id}/domains.json` → upsert domain 后分派：
+  - **含 `courses`** → 直接写 `raw/{domain_id}/courses.json` + 置 `待确认` + `task_id=null`
+    （手动导入零 LLM 消耗直达第二轮审阅点）；
+  - **不含 `courses`** → 异步提交 courses@v8 任务 + 置 `探索中` + 返回 `task_id` 供轮询。
+- **步骤 3（两条到达路径）**：
+  - a) 轮询 `GET /tasks/{task_id}` 等 courses@v8 完成；完成后写 `raw/{domain_id}/courses.json`，置 `待确认`；
+  - b) 手动捷径 `POST /domains/{id}/courses/import` 直接写课程名单 JSON（守卫：仅 `已生成`/`探索中`
+    可调，非法状态 → 409；JSON 无课程 → 400 INVALID_PARAMS）。
 - **步骤 4**：复用 `apply-results`：手动场景无"删除未选课程"语义，`selected_courses` 省略/为空 =
-  全部保留。
+  全部保留；落库前把 `courses.json` 幂等同步进 `qed_course`（courses_kept=0 事故的根因修复）。
 - 步骤 5-6 复用现有课程探索 dry-run + apply-results。
 
 ### 与 LLM 探索路径的差异
 
 | 维度 | LLM 探索 | 手动导入 |
 | --- | --- | --- |
-| courses@v8 来源 | LLM 生成 | 用户提供的 JSON |
+| courses@v8 来源 | LLM 生成 | 用户提供的 JSON（confirm 含 courses 分支 / courses/import 捷径可整段跳过 courses@v8） |
 | 审阅轮数 | 两轮（domain + courses） | 两轮（同 LLM） |
 | 状态转移 | 8900 驱动 | 8901 端点驱动 |
 
-## CLI 语义（跳过已生成/待确认）
+## CLI 语义（与 API 同路径，经 8901）
 
 - `qed-tracker domains import <json>`：本地 `validate_domain` → `POST /domains/import`
-  （`source=cli`）→ 一次写 domain + courses，置领域 `exploration_stage=已完成`。
-- `qed-tracker knowledge import <json>`：本地 `validate_course` → `POST /courses/{id}/knowledge`
-  （`source=manual`）→ 对每套 draft 自动 `confirm` 至 `confirmed`（含 refs 数组），并按 refs
-  建候选册（导入即确认+建候选册）。
+  （请求体 `{"domain": data}`，**无 source 参数**）→ 只写 `raw/{domain_id}/domains.json` +
+  置领域 `exploration_stage=已生成`；后续经 `domains confirm <domain_id>` 走 confirm 双分支。
+  （CLI 一次定稿语义与 `source=cli` 已退役，2026-09-09。）
+- `qed-tracker knowledge import <json>`：本地 `validate_course`（数据文件版契约）→
+  `POST /courses/{id}/knowledge`（`source=manual`）→ 按 refs 幂等建 decided/parallel 书行并
+  回填 `book_id`；仍为 draft 的套逐套 `POST /knowledge/{id}/confirm` 定稿，已确认套跳过，
+  重放可续（导入即确认+书库就绪）。
 
 ## docs/knowledge 标准答案目录（正本契约）
 
@@ -253,15 +262,19 @@ docs/knowledge/
 - 下载（PDF 落盘）由下载链 QED-050-D 承接：refs 只登记 `book_id`/元数据，`file_path` 由
   `qt_books.holding=owned` + `file_path` 在下载登记时填充。
 
-## 实现状态与待对齐（Phase 2 清单）
+## 实现状态与待对齐（Phase 2 清单，2026-09-09 收口）
 
-| 项 | 当前 | 目标 |
-| --- | --- | --- |
-| course 校验器契约 | `validate_course` 期望 `{domain, course{course_id,name}}` | 数据文件版（`domain_id`/`course_id`/`course_name` + 显式 `knowledge_id`/`book_id`） |
-| 手动导入的审阅链 | 导入→已生成；apply-results 需待确认（断链） | 按本文档六步流程（新增步骤 2/3 端点） |
-| 书籍组端点（register/import/decide/start/fail/retry/complete/verify/reject/supersede/cancel/fetch） | 旧八态下载机契约（qt_books 书库化后失效） | **已实现（2026-09-06，QED-050-D）**：书级/教程级 fetch 与 import/register 重接线（[下载管线设计](download-pipeline.md)），9 个旧八态端点删除，契约见[架构 API](../architecture/api.md) ④ 组 |
-| `import_domain` 落地范围 | 写 domain+courses、`source` 语义 | 六步流程（步骤 1 只写 domain，courses 由步骤 3 写） |
-| template.json | 旧契约 + 文件名含零宽字符 | 数据文件版契约范本，干净文件名 |
+原 Phase 2 待对齐项已全部落地：
+
+| 项 | 收口结果 |
+| --- | --- |
+| course 校验器契约 | 已实现数据文件版 `validate_course`（`domain_id`/`course_id`/`course_name` + 显式 `knowledge_id`/`book_id`，`tests/test_knowledge_import.py` 守护） |
+| 手动导入的审阅链 | 已按六步流程实现：`confirm` 双分支 + `courses/import` 手动捷径 + `GET /domains/{id}`/`GET /courses/{domain_id}` 确认视图（QED-050-D 联调接线） |
+| 书籍组端点（register/import/decide/start/fail/retry/complete/verify/reject/supersede/cancel/fetch） | **已实现（2026-09-06，QED-050-D）**：书级/教程级 fetch 与 import/register 重接线（[下载管线设计](download-pipeline.md)），9 个旧八态端点删除，契约见[架构 API](../architecture/api.md) ④ 组 |
+| `import_domain` 落地范围 | 已对齐：`POST /domains/import` 只写文件 + 置已生成，courses 由 confirm 双分支/`courses/import` 写（`source` 参数退役） |
+| template.json | 已是数据文件版契约范本（`docs/knowledge/math-advanced/template.json`，干净文件名，`test_knowledge_docs_courses_conform_to_contract` 守护） |
+
+残余跟踪：8901 全链路真实环境冒烟与联调收口已随 QED-010/QED-014 验收关闭（2026-09-09，见[完成台账](../trackers/completed.md)）。
 
 ## 关联文档
 
@@ -279,4 +292,5 @@ docs/knowledge/
 
 | 日期 | 变更 | 说明 |
 | --- | --- | --- |
+| 2026-09-09 | 六步流程与 CLI 语义对齐实现 + Phase 2 收口 | 流程表写入 confirm 双分支与 `courses/import` 捷径；CLI `domains import` 语义改为经 8901 同流程（`source=cli` 退役）；Phase 2 清单五项全部收口，实现状态转 Implemented |
 | 2026-09-07 | 并入教程命名规范（ADR 0008） | 自 tutorial-naming.md 并入命名格式、mainline 命名路径、前端展示边界与决策登记；书籍下载链接改指 download-pipeline.md |

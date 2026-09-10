@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-09-07
+最后更新：2026-09-09
 维护位置：`docs/architecture/code-map.md`
 关联代码：受管模块清单
 关联测试：`tests/test_documentation.py`（入口与引用守护）
@@ -21,9 +21,9 @@
 
 | 代码路径 | 层级/职责 | 状态 | 设计关联 | 关联测试 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| `src/qed_tracker/api/main.py` | FastAPI 服务入口（8901）：路由、后台任务注册、五层端点组（QED-031） | Current | `docs/architecture/api.md`、`docs/design/service-management.md`、`docs/architecture/database-private-tables.md` | `tests/test_api.py`、`tests/test_knowledge_api.py`、`tests/test_book_api.py` | 37 条路由（30 主线 + 7 非主线附录），分组契约见 [API 设计文档](api.md)（`KnowledgeRepository` 注入，未配置 DB 时 409 降级）。 |
-| `src/qed_tracker/api/tasks.py` | 后台任务管理器与落盘（queued→running→succeeded/failed，并发上限 2，dedup 查重防同任务并发） | Current | `docs/design/service-management.md`、`docs/design/download-pipeline.md` | `tests/test_api.py`、`tests/test_book_api.py` | 任务记录落 `qt_tasks` 表；注册类型 `book_download`/`tutorial_fetch`/`domain_explore`/`course_explore`。 |
-| `src/qed_tracker/cli.py` | 唯一用户入口：命令树、机器输出、稳定退出码、serve | Current | `docs/design/service-management.md`、`docs/design/main-line-curriculum.md`（courses/mainline 命令组） | `tests/test_cli_architecture.py`、`tests/test_main_line_cli.py` | 闭环命令属 QED-010 未实现（跟踪于 `docs/trackers/todo.md` QED-010 行）。 |
+| `src/qed_tracker/api/main.py` | FastAPI 服务入口（8901）：路由、后台任务注册、五层端点组（QED-031） | Current | `docs/architecture/api.md`、`docs/design/service-management.md`、`docs/architecture/database-private-tables.md` | `tests/test_api.py`、`tests/test_knowledge_api.py`、`tests/test_book_api.py` | 38 条路由（主线 31 + 非主线 7 附录），分组契约见 [API 设计文档](api.md)（`KnowledgeRepository` 注入，未配置 DB 时 409 降级）。 |
+| `src/qed_tracker/api/tasks.py` | 后台任务管理器与落盘（queued→running→succeeded/failed，并发上限 2，dedup 查重防同任务并发） | Current | `docs/design/service-management.md`、`docs/design/download-pipeline.md`、`docs/design/exploration-pipeline.md` | `tests/test_api.py`、`tests/test_book_api.py`、`tests/test_task_handlers.py` | 任务记录落 `qt_tasks` 表；注册类型 `book_download`/`tutorial_fetch`/`domain_explore`/`course_explore`/`domain_explore_courses`（`all_handlers` 注册点在 `api/main.py`）。 |
+| `src/qed_tracker/cli.py` | 唯一用户入口：命令树、机器输出、稳定退出码、serve | Current | `docs/design/service-management.md`、`docs/design/main-line-curriculum.md`（courses/mainline 命令组）、`docs/design/exploration-pipeline.md`（domains explore） | `tests/test_cli_architecture.py`、`tests/test_main_line_cli.py`、`tests/test_cli_domains_explore.py` | 主链路命令已转 HTTP 客户端并经真实 8901 全链路冒烟验收（QED-010 已关闭，2026-09-09，见 `docs/trackers/completed.md`）。 |
 | `src/qed_tracker/axiom.py` | Axiom-Flow HTTP 客户端（健康检查/上传/可选解析） | Current | `docs/architecture/api.md`（外部接口：Axiom-Flow 消费面） | `tests/test_axiom.py` | 默认不解析，不自动重试。 |
 | `src/qed_tracker/profiles.py` | 论文目标档案加载与校验 | Current | `docs/design/paper-discovery.md` | `tests/test_profiles_and_selections.py` | 内置 + 自定义 JSON。 |
 | `src/qed_tracker/paper_profiles/`（llm-engineering.json、math-research.json） | 内置论文目标档案 | Current | `docs/design/paper-discovery.md` | `tests/test_profiles_and_selections.py` | 包数据。 |
@@ -82,7 +82,8 @@
 
 | 代码路径 | 层级/职责 | 状态 | 设计关联 | 关联测试 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| `src/qed_tracker/application/knowledge_import.py` | 手动知识录入校验器：`validate_domain`（manual@v1：slug/方向 kind/stages 值域/track∈已列方向/前置引用与无环/一句话契约）与 `validate_course`（数据文件版课程课程契约：顶层 domain_id/course_id/course_name + set_no/position 五档/intro ≥120 字/refs 数组 + original_title 可选） | Current | `docs/design/knowledge-import.md` | `tests/test_knowledge_import.py` | 正本 = `docs/knowledge/*.json`（契约守护，见守护测试块）。 |
+| `src/qed_tracker/application/knowledge_import.py` | 手动知识录入校验器：`validate_domain`（manual@v1：slug/方向 kind/stages 值域/track∈已列方向/前置引用与无环/一句话契约）与 `validate_course`（数据文件版课程契约：顶层 domain_id/course_id/course_name + set_no/position 五档/intro ≥120 字/refs 数组 + original_title 可选） | Current | `docs/design/knowledge-import.md` | `tests/test_knowledge_import.py` | 正本 = `docs/knowledge/*.json`（契约守护，见守护测试块）。 |
+| `src/qed_tracker/application/domain_file.py` | 领域/课程探索 JSON 文件读写层：`raw/<domain_id>/domains.json`（领域知识）、`raw/<domain_id>/courses.json`（领域课程探索/手动导入暂存）、`raw/<domain_id>/<course_id>/tutorials.json`（课程探索结果）的幂等写入与读取 | Current | `docs/design/knowledge-import.md`、`docs/design/exploration-pipeline.md`、`docs/architecture/api.md`（confirm 双分支） | `tests/test_task_handlers.py`、`tests/test_knowledge_api.py` | `POST /domains/import` 落盘、`GET /domains/{id}`/`GET /courses/{domain_id}` 确认视图与探索结果暂存的共用文件层（api/main.py 9 处调用）。 |
 （Alembic 迁移链已随 ADR 0006 退役：迁移目录 migrations/ 全目录删除——0001~0018
 迁移文件与 data 种子/注释 JSON 不再登记；schema 演进由 db/models.py + db/schema.py
 承接，历史链仅作 Git 追溯。）

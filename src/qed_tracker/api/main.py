@@ -513,10 +513,26 @@ def create_app(
 
     @fastapi_app.get("/api/v1/courses/{domain_id}")
     def course_detail(domain_id: str) -> dict[str, Any]:
+        """领域课程详情：待确认状态优先返回 courses.json 文件数据，否则从数据库读取。"""
         repo = _kn(app)
         domain = next((d for d in repo.list_domains() if d.domain_id == domain_id), None)
         if domain is None:
             raise HTTPException(status_code=404, detail=f"未知学科课程体系：{domain_id}")
+
+        # 待确认状态：优先返回 courses.json 文件数据
+        if domain.exploration_stage == "待确认":
+            try:
+                courses_data = read_domain_courses_file(app.settings.data_root, domain_id)
+                # 合并 domain 基本信息 + courses.json 数据
+                view = _domain_view(repo, domain)
+                view["courses"] = courses_data.get("courses", [])
+                view["path"] = courses_data.get("path", {})
+                view["source"] = "json_file"
+                return view
+            except FileNotFoundError:
+                # JSON 文件不存在，回退到数据库
+                pass
+
         return _domain_view(repo, domain)
 
     # ---------------- REQ-059: 领域管理五端点 ----------------
@@ -538,6 +554,37 @@ def create_app(
     def list_domains() -> list[dict[str, Any]]:
         repo = _kn(app)
         return [_domain_view_flat(d) for d in repo.list_domains()]
+
+    @fastapi_app.get("/api/v1/domains/{domain_id}")
+    def domain_detail(domain_id: str) -> dict[str, Any]:
+        """领域详情：已生成状态优先返回 JSON 文件数据，否则从数据库读取。"""
+        repo = _kn(app)
+        domain = repo.get_domain(domain_id)
+        if domain is None:
+            raise api_error(404, "DOMAIN_NOT_FOUND", f"领域不存在：{domain_id}")
+
+        # 已生成状态：优先返回 JSON 文件数据
+        if domain.exploration_stage == "已生成":
+            try:
+                json_data = read_domain_file(app.settings.data_root, domain_id)
+                return {
+                    "domain_id": domain_id,
+                    "name": json_data.get("name", domain.name),
+                    "description": json_data.get("description", domain.description),
+                    "stages": json_data.get("stages", []),
+                    "level": json_data.get("level", domain.level),
+                    "scope": json_data.get("scope", domain.scope),
+                    "classic_tracks": json_data.get("classic_tracks", []),
+                    "courses": json_data.get("courses", []),
+                    "exploration_stage": domain.exploration_stage,
+                    "source": "json_file",
+                }
+            except FileNotFoundError:
+                # JSON 文件不存在，回退到数据库
+                pass
+
+        # 其他状态：从数据库读取
+        return _domain_view(repo, domain)
 
     @fastapi_app.patch("/api/v1/domains/{domain_id}")
     def patch_domain(domain_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
@@ -685,6 +732,39 @@ def create_app(
             raise api_error(404, "COURSE_NOT_FOUND", f"课程不存在：{course_id}")
         return course
 
+    def _sync_courses_from_json_to_db(
+        repo: KnowledgeRepository,
+        domain_id: str,
+        data_root: Path,
+    ) -> int:
+        """将 courses.json 中的课程同步到 qed_course 数据库表（幂等：已存在则更新）。
+
+        courses@v8 后台任务只写入 JSON 文件，不写入数据库。
+        apply_domain_results 需要从数据库查询课程，因此需要先同步。
+        返回同步的课程数。
+        """
+        try:
+            courses_data = read_domain_courses_file(data_root, domain_id)
+        except FileNotFoundError:
+            return 0  # 无文件则跳过（回退到纯数据库查询）
+        courses = courses_data.get("courses", [])
+        synced = 0
+        for index, course in enumerate(courses):
+            cid = str(course["course_id"])
+            repo.create_course(
+                course_id=cid,
+                domain_id=domain_id,
+                name=course["name"],
+                stage=course.get("stage", ""),
+                sort_order=index,
+                prerequisites=course.get("prerequisites", []),
+                aliases=course.get("aliases", []),
+                description=course.get("summary", ""),
+                track=course.get("track", ""),
+            )
+            synced += 1
+        return synced
+
     @fastapi_app.post("/api/v1/domains/{domain_id}/apply-results")
     def domain_apply_results(domain_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         """确认领域探索结果：选择要保留的课程，删除其余，exploration_stage -> 已完成。"""
@@ -696,6 +776,8 @@ def create_app(
         selected_courses = payload.get("selected_courses")
         if not isinstance(selected_courses, list):
             raise api_error(422, "INVALID_PARAMS", "selected_courses 必须是数组")
+        # 待确认状态下，courses@v8 写入的是 JSON 文件而非数据库，需先同步
+        _sync_courses_from_json_to_db(repo, domain_id, app.settings.data_root)
         try:
             kept = repo.apply_domain_results(domain_id, selected_courses)
         except InvalidExplorationTransition as exc:
@@ -753,11 +835,12 @@ def create_app(
 
     @fastapi_app.post("/api/v1/domains/import")
     def import_domain(payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
-        """领域知识 JSON 导入（QED-050-D）：校验 → 写入文件暂存 → 待确认。
+        """领域知识 JSON 导入（QED-050-D）：校验 → 写入文件暂存 → 更新领域状态为已生成。
 
         body：`{"domain": {...}}`（内联 JSON）或 `{"file_path": "..."}`（本机可读文件路径）。
-        落盘语义：写入 QED_DATA_ROOT/raw/{domain_id}/domains.json，不直接写库。
-        用户查看文件后调 POST /domains/{domain_id}/confirm 覆盖数据库。
+        落盘语义：写入 QED_DATA_ROOT/raw/{domain_id}/domains.json，同时更新 domain 的
+        exploration_stage 为"已生成"。用户查看文件后调 POST /domains/{domain_id}/confirm
+        继续后续流程。
         """
         file_path = str(payload.get("file_path", "")).strip()
         if file_path:
@@ -779,18 +862,29 @@ def create_app(
 
         domain_id = str(data["domain"])
         target = write_domain_file(app.settings.data_root, domain_id, data)
+
+        # 更新领域状态为"已生成"（领域必须已存在）
+        repo = _kn(app)
+        try:
+            repo.update_domain(domain_id, exploration_stage="已生成")
+        except KeyError:
+            raise api_error(404, "DOMAIN_NOT_FOUND", f"领域不存在：{domain_id}") from None
+
         return {
             "domain_id": domain_id,
             "file_path": str(target),
-            "message": "领域知识已写入文件，待确认后覆盖数据库",
+            "exploration_stage": "已生成",
+            "message": "领域知识已写入文件，状态更新为已生成",
         }
 
     @fastapi_app.post("/api/v1/domains/{domain_id}/confirm")
     def domain_confirm(domain_id: str) -> dict[str, Any]:
-        """确认领域知识：读取 domains.json → upsert QedDomain + 异步 courses@v8 → 探索中。
+        """确认领域知识：读取 domains.json → upsert QedDomain。
+
+        如果 domains.json 中已有课程（手动导入），直接写入 courses.json，设置 stage="待确认"。
+        如果没有课程（LLM 探索），异步提交 courses@v8 后台任务。
 
         幂等：重复 confirm 只覆盖，不重复创建。
-        返回 task_id 供轮询 courses@v8 后台任务进度。
         """
         repo = _kn(app)
         try:
@@ -813,18 +907,36 @@ def create_app(
                 exploration_stage="探索中",
             )
 
-        # 异步提交 courses@v8 后台任务
-        record = manager.submit("domain_explore_courses", {
-            "domain_id": domain_id,
-            "mode": "direct",
-        })
+        # 检查 domains.json 中是否已有课程
+        existing_courses = data.get("courses", [])
 
-        return {
-            "domain_id": domain_id,
-            "task_id": record.task_id,
-            "exploration_stage": "探索中",
-            "message": "已提交 courses@v8 后台任务，轮询 GET /api/v1/tasks/{task_id} 等待完成",
-        }
+        if existing_courses:
+            # 手动导入：直接写入 courses.json，不触发 LLM
+            courses_data = {
+                "domain_id": domain_id,
+                "courses": existing_courses,
+                "path": data.get("path", {}),
+            }
+            write_domain_courses_file(app.settings.data_root, domain_id, courses_data)
+            repo.update_domain(domain_id, exploration_stage="待确认")
+            return {
+                "domain_id": domain_id,
+                "task_id": None,
+                "exploration_stage": "待确认",
+                "message": "领域已确认，课程已从导入文件同步",
+            }
+        else:
+            # LLM 探索：提交 courses@v8 任务
+            record = manager.submit("domain_explore_courses", {
+                "domain_id": domain_id,
+                "mode": "direct",
+            })
+            return {
+                "domain_id": domain_id,
+                "task_id": record.task_id,
+                "exploration_stage": "探索中",
+                "message": "已提交 courses@v8 后台任务，轮询 GET /api/v1/tasks/{task_id} 等待完成",
+            }
 
     @fastapi_app.post("/api/v1/domains/{domain_id}/courses/import")
     def import_domain_courses(domain_id: str) -> dict[str, Any]:
@@ -834,9 +946,9 @@ def create_app(
         """
         repo = _kn(app)
         domain = _require_domain(repo, domain_id)
-        if domain.exploration_stage != "探索中":
+        if domain.exploration_stage not in ("已生成", "探索中"):
             raise api_error(409, "INVALID_TRANSITION",
-                            f"当前状态 {domain.exploration_stage}，需要 探索中")
+                            f"当前状态 {domain.exploration_stage}，需要 已生成 或 探索中")
 
         try:
             data = read_domain_file(app.settings.data_root, domain_id)
@@ -1144,7 +1256,7 @@ def create_app(
     def course_prompt_explore_dry_run(
         course_id: str, payload: dict[str, Any] = _EMPTY_BODY
     ) -> dict[str, Any]:
-        """课程教材探索 dry-run（QED-047，A1）：同步单步 tutorials@v1，不写任何表。"""
+        """课程教材探索 dry-run（QED-047，A1）：同步单步 tutorials@v2，不写任何表。"""
         mode = str(payload.get("mode", "")).strip() or "direct"
         if mode not in ("direct", "text", "doc"):
             raise api_error(400, "INVALID_PARAMS", "mode 必须为 direct/text/doc")

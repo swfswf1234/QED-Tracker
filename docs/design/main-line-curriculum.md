@@ -3,13 +3,13 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-07
+最后更新：2026-09-09
 关联代码：`src/qed_tracker/courses.py`、`src/qed_tracker/main_line/`（advisor.py）、`src/qed_tracker/cli.py`（courses/mainline/books 命令组）、`src/qed_tracker/application/book_fetch.py`（取书承接）、`src/qed_tracker/providers/books.py`（UTF-8 解码修复）、`docs/knowledge/`（标准答案 JSON，ADR 0006 起经确认流程导入 qed_course；历史种子 `migrations/data/math.json` 已随迁移链删除）
 关联测试：`tests/test_courses.py`、`tests/test_main_line_advisor.py`、`tests/test_main_line_cli.py`、`tests/test_encoding_regression.py`
 关联 ADR：—
 需求方：QED-Engine（8903 前端知识链路；根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md) 五阶段对齐）
 执行方：QED-Tracker
-上承架构：[主链路架构](../architecture/main-line.md)（Accepted，QED-026 已实现，见[实现计划](../plans/2026-08-main-line-curriculum.md)）
+上承架构：[主链路架构](../architecture/main-line.md)（Accepted，QED-026 已实现，见[已完成任务台账](../trackers/completed.md)）
 
 ## 1. 课程体系（历史模型留档，已由知识链承接）
 
@@ -80,6 +80,21 @@
   `src/qed_tracker/main_line/advisor.py`）。
 - `mainline new` 生成方式：**先参照顶尖大学（MIT/清华等）课程设置 → 再按此探索**
   （2026-08-12 用户确认；顶尖大学参照由 LLM 检索即时生成，候选来源复用现有 providers）。
+
+### LLM 预填契约（mainline-prefill-v1，2026-09-09 自实现计划迁入存档）
+
+实现事实源 = `src/qed_tracker/main_line/advisor.py`；契约值域如下：
+
+- 模板编号 `mainline-prefill/prefill@v1`，`contract_version = "mainline-prefill-v1"`（随结果透出，
+  供审计与重放对齐）。
+- 预填输出：`{"evaluation": {"source": "llm", "text", "authority", "set_candidate"},
+  "advice": {"download", "reason"}}`（不写条目文件，由调用方落盘）。
+- 值域校验：
+  - `authority` ∈ `高|中|低`（越界即校验失败）；
+  - `advice.download` ∈ `recommended|optional|not_recommended`（三值，越界即校验失败）；
+  - `set_candidate` 为 `套X` 或空串（空 = 不建议成套）；`reason` 非空散文。
+- 坏 JSON 一次修复：响应 JSON 解析/校验失败时以 repair prompt 重问**一次**，仍失败按失败处理。
+- 预算控制：`call_budget`（默认 6）计主调用 + 修复调用，耗尽即预算耗尽退出（预填失败可人工评审兜底）。
 
 ## 关联文档
 

@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-09-06
+最后更新：2026-09-09
 关联代码：`src/qed_tracker/api/`、`src/qed_tracker/application/`、`src/qed_tracker/providers/`、`src/qed_tracker/db/`、`src/qed_tracker/cli.py`
 关联测试：`tests/test_api.py`、`tests/test_cli_architecture.py`、`tests/test_services.py`、`tests/test_paper_application.py`、`tests/test_db_models.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -36,7 +36,7 @@ flowchart TB
     USER --> CLI["qed-tracker CLI"]
     FE --> CTRL["QED-Engine 控制中心 8900"]
     CTRL -->|"tracker_client 透传 /api/v1"| QT["QED-Tracker 服务 8901<br/>CLI + API 双能力面"]
-    CLI -->|"进程内直调（QED-010 拟转 HTTP 客户端）"| QT
+    CLI -->|"HTTP 客户端（QED-010 已转，8901）"| QT
     SCRIPTS["scripts/qed_tracker_service.py<br/>start/stop/restart/status"] -.托管启停.-> QT
     QT --> DB[("MySQL qed 库<br/>qed_* 共享（domain/course/llm_calls）<br/>+ qt_* 私有")]
     QT --> DATA[("数据根 dataset/qed-tracker/<br/>raw / meta / tmp")]
@@ -62,7 +62,7 @@ flowchart TB
     subgraph ENTRY["入口层"]
         CLI2["cli.py：qed-tracker 命令树 + serve"]
         API2["api/main.py + api/tasks.py：/api/v1 路由<br/>+ 后台任务执行器（并发 2）"]
-        SCRIPTS2["scripts/：服务托管、表注释应用"]
+        SCRIPTS2["scripts/：服务托管"]
     end
     subgraph APP["应用层"]
         EXP["探索线 prompt_lab/：DomainPipeline / CoursePipeline<br/>+ templates.py（domain@v4/courses@v8/tutorials@v2）<br/>+ priors.py + providers/explore_advisor.py"]
@@ -86,7 +86,7 @@ flowchart TB
 
 | 设计模块线 | 手动轨（人工确认/录入） | 自动轨（LLM/后台任务） |
 | --- | --- | --- |
-| 探索线 | `POST /domains/import`（manual@v1 校验落库，API 走六步流程、CLI 直接定稿）+ 课程采纳 `source=manual` | 探索 dry-run（领域/课程，模型只产报告不写库） |
+| 探索线 | `POST /domains/import`（manual@v1 校验，只写文件暂存）+ confirm 双分支（含 courses 直接同步写 courses.json）+ 课程采纳 `source=manual` | 探索 dry-run（领域/课程，模型只产报告不写库） |
 | 下载线 | `POST /books/{id}/register` + `POST /books/{id}/import`（人工路径登记/导入，汇合 mark_owned） | `POST /books/{id}/fetch`（book_download 后台任务：五阶段链检索→确认→下载→机器验收→登记） |
 | 主链路 | CLI `mainline` 评审闭环（new/review，定稿 confirm）+ `mainline verify` 只读复核 | `main_line/advisor.py` LLM 预填（可审阅，不写资源事实）；取书经 8901 五阶段任务 |
 
@@ -124,14 +124,14 @@ QED-Tracker 可**独立运行**，也可作为 QED-Engine 体系的**组件运�
 | 能力 | CLI 出口 | 依赖 MySQL |
 | --- | --- | --- |
 | 下载与清单 | 有：`books`（get/fetch-url/import）、`papers`（search/get/recommend、selections、profiles）、`catalog`（list/show/run）、`inventory`（scan/list/verify）、`axiom push` | 否（文件系统 + 外部 HTTP） |
-| 主链路与课程 | 有：`courses`（list/show）、`mainline`（new/review/download/verify/channels，approve/reject 已删）、`books`（fetch/import/get/fetch-url）、`domains import`、`knowledge import` | 是（课程体系读 `qed_course` 共享表，教程/书行落 `qt_*`） |
-| 服务启动 | 有：`serve` | 可选（未配置时按上表「MySQL 登记」行降级） |
+| 主链路与课程 | 有：`courses`（list/show）、`mainline`（list/new/review/download/verify/channels，approve/reject 已删）、`books`（fetch/import/get/fetch-url）、`domains`（import/confirm）、`knowledge import` | 是（课程体系读 `qed_course` 共享表，教程/书行落 `qt_*`） |
+| 服务启动与配置 | 有：`serve`、`config show` | 可选（未配置时按上表「MySQL 登记」行降级） |
 | 探索管线 dry-run（领域/课程） | 有：`domains explore`（经 8901 dry-run 同步执行）；课程 dry-run 仅 8901 API | — |
 | prompt 优化评估 | 无（仅 8901 API） | — |
 
 - 未配置 `QED_DB_*` 时服务与 CLI 仍可启动；依赖 MySQL 的命令与登记/查询端点按契约返回 409，
   登记暂缓，文件系统能力（下载/校验/清单）不受影响。
-- CLI→HTTP 客户端化（QED-010，规划中）跟踪于[待办列表](../trackers/todo.md) QED-010 行。
+- CLI→HTTP 客户端化（QED-010）已完成并经真实 8901 全链路冒烟验收（2026-09-09，见[完成台账](../trackers/completed.md)）。
 
 ## 模块职责
 
@@ -144,6 +144,7 @@ QED-Tracker 可**独立运行**，也可作为 QED-Engine 体系的**组件运�
 | `application/` | 分别编排 books、papers 和 resources 用例；不实现外部协议。 |
 | `application/book_fetch.py` | 五阶段取书编排（QED-050-D）：检索→确认（预筛→enrich→LLM）→候选级预算下载→staging 机器验收→mark_owned 登记；书级 fetch + 教程级 fetch_tutorial（refs 聚合、排除 owned、顺序逐书），全部失败转人工指引。 |
 | `application/knowledge_import.py` | 手动领域导入校验器（manual@v1）：领域/课程知识 JSON 契约校验，供 `POST /domains/import` 端点与 CLI 复用。 |
+| `application/domain_file.py` | 领域/课程探索 JSON 文件读写层：`raw/<domain_id>/domains.json`、`raw/<domain_id>/courses.json`、`raw/<domain_id>/<course_id>/tutorials.json` 的幂等写入与读取（覆盖前供确认视图与 confirm 双分支消费）。 |
 | `prompt_lab/` | 探索管线工作台：DomainPipeline（领域→课程两步，courses@v8 输出含 stage/prerequisites）/ CoursePipeline（tutorials@v2 单步）、模板注册表（domain@v4/courses@v8/tutorials@v2）与领域先验（priors.py）；dry-run 评估模式不写任何表。设计见[探索管线设计](../design/exploration-pipeline.md)。 |
 | `providers/` | 搜索外部来源并解析候选或下载地址，不写正式文件；libgen_li 为发现专用来源（恒 `metadata_only`）。 |
 | `providers/book_advisor.py` | 百炼书籍顾问：检索词变体（book-query/variants@v1）与候选确认评估（book-confirm/assess@v1，可审阅，不写资源事实）。 |
@@ -170,9 +171,13 @@ dataset/qed-tracker/
 ├── raw/books/{inbox,math-qe/<course-id>}/        # 教材（kind=book）
 ├── raw/exercises/inbox/                          # 习题集（kind=exercise 独立）
 ├── raw/papers/<year>/                            # 论文
-├── meta/{resources,selections,transfers,tasks}/  # JSON 状态事实（资源、选择、Axiom、任务）
+├── meta/{resources,transfers}/                   # JSON 状态事实（资源、Axiom 传输）
 └── tmp/downloads/<task-id>.part                  # 下载临时区（原子落盘后清理）
 ```
+
+探索与手动导入 JSON（`application/domain_file.py`）：`raw/<domain_id>/domains.json`（领域知识）、
+`raw/<domain_id>/courses.json`（领域课程探索/手动导入暂存）、`raw/<domain_id>/<course_id>/tutorials.json`
+（课程探索结果）。
 
 主链路扩展（已实现，QED-050-D 书库化）：`courses.py`（包内，非数据根）提供课程体系；教程与
 书行落 `qt_knowledge`/`qt_books`（不再使用 `meta/main-line/` JSON 条目）。取书经五阶段链落
@@ -181,8 +186,8 @@ dataset/qed-tracker/
 
 PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resources/` 中的单资源 JSON 是本地
 资源事实源；MySQL 五层模型是册级明细登记索引（书籍登记经 `mark_owned` 唯一入口）；
-论文选择和 Axiom 状态分别保存，不能混入资源事实。任务记录落盘 `meta/tasks/<task-id>.json` 供轮询与「任务 → 文件」
-跳转。
+论文选择与任务记录已迁 `qt_selections`/`qt_tasks` 表（`meta/selections/`、`meta/tasks/` 已退役），
+分别保存，不能混入资源事实。任务经 `GET /api/v1/tasks/{task_id}` 轮询与「任务 → 文件」跳转。
 
 ## 系统不变量
 
@@ -203,7 +208,7 @@ PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resourc
 | --- | --- | --- |
 | 1. 来源适配器只搜索和解析下载地址，不直接写正式 PDF；libgen_li 恒 `metadata_only` | 符合 | `src/qed_tracker/providers/`、`application/books.py`（resolve 后才下载）；`tests/test_book_providers.py`（libgen resolve 无 download_url） |
 | 2. `.part` 只有通过 PDF 结构校验后才能原子替换目标文件 | 符合 | `downloader.py`（临时区 + `os.replace`）；`tests/test_download_inventory.py` |
-| 3. 相同 SHA-256 只保留一条资源记录，重复文件由资源服务移除 | 符合 | `inventory.py` 幂等复用 + `db/models.py`（qt_sources.sha256 唯一）；`tests/test_db_models.py`（source 唯一约束） |
+| 3. 相同 SHA-256 只保留一条资源记录，重复文件由资源服务移除 | 符合 | `inventory.py` 幂等复用（书库化后无 DB 级 sha256 唯一约束，明细去重经 `mark_owned`/`add_source` 幂等）；`tests/test_download_inventory.py`、`tests/test_knowledge_repository.py` |
 | 4. `inventory scan` 只接受数据根内部路径，不移动或删除已有 PDF | 符合 | `inventory.py`（relative_to 校验 + scan 只登记）；`tests/test_download_inventory.py` |
 | 5. 包内目录是可选输入；`math-qe` 永久标记 `frozen` | 符合 | `catalog.py` + `catalogs/math-qe.json`（status=frozen）；`tests/test_config_catalog_matching.py` |
 | 6. 登记顺序落盘 → 资源 JSON → 五层登记，任一步失败可重放 | 符合 | `db/knowledge_repository.py`（add_source/mark_owned 幂等）；`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py` |
@@ -214,7 +219,7 @@ PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resourc
 | 共享 `qed` 库实例、`qt_*` 表命名空间隔离（根仓库 ADR 0003） | 符合 | `db/models.py`（qt_knowledge/qt_books/qt_sources + qed_domain/qed_course）；`tests/test_db_models.py` |
 | Axiom-Flow 地址默认 `http://127.0.0.1:8902` | 符合 | `config.py`（axiom_url 默认）；`tests/test_axiom.py` |
 | 8903 工作台 CORS（仅 127.0.0.1/localhost:8903） | 符合 | `api/main.py`（FRONTEND_ORIGINS）；`tests/test_api.py` |
-| 8901 全链路联调与回执（评估→确认→下载→验收→登记→前端展示） | 偏差（QED-014 待开始） | `docs/trackers/todo.md` QED-014；QED-019 01 闭环进行中 |
+| 8901 全链路联调与回执（评估→确认→下载→验收→登记→前端展示） | 符合（QED-014 已验收关闭，2026-09-09） | `docs/trackers/completed.md` QED-014 行 |
 
 ## 已退出的职责
 
