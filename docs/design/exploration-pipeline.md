@@ -3,15 +3,15 @@
 设计状态：Accepted
 实现状态：In Progress
 确认状态：已确认
-最后更新：2026-09-09
-关联代码：`src/qed_tracker/prompt_lab/`（pipeline/templates/priors）、`src/qed_tracker/providers/explore_advisor.py`、`src/qed_tracker/api/main.py`（探索段）、`src/qed_tracker/cli.py`（domains explore）
+最后更新：2026-09-11
+关联代码：`src/qed_tracker/prompt_lab/`（pipeline/templates/priors）、`src/qed_tracker/providers/explore_advisor.py`、`src/qed_tracker/application/domain_file.py`（domains.json/courses.json/tutorials.json 读写与已完成收口）、`src/qed_tracker/api/main.py`（探索段）、`src/qed_tracker/cli.py`（domains explore）
 关联测试：`tests/test_prompt_lab.py`、`tests/test_prompt_lab_course.py`、`tests/test_prompt_lab_api.py`、`tests/test_task_handlers.py`、`tests/test_cli_domains_explore.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
 
 > 本文档整合原 plans 中 `2026-09-exploration-pipeline.md`、`2026-09-exploration-overview.md`、
 > `2026-08-prompt-optimization.md`（Accepted 设计）的当前契约与已确认裁决，作为探索管线
-> 的**唯一设计事实源**。跨项目时序（8900 探索会话管理）、状态机 6 态写主体、explore_pending
-> 载荷、写权限例外一律以 [数据库共享表设计](../architecture/database-shared-tables.md) 为准，本文档只
+> 的**唯一设计事实源**。跨项目时序（8900 探索会话管理）、状态机写主体（领域 6 态 / 课程 5 态）、
+> explore_pending 载荷、写权限例外一律以 [数据库共享表设计](../architecture/database-shared-tables.md) 为准，本文档只
 > 链接不复制。
 
 ## 目的与边界
@@ -57,7 +57,8 @@ QED-Tracker 的探索能力基于 **LLM 模板管线**，用于自动发现领�
   4096 会 `finish_reason=length` 截断；用 `max` 下限替代 `setdefault`，避免被
   `settings.llm_max_tokens`(4096) 覆盖）。
 - **course_id 命名**：LLM 输出的 course_id 是**提案**（dry-run 预览），事实以领域标准答案为准
-  （catalog 对齐课程编号式 `01_math_analysis`；扩展课程语义 slug，见[知识录入设计](knowledge-import.md)）。
+  （统一为有意义的英文语义 slug，如 `math_analysis`、`probability`；不再用编号前缀，
+  见[知识录入设计](knowledge-import.md)）。
 
 ### 领域单步管线（explore_domain_only）
 
@@ -156,13 +157,17 @@ dry-run **不落盘**（只同步返回报告）；落盘发生在 run 后台任
 | 阶段 | 文件路径 | 内容 |
 | --- | --- | --- |
 | run 第一轮（domain_explore handler）/ 手动导入 `POST /domains/import` | `raw/{domain_id}/domains.json` | 领域 JSON（含 classic_tracks/stages/level，courses 为空或手动导入自带） |
-| courses@v8 完成（domain_explore_courses handler）/ confirm 含 courses 分支 / `courses/import` 捷径 | `raw/{domain_id}/courses.json` | 课程列表 JSON（含 courses[]/path） |
+| courses@v8 完成（domain_explore_courses handler）/ confirm 含 courses 分支 / `courses/import` 捷径 | `raw/{domain_id}/courses.json` | 课程列表 JSON（含 courses[]/path）；**中间态**，`已完成` 时反写 domains.json 并删除 |
+
+> 注：`courses.json` 是领域探索第二轮的**中间态**（`待确认` 及之前供审阅），领域 `已完成`
+> 时其内容被反写进 `domains.json` 并删除该文件；`tutorials.json` 在课程 `已完成` 时就地定稿为
+> 课程知识 JSON。收口细则见下「已完成落盘收口」。
 
 ### 课程探索落盘
 
 | 阶段 | 文件路径 | 内容 |
 | --- | --- | --- |
-| tutorials@v2 完成 | `raw/{domain_id}/{course_id}/tutorials.json` | 教程列表 JSON（含 tutorials[]） |
+| tutorials@v2 完成 | `raw/{domain_id}/{course_id}/tutorials.json` | 教程列表 JSON（含 tutorials[]）；课程 `已完成` 时就地定稿（回填 knowledge_id/book_id） |
 
 ### JSON 文件格式
 
@@ -173,10 +178,13 @@ dry-run **不落盘**（只同步返回报告）；落盘发生在 run 后台任
   "domain": "math-advanced",
   "name": "数学（高等数学）",
   "description": "...",
-  "stages": ["基础", "主干", "分支", "前沿"],
   "level": "本科",
   "scope": "...",
+  "entry_requirements": "一句话",
   "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}],
+  "stages": ["基础", "主干", "分支", "前沿"],
+  "anchor_courses": ["数学分析"],
+  "prior_knowledge": "...",
   "courses": []
 }
 ```
@@ -188,7 +196,7 @@ dry-run **不落盘**（只同步返回报告）；落盘发生在 run 后台任
   "domain_id": "math-advanced",
   "courses": [
     {
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "name": "数学分析",
       "track": "分析学",
       "stage": "基础",
@@ -210,11 +218,11 @@ dry-run **不落盘**（只同步返回报告）；落盘发生在 run 后台任
 ```json
 {
   "domain_id": "math-advanced",
-  "course_id": "01_math_analysis",
+  "course_id": "math_analysis",
   "course_name": "数学分析",
   "tutorials": [
     {
-      "knowledge_id": "kt-01ma-1",
+      "knowledge_id": "kt-mathanalysis-1",
       "kind": "tutorial",
       "set_no": "1",
       "name": "教程1：比廷杰《微积分及其应用》",
@@ -227,6 +235,26 @@ dry-run **不落盘**（只同步返回报告）；落盘发生在 run 后台任
   ]
 }
 ```
+
+### 已完成落盘收口（2026-09-11 用户裁决，QED-061）
+
+探索到达 `已完成` 时对 QED_DATA_ROOT 做收口，使 raw 领域/课程层同时保有「可重新导入的
+领域全量文档」与「课程定稿知识 JSON」：
+
+| 对象 | 完成动作 | 结果 |
+| --- | --- | --- |
+| 领域 `domains.json` | `apply-results` 时把最终保留课程合并**反写覆盖** | 全量领域文档（含最终 courses），通过 `validate_domain`，可再次 `POST /domains/import` |
+| 领域 `courses.json` | 完成后**删除**（中间态） | 不再残留 |
+| 课程 `tutorials.json` | `apply-results` 时按最终保留集合**就地定稿**（回填 knowledge_id/book_id） | 课程目录下的知识 JSON（仅最终教程） |
+| 手动/采纳路径 | `POST /courses/{id}/knowledge`（含 CLI `knowledge import`）同样写课程知识 JSON | 与 LLM 轨落盘一致 |
+
+- 落盘为幂等覆盖；重复 apply 不产生重复文件，也不重复创建目录。
+- 探索产物 JSON 属**已确认知识文档**，与下载 PDF 同处 `raw/<domain_id>/`；状态事实源仍在
+  数据库（本 JSON 只作知识正本与重导入输入）。该口径为根仓库 dataset 契约「dataset 内不维护
+  JSON 状态事实源」的**例外**，已确认（REQ-078，2026-09-11）：`domains.json`/`tutorials.json`
+  作知识正本与可重导入输入，`courses.json` 为中间态；根侧口径见
+  [dataset 约定](../../../docs/design/dataset-conventions.md)「探索产物 JSON 例外」。
+- 实现已完成（2026-09-11），见[完成台账](../trackers/completed.md)（QED-061）。
 
 ## run 语义（re-explore 后台任务，写状态机）
 
@@ -256,16 +284,22 @@ dry-run **不落盘**（只同步返回报告）；落盘发生在 run 后台任
 - **已生成** = 领域探索第一轮（domain@v4 半场）报告就绪的待确认点；**探索中** = 第一轮已确认、
   第二轮（courses@v8 半场）进行中；**待确认** = 第二轮报告就绪的待确认点；**已完成** = 第二轮
   确认采纳，领域探索结束。
-- 课程探索为单步、单轮（tutorials@v2）：`生成 → 待确认（等待确认，可修改）→ 确认 → 已完成`。
-- 写主体：（LLM 轨由 8900 驱动生成与推进，8901 提供轮次确认与采纳端点；手动轨全程经 8901
-  端点推进）详见[数据库共享表设计](../architecture/database-shared-tables.md)状态机节。
+- 课程探索为单步、单轮（tutorials@v2）：`探索中 → 待确认（等待确认，可修改）→ 确认 → 已完成`
+  （**课程 5 态，无「已生成」**，2026-09-11 用户裁决）。
+- 写主体：（领域 LLM 轨由 8900 驱动生成与推进，8901 提供轮次确认与采纳端点；课程阶段流转
+  经 8901 `PATCH /courses`（REQ-077）；手动轨全程经 8901 端点推进）详见
+  [数据库共享表设计](../architecture/database-shared-tables.md)状态机节。
 
 ## 探索状态机与载荷
 
-- 领域与课程共用 6 态状态机（`未开始 → 已生成 → 探索中 → 待确认 → 已完成`，`探索中/待确认 → 失败`），
-  写主体分工、`explore_pending` 载荷 structure 见[数据库共享表设计](../architecture/database-shared-tables.md)状态机节。
+- **领域 6 态、课程 5 态，不混用**（2026-09-11 用户裁决）：领域 `未开始 → 已生成 → 探索中 →
+  待确认 → 已完成`；课程 `未开始 → 探索中 → 待确认 → 已完成`（**无「已生成」**）；两者
+  `探索中/待确认 → 失败`。写主体分工、`explore_pending` 载荷 structure 见
+  [数据库共享表设计](../architecture/database-shared-tables.md)状态机节。
   （`失败` 为契约保留态，当前代码无写入点：错误路径写 `待确认` + `explore_pending={kind:"error"}`，
   实现口径见共享表设计头注。）
+- `explore_pending.kind` 归一为 `review_results` / `name_confirmation` / `error` 三形态
+  （2026-09-11 REQ-076）。
 - 手动导入（`/domains/import`）复用同一状态机：API 与 CLI 均走 `已生成` 与 `待确认` 两极
   （confirm 双分支 / `courses/import` 捷径，见[知识录入设计](knowledge-import.md)六步流程；
   CLI 直接定稿语义已退役）。
@@ -294,19 +328,14 @@ qed-tracker domains explore 高等数学 --confirm-name 高等数学
 | 领域 run 审阅轮数 | 已实现两轮：`domain_explore` handler 第一轮置 `已生成`、`domain_explore_courses` handler 第二轮置 `待确认`（`explore_pending.stage=domain/courses`） |
 | 模板版本残留 | 已统一 `tutorials@v2`/`courses@v8`/两步（本文档与代码一致） |
 | 探索"发起端点"（prompt-explores/prompt-runs） | 已随 0013 退役，无残留 |
-
-待对齐（跟踪于[遗留问题清单](../plans/2026-09-doc-cleanup-leftovers.md)）：
-
-| 项 | 当前 | 目标 |
-| --- | --- | --- |
-| `re-explore`/run 路径 `mode` 默认值 | `web`（旧契约、非法 mode：`_domain_explore_handler`/`_course_explore_handler` 与两个 re-explore 提交均默认 `web`，`_read_reference` 直接拒绝 → 不带 mode 提交即失败写 error 载荷） | `direct` |
+| `re-explore`/run 路径 `mode` 默认值 | 已改为 `direct`（`_domain_explore_handler`/`_course_explore_handler` 与两个 re-explore 提交，2026-09-11 QED-060 轮顺带修复 L-01） |
 
 ## 关联文档
 
 | 文档 | 关系 |
 | --- | --- |
 | [知识录入设计](knowledge-import.md) | 手动入口（跳过 LLM 直接落库，复用同一状态机） |
-| [数据库共享表设计](../architecture/database-shared-tables.md) | 6 态状态机写主体、explore_pending 载荷、写权限例外（唯一事实源） |
+| [数据库共享表设计](../architecture/database-shared-tables.md) | 状态机写主体（领域 6 态 / 课程 5 态）、explore_pending 载荷、写权限例外（唯一事实源） |
 | [数据库专用表设计](../architecture/database-private-tables.md) | qt_knowledge/qt_books 落库（DDL 与状态机） |
 | [基线数据](../history/baselines/2026-08-prompt-explore-baseline.md) | 优化前后对照基线（qed_llm_calls 073~079） |
 | [架构 API](../architecture/api.md) | dry-run / apply-results / re-explore 端点定义 |

@@ -170,7 +170,8 @@ def test_dry_run_llm_failure_maps_502(tmp_path, monkeypatch) -> None:
 
 def test_dry_run_unconfigured_key_maps_409(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(api_main, "llm_api_key", lambda: "")
-    app = api_main.create_app(load_settings(data_root=tmp_path))
+    # 强制 local 模式：本机 .env 可能设 qed-engine，避免绕过无密钥检查
+    app = api_main.create_app(load_settings(data_root=tmp_path, api_select="local"))
     with TestClient(app) as test_client:
         response = test_client.post(
             "/api/v1/prompt-explores/dry-run", json={"domain_name": "高等数学"}
@@ -301,7 +302,8 @@ def test_course_dry_run_doc_mode_missing_file_maps_invalid_params(course_client,
 
 def test_course_dry_run_unconfigured_key_maps_409(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(api_main, "llm_api_key", lambda: "")
-    app = api_main.create_app(load_settings(data_root=tmp_path))
+    # 强制 local 模式：本机 .env 可能设 qed-engine，避免绕过无密钥检查
+    app = api_main.create_app(load_settings(data_root=tmp_path, api_select="local"))
     with TestClient(app) as test_client:
         response = test_client.post(
             "/api/v1/courses/01_math_analysis/prompt-explores/dry-run", json={}

@@ -3,11 +3,11 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-09
+最后更新：2026-09-11
 关联代码：`src/qed_tracker/courses.py`、`src/qed_tracker/main_line/`（advisor.py）、`src/qed_tracker/cli.py`（courses/mainline/books 命令组）、`src/qed_tracker/application/book_fetch.py`（取书承接）、`src/qed_tracker/providers/books.py`（UTF-8 解码修复）、`docs/knowledge/`（标准答案 JSON，ADR 0006 起经确认流程导入 qed_course；历史种子 `migrations/data/math.json` 已随迁移链删除）
 关联测试：`tests/test_courses.py`、`tests/test_main_line_advisor.py`、`tests/test_main_line_cli.py`、`tests/test_encoding_regression.py`
 关联 ADR：—
-需求方：QED-Engine（8903 前端知识链路；根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md) 五阶段对齐）
+需求方：QED-Engine（8903 前端知识链路；根仓库 [downloads-flow.md](../../../docs/design/downloads-flow.md) 五阶段对齐）
 执行方：QED-Tracker
 上承架构：[主链路架构](../architecture/main-line.md)（Accepted，QED-026 已实现，见[已完成任务台账](../trackers/completed.md)）
 
@@ -24,7 +24,7 @@
 
 > **历史模型注（QED-031 起被取代，QED-050-D 书库化后失效）**：本节原 JSON 条目模型
 > （五要素 + 八态状态机 + approve 移交）已被 `qt_knowledge`（两态教程）+ `qt_books`
-> （书库化四选用态 + holding）承接；取书/登记/验收语义见
+> （选用四态 + 下载生命周期四态 + holding）承接；取书/登记/验收语义见
 > [下载管线设计](download-pipeline.md)（五阶段链 + mark_owned 唯一登记，
 > raw/ 即共用成品区，无「复制移交」语义）。防总评高校准语义由 §5 存续决策承接
 > （实现落点 `src/qed_tracker/main_line/advisor.py`）。
@@ -103,4 +103,4 @@
 - [知识录入设计](knowledge-import.md)（教材条目模型承接）
 - [下载管线设计](download-pipeline.md)（下载/登记链路复用）
 - [来源探索与评估](../plans/2026-09-source-discovery.md)（渠道矩阵）
-- 根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md)（五阶段对齐）
+- 根仓库 [downloads-flow.md](../../../docs/design/downloads-flow.md)（五阶段对齐）

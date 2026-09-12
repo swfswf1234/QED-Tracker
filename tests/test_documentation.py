@@ -54,11 +54,11 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/adr/0006-database-model-as-schema-rebuild.md"),
     Path("docs/adr/0007-database-docs-split-by-table-family.md"),
     Path("docs/adr/0008-design-doc-scope-reshuffle.md"),
+    Path("docs/adr/0009-closed-plan-archival.md"),
     Path("docs/guides/index.md"),
     Path("docs/guides/operations.md"),
     Path("docs/guides/development.md"),
     Path("docs/plans/index.md"),
-    Path("docs/plans/2026-09-doc-cleanup-leftovers.md"),
     Path("docs/plans/2026-09-source-discovery.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
@@ -87,6 +87,8 @@ REQUIRED_HISTORY_DOCS = {
     Path("docs/history/baselines/2026-08-tutorial-naming.md"),
     Path("docs/history/baselines/2026-08-service-lifecycle-encoding-fix.md"),
     Path("docs/history/baselines/2026-09-09-qed014-integration-issues.md"),
+    Path("docs/history/baselines/2026-09-11-exploration-contract-alignment.md"),
+    Path("docs/history/baselines/2026-09-doc-cleanup-leftovers.md"),
     Path("docs/history/qed-030-retire-qt_resources/index.md"),
     Path("docs/history/qed-036-tutorial-naming/index.md"),
     Path("docs/history/three-table-schema.md"),
@@ -122,6 +124,19 @@ LEGACY_PATTERNS = {
     "legacy application path": re.compile(r"(?:^|[`\s(])app/"),
     "legacy documentation path": re.compile(r"docs/(?:discuss|worklogs|knowledge_base)/"),
     "retired version": re.compile(r"\b0\.2\b"),
+}
+# Cross-repository links that reference files in QED-Engine root repo
+# These cannot be resolved in QED-Tracker repo
+CROSS_REPO_LINKS = {
+    "docs/design/main-line-curriculum.md": {"../../../docs/design/course-acquisition-flow.md"},
+    "docs/architecture/main-line.md": {"../../../docs/design/course-acquisition-flow.md"},
+    "docs/design/exploration-pipeline.md": {"../../../docs/design/dataset-conventions.md"},
+    "docs/design/knowledge-import.md": {"../../../docs/design/dataset-conventions.md"},
+    "docs/design/service-management.md": {
+        "../../../docs/design/configuration-and-secrets.md",
+        "../../../docs/design/llm-gateway-and-model-management.md",
+        "../../../docs/design/service-contracts.md",
+    },
 }
 
 
@@ -208,7 +223,11 @@ def test_all_documentation_links_resolve():
         # 历史文件为只读留档，相对链接可能因文件移动而失效，豁免检查
         if "history" in document.relative_to(ROOT).parts:
             continue
+        doc_rel = document.relative_to(ROOT).as_posix()
+        excluded_targets = CROSS_REPO_LINKS.get(doc_rel, set())
         for target, resolved in _local_targets(document):
+            if target in excluded_targets:
+                continue
             if not resolved.exists():
                 missing.append(f"{document.relative_to(ROOT)} -> {target}")
     assert not missing, "\n".join(missing)

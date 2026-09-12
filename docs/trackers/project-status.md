@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-09-09
+最后更新：2026-09-11
 关联代码：无（状态快照，不映射具体模块）
 关联测试：无
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -27,31 +27,14 @@
 
 ## 当前主线
 
-- **全链路验收已通过（2026-09-09）**：主链路（QED-026）+ 教材探索与下载双轨（QED-050 全子轮）
-  + 数据库重构（QED-053）+ CLI 转 HTTP 客户端（QED-010）+ 8901 全链路联调（QED-014）经前端
-  联调验收关闭，见[完成台账](completed.md)。后续验证项：重复下载验证（QED-011）。
-- **QED-036 教程命名规范（已完成，回执待写根仓库 REQ-041）**：`tutorial_name` 命名函数 +
-  采纳路径 `adopt_tutorials` 先查后建幂等（migrate 存量迁移已随旧三表退役）+
-  mainline new `--set-no` + textbook_ref 补 authors；存量 3 行已改规范名（教程1：数学分析原理（Rudin）等，证据
-  docs/history/qed-036-tutorial-naming/）。
-- **QED-037 模型模式与密钥分置（已完成，回执待写根仓库 REQ-043）**：自身 `.env` + config
-  改读 + llm_client 双模式兼容层 + 三 advisor 接入 + service `--mode` + qed_llm_calls 调用
-  记录（设计 Accepted/Implemented：[service-management.md](../design/service-management.md)）。
-- **QED-038 密钥收敛（已完成，回执待写根仓库 ARCH-017）**：逐厂商 key 别名全部取消，
-  `llm_api_key` 只读唯一 `API_KEY`。
-- **课程收集主线（QED-019）**：01 数学分析闭环——catalog 已定稿（01 共 14 目标，54 总），
-  12 册 approved 已移交根仓库；三态评估 → 下载/登记 → 人工验收。
-- **遗留问题清理（QED-056/QED-057）**：注释级修复已完成（L-05/L-06，2026-09-09）；待执行
-  mode 默认值修复（L-01）与预存在测试失败签名对齐（L-14），证据与裁决项见
-  [遗留问题清单](../plans/2026-09-doc-cleanup-leftovers.md)。
-- **QED-024 套标记字段**：代码层完成（`set_no` 字段 + catalog 解析 + 契约测试）+ 01 数学分析
-  13 目标补齐（套一/套二/套三/en 与 note 一致）；其余 12 门课 41 目标待人工定套；
-  API 已透出 `set_no`，回执根仓库 REQ-028 待完成。
-- **治理对齐（QED-022）**：守护契约范本对齐已完成（8 个守护测试六字段 docstring + 守护面清单五类），回执根仓库 REQ-023 待写入。
-- **文档体系长效机制（QED-039）**：首轮固定化已完成（architecture/ 固定 + api.md + database-schema
-  升级 + project-status 移入 trackers/ + design 三态清理）；已建立
-  [文档治理规范](../standards/doc-governance.md)「版本末期文档整理」节（ADR 0002 登记、
-  ADR 0004 并入），每次版本确认前执行一轮。
+- **本期计划全链路验收通过（2026-09-11）**：主链路（QED-026）+ 教材探索与下载双轨（QED-050
+  全子轮）+ 数据库重构（QED-053）+ CLI 转 HTTP 客户端（QED-010）+ 8901 全链路联调（QED-014）
+  + 重复下载链路验证（QED-011）全部完成并验收关闭；下载状态机/落盘/ID 收口（QED-060/061/062）、
+  探索契约对齐（QED-063/064/065，REQ-076/077/078）、遗留清单（QED-056/057）均已关闭。
+  全量 `pytest tests -q` **482 passed + 1 skipped**，ruff clean。见[完成台账](completed.md)。
+- **下一阶段主线（待立项）**：本地 LLM 模型替换 + 论文探索。
+- **长期任务**：prompt 优化模块（QED-043）、来源探索与评估（QED-054，含 REQ-020①② 找得率基线
+  持续采集与回执）；见[待办列表](todo.md)。
 
 ## 维护规则
 

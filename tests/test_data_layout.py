@@ -126,6 +126,27 @@ def test_download_accepts_matching_declared_md5(tmp_path, pdf_bytes):
     assert record.file["sha256"]
 
 
+def test_run_catalog_course_filter_matches_semantic_course_id(tmp_path, pdf_bytes):
+    """QED-062：catalog run 的 course 过滤按语义 course_id 精确匹配（不再用编号前缀）。"""
+    catalog = load_catalog("math-qe")
+    manager = _manager_with(pdf_bytes)
+    service = BookService([FakeProvider(_candidate())], ResourceService(Inventory(tmp_path), manager))
+    try:
+        attempts = service.run_catalog(catalog, course="math_analysis")
+    finally:
+        service.close()
+    assert len(attempts) == 13
+    assert {attempt.target.course_id for attempt in attempts} == {"math_analysis"}
+
+    manager = _manager_with(pdf_bytes)
+    service = BookService([FakeProvider(_candidate())], ResourceService(Inventory(tmp_path), manager))
+    try:
+        none_attempts = service.run_catalog(catalog, course="math")
+    finally:
+        service.close()
+    assert none_attempts == []
+
+
 def test_catalog_book_lands_in_raw_domain_course_bucket(tmp_path, pdf_bytes):
     target = next(target for target in load_catalog("math-qe").targets if target.id == "03-munkres")
     catalog = Catalog("math-qe", "Math", "", "frozen", (target,))
@@ -137,7 +158,7 @@ def test_catalog_book_lands_in_raw_domain_course_bucket(tmp_path, pdf_bytes):
     finally:
         service.close()
     assert attempt.status == "DOWNLOADED"
-    assert raw_course_dir(tmp_path, "03_topology").exists()
+    assert raw_course_dir(tmp_path, "topology").exists()
 
 
 def test_paper_service_lands_in_general_papers_by_year(tmp_path, pdf_bytes):

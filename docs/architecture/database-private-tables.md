@@ -3,7 +3,7 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-09
+最后更新：2026-09-11
 需求方：QED-Engine（根仓库 REQ-026/REQ-029/REQ-030；2026-08-16 用户裁决知识层次重构）
 关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/db/schema.py`、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/db/selection_repository.py`、`src/qed_tracker/db/tasks_repository.py`
 关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、`tests/test_schema.py`、`tests/test_schema_mysql_smoke.py`（实现轮同步更新）
@@ -135,10 +135,12 @@ CREATE TABLE qt_knowledge (
 - **状态机（两态，2026-09-03 D1 裁决）**：`draft`（探索中）→ `confirmed`（定稿）。
   废弃/退役语义由 `notes` 字段承载，不再有 rejected / superseded / completed 终态。
   课程完成由导入/apply-results 层管理，不冗余在教程行。
-- **ID 生成（D4 裁决，2026-09-03 裁决修订）**：`kt-{course_abbr}-{set_no}`。手动导入路径
-  由数据文件显式携带（文件内 `knowledge_id` 已写 `kt-01ma-1`），服务端校验格式 + 去重检测；
-  LLM 探索采纳路径由服务端按 `course_id` 去下划线机械生成（`01_math_analysis`→`01mathanalysis`）。
-  不维护人工"课程缩写映射表"。
+- **ID 生成（D4 裁决，2026-09-03；2026-09-11 QED-062 修订）**：`kt-{course_abbr}-{set_no}`。
+  手动导入路径由数据文件显式携带（文件内 `knowledge_id` 已写 `kt-mathanalysis-1`），服务端
+  校验格式 + 去重检测；LLM 探索采纳路径由服务端机械生成 `course_abbr = course_id` 去下划线
+  （`math_analysis`→`mathanalysis`），去下划线后 **>20 字符**改用词首字母缩略
+  （`ordinary_differential_equations`→`ode`）；`knowledge_id`/`book_id` 总长 ≤ 列宽 32，
+  见[知识录入设计](../design/knowledge-import.md)。不维护人工"课程缩写映射表"。
 - **引用数组**：`textbook_ref` / `exercise_ref` / `parallel_ref` 均为 JSON 数组。
   多卷书籍各占一条（同 title 不同 part）；author 结构化 `[{name, role:"author|translator"}]`。
   `parallel_ref` 中的书目由服务端建 `qt_books` 行（status=parallel）。
@@ -176,7 +178,7 @@ CREATE TABLE qt_books (
   year            SMALLINT     DEFAULT NULL, -- 出版年份（未知填 NULL）
   language        ENUM('zh','en') NOT NULL, -- 主要语言：zh=中文（含中译本）；en=英文
   roles           JSON         NOT NULL, -- 书籍角色（见列说明）
-  status          ENUM('decided','parallel','candidate','retired') NOT NULL DEFAULT 'candidate', -- 选用状态四态（见列说明）；索引
+  status          ENUM('decided','parallel','candidate','retired','downloading','downloaded','verified','failed') NOT NULL DEFAULT 'candidate', -- 选用四态 + 下载生命周期（见列说明）；索引
   retire_reason   VARCHAR(500) NOT NULL DEFAULT '', -- 退役原因（status=retired 时必填）
   holding         ENUM('owned','missing') NOT NULL DEFAULT 'missing', -- 持有状态（见列说明）；索引
   file_path       VARCHAR(512) DEFAULT NULL, -- PDF 文件路径（数据根相对路径）；holding=owned 时回填
@@ -204,7 +206,7 @@ CREATE TABLE qt_books (
 | `authors` | 作者列表：[{name:"姓名", role:"author|translator"}]；role 区分原作者与译者（支撑中译本检索） |
 | `publisher` / `edition` / `year` / `language` | 出版社 / 版次 / 出版年份（未知 NULL）/ 主要语言（zh 含中译本） |
 | `roles` | 书籍角色：["textbook"] 或 ["textbook","exercises"] 或 ["exercises"] 或 ["solutions"]；solutions=题解（独立角色） |
-| `status` | 选用状态：decided=已入选引用数组（推荐使用）；parallel=平行读物（intro 提及）；candidate=候选待选；retired=退役；索引 |
+| `status` | 选用状态 + 下载生命周期：decided=已入选引用数组（推荐使用）；parallel=平行读物（intro 提及）；candidate=候选待选；retired=退役；downloading=下载中；downloaded=下载完成待验证；verified=验收通过；failed=下载失败（可重试）；索引。下载执行态（2026-09-11 QED-060 裁决）由 qt_books 承载，前端 `bookInStage` 据此显示五阶段 |
 | `retire_reason` | 退役原因（status=retired 时必填）：如「合并至 bk-xx」/「拆分为 bk-xx + bk-yy」/「已过时」 |
 | `holding` | 持有状态：owned=PDF 已到手且校验通过；missing=未持有（需要补书）；索引 |
 | `file_path` | PDF 文件路径（数据根相对路径）；holding=owned 时回填 |
@@ -215,18 +217,33 @@ CREATE TABLE qt_books (
 
 ### 设计要点
 
-- **状态机（选用四态 + retired，2026-09-03 D3 裁决）**：
+- **状态机（选用四态 + 下载生命周期，2026-09-11 QED-060 裁决）**：
 
   ```text
-  candidate（候选待选）──decided（已入选引用数组）──→ decided
-      │                                                │
-      │──parallel（平行读物，intro 提及）                │──→ retired（退役/拆分/合并，reason 必填）
-      └──retired（退役，reason 必填）                    │
+  选用四态：
+  candidate（候选待选）──→ decided（已入选引用数组）
+      │                        │
+      ├──→ parallel（平行读物）  │
+      └──→ retired（退役，reason 必填；终态）
+                               │
+  下载生命周期（decided 进入；failed 可重试回 downloading；downloading 可 cancel 复位 decided）：
+  decided ──start_download──→ downloading ──mark_owned──→ downloaded ──verify_book──→ verified
+                                  │  ↑
+                    fail_download │  └── start_download（重试：failed→downloading）
+                                  ▼
+                               failed
+  downloading ──cancel_download──→ decided（仅 downloading 态可取消）
   ```
 
   - `decided`：已被某套教程的 textbook_ref / exercise_ref 引用（推荐使用）。
   - `parallel`：仅在某套 intro 散文中提及的平行读物（不直接推荐，供扩展）。
   - `retired`：退役终态（废弃/拆分/合并），`retire_reason` 必填记录去向。
+  - `downloading`/`downloaded`/`verified`/`failed`：下载生命周期（QED-060）；`mark_owned` 为
+    `downloaded` 与 `holding=owned` 的唯一写入口（import/register 直达 downloaded）；
+    `failed` 可经 `POST /books/{id}/start`（重试）回到 `downloading`；`downloading` 可经
+    `POST /books/{id}/cancel` 复位 `decided`；`verified` 为下载终态。非法迁移 409
+    `INVALID_TRANSITION`。
+  - 迁移合法性由 `knowledge_repository._BOOK_TRANSITIONS` 守护，非法迁移 409。
 - **多对多引用**：无 knowledge_id 列；归属由 qt_knowledge.refs 数组中的 book_id 承载。
   同一本书可被多套教程引用（共享同一 book_id）；ref.roles 权威留在知识侧，
   书行 roles 按引用种类落（textbook_ref→["textbook"]、exercise_ref→["exercises"]、parallel_ref→[]）。
@@ -372,7 +389,7 @@ CREATE TABLE qt_selections (
 | 层 | 状态机 | 终态 | 非法迁移（API 409） |
 | --- | --- | --- | --- |
 | qt_knowledge | draft → confirmed（2026-09-03 D1 两态） | confirmed | 终态任何迁移；rejected/superseded/completed 已退役（废弃改 notes） |
-| qt_books | candidate → decided / parallel；candidate / decided / parallel → retired（D3 选用四态） | retired（retire_reason 必填） | 终态任何迁移；下载执行态（downloading/downloaded/verified）已由 qt_sources + 资源清单承接，不再属于 qt_books |
+| qt_books | 选用：candidate → decided / parallel；candidate / decided / parallel → retired。下载生命周期：decided → downloading → downloaded → verified；downloading → failed →（重试）downloading；downloading →（cancel）decided（2026-09-11 QED-060） | retired（retire_reason 必填）、verified（下载终态） | 终态任何迁移；非法迁移 409（`_BOOK_TRANSITIONS` 守护）。下载执行事实同时落 qt_sources + 资源清单 |
 | qt_sources | 无（仅 ok 标记） | — | — |
 | qt_tasks | queued → running → succeeded / failed | succeeded / failed | TaskManager 内部管理，API 不暴露迁移端点 |
 
@@ -390,7 +407,7 @@ CREATE TABLE qt_selections (
   `ALTER ADD COLUMN` 补齐；**绝不 DROP 重建**（保护三项目审计历史）。
 - **历史关键节点（供追溯，非职责）**：0018（QED-050-D 书库化 DROP+重建 qt_knowledge/qt_books、
   增 original_title、选用四态 + holding + priority，downgrade 不支持——重放导入代替）；
-  0016（qt_tasks 建表）；0015（explore_pending + 6 态状态机）；0014（qt_sources 重建挂
+  0016（qt_tasks 建表）；0015（explore_pending + 领域 6 态状态机）；0014（qt_sources 重建挂
   book_id，历史存量经 qt_sources_legacy 留档，该留档表已随链退役）。
 - 课程/领域种子不再经迁移写入：标准答案 JSON（`docs/knowledge/`）经确认流程导入
   （ADR 0006 决定 6），数据重建后可重放。
@@ -414,7 +431,8 @@ retire_reason/holding/file_path/priority/notes/domain_id/created_at/updated_at�
 
 - **无** `display_title` / `sha256` / `size` / `page_count` 列（书库化已删）——展示名由前端按
   `title + part` 组装；文件内容指纹只落 qt_sources.note 与资源清单 JSON。
-- `holding=owned` 时 `file_path` 回填（数据根相对路径）；下载执行细节见 qt_sources。
+- `holding=owned` 时 `file_path` 回填（数据根相对路径），`status=downloaded`（待验证）；
+  `verify_book` 后 `status=verified`；下载执行细节见 qt_sources。落盘目录 `raw/<domain_id>/<course_id>/`。
 - `roles` 取值 `textbook`/`exercises`/`solutions`；教材含习题 → `roles=["textbook","exercises"]`。
 
 ## 验证方式
@@ -432,7 +450,7 @@ retire_reason/holding/file_path/priority/notes/domain_id/created_at/updated_at�
 1. **替换重构**：新表族替代三表，存量迁移后旧表退役（不并行保留）。
 2. **拆三表层次**：领域/课程/知识（教程层）三张表；领域/课程为三项目共享表（新前缀 `qed_*`），
    教程一行=一套教程。
-3. **共享机制**：改根仓库契约（ADR 0003 / database-design.md / service-contracts.md），
+3. **共享机制**：改根仓库契约（ADR 0003 / database-design.md / cross-project-contracts.md），
    QED-Tracker 建表维护，其他项目只读。
 4. **教程粒度**：一行=一套教程；教程选择（教材/习题集）为决定引用（书名+版本），
    候选书目存书籍（状态机四段：候选/决定/下载成功/确认正确）。

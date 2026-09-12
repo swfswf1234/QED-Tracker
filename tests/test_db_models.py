@@ -25,7 +25,6 @@ _DOMAIN_EXPECTED_COLUMNS = {
     "classic_tracks", "stages", "path_results", "explore_pending",
     "created_by", "updated_by", "created_at", "updated_at",
 }
-_EXPLORATION_STAGES = {"未开始", "已生成", "探索中", "已完成"}
 
 
 @pytest.fixture
@@ -38,10 +37,10 @@ def session():
 
 
 def test_enums_complete() -> None:
-    assert {s.value for s in KnowledgeStatus} == {"draft", "confirmed", "completed", "rejected", "superseded"}
+    assert {s.value for s in KnowledgeStatus} == {"draft", "confirmed"}
     assert {s.value for s in BookStatus} == {
-        "candidate", "decided", "downloading", "downloaded", "verified",
-        "failed", "rejected", "superseded",
+        "candidate", "decided", "parallel", "retired",
+        "downloading", "downloaded", "verified", "failed",
     }
 
 
@@ -119,10 +118,12 @@ def test_qed_domain_explore_full_roundtrip(session) -> None:
 
 
 def test_qt_books_unique_constraints() -> None:
+    """书库化后 qt_books 无 knowledge_id/sha256 列，仅 book_id 主键；不再有旧唯一约束。"""
     table = QtBook.__table__
     names = {c.name for c in table.constraints}
-    assert "uq_qt_books_knowledge_title_part" in names
-    assert "uq_qt_books_sha256" in names
+    assert "uq_qt_books_knowledge_title_part" not in names
+    assert "uq_qt_books_sha256" not in names
+    assert table.primary_key.columns.keys() == ["book_id"]
 
 
 def test_qt_sources_foreign_key_to_books() -> None:
@@ -179,7 +180,7 @@ def test_qed_course_full_roundtrip(session) -> None:
         name="数学分析", aliases=["微积分"], track="分析学", stage="本科基础",
         prerequisites=[], related_targets=["LAG1"],
         description="数学系的第一门严格分析课",
-        exploration_stage="已生成",
+        exploration_stage="探索中",
         created_at=now, updated_at=now,
     )
     session.add(course)
@@ -188,6 +189,6 @@ def test_qed_course_full_roundtrip(session) -> None:
     row = session.get(QedCourse, "01_math_analysis")
     assert row.track == "分析学"
     assert row.description == "数学系的第一门严格分析课"
-    assert row.exploration_stage == "已生成"
+    assert row.exploration_stage == "探索中"
     assert row.aliases == ["微积分"]
     assert row.related_targets == ["LAG1"]

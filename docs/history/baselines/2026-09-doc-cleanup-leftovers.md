@@ -1,10 +1,16 @@
 # 文档清理遗留问题清单（2026-09-09）
 
-状态：Active
+状态：Historical
 任务类型：B（缺陷与裁决跟踪清单）
-最后更新：2026-09-09
+最后更新：2026-09-11
 需求方：QED-Tracker 文档清理轮（QED-056）
 评审方：用户
+
+> **Historical（2026-09-11 归档，[ADR 0009](../../adr/0009-closed-plan-archival.md)）**：
+> QED-056/QED-057 已关闭，全部遗留项处置完成（L-01/L-05/L-06/L-14 修复；L-07/L-08/L-10
+> 维持现状关闭；L-09/L-11 PASS；L-12 维持手工同步；L-13 保留于 QED-054）；结果见
+> [完成台账](../../trackers/completed.md)。正文保留当时结论，文内相对链接按原 `docs/plans/`
+> 位置书写，已失效，仅作追溯。
 
 > 本清单承接 2026-09-09 文档清理轮（关闭 QED-026 / QED-050-D / QED-044 / QED-055，删除
 > `2026-08-download-flow.md`、`2026-08-main-line-curriculum.md`、`2026-09-download-implementation.md`、
@@ -20,7 +26,7 @@
 
 | 编号 | 事项 | 证据 | 建议去向 | 优先级 |
 | --- | --- | --- | --- | --- |
-| L-01 | re-explore / run 路径 `mode` 默认值 `"web"` 为非法 mode：不带 mode 提交即失败（`_read_reference` 仅收 direct/text/doc）→ 写 error 载荷 | `api/main.py:800`、`:833`（2026-09-09 复核现行行号，`payload.get("mode", "web")` 两处）；[探索管线设计](../design/exploration-pipeline.md) Phase 2 待对齐表 | QED-057（默认改 `direct`，代码逻辑变更） | 高 |
+| L-01 | ~~re-explore / run 路径 `mode` 默认值 `"web"` 为非法 mode~~ **已修复（2026-09-11，QED-060 轮）**：四个默认点改为 `direct` | `api/main.py`（`_domain_explore_handler`/`_course_explore_handler` + 两个 re-explore 提交）；[探索管线设计](../design/exploration-pipeline.md) Phase 2 已落地表 | 已修复，无需后续 | 高 |
 | L-07 | 探索状态机「失败」态无写入点（错误路径写 待确认 + `explore_pending={kind:"error"}`）；lifespan 启动时对滞留 探索中/待确认 任务无清理 | [数据库共享表设计](../architecture/database-shared-tables.md) 实现口径注；`api/main.py` 错误路径 | 待用户裁决：补失败写入点/启动清理 or 维持现状（文档已如实登记） | 中 |
 | L-08 | `qt_knowledge`→`qed_course` 真实 FK 缺失（ORM 物理外键仅 `qt_sources.book_id`，其余为逻辑外键；文档已按逻辑外键口径登记） | `db/models.py`；[数据库专用表设计](../architecture/database-private-tables.md) 头注 | 待用户裁决（是否补物理 FK 属 schema 决策） | 低 |
 | L-09 | G1 confirm 端点覆写语义：缺省字段应 = 保留既有值，当前以脚本回显规避 | 原下载流程计划「已知事实与缺口」（Git 追溯） | QED-057 评估（原去向 QED-014 已关闭） | 中 |

@@ -3,7 +3,7 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-07
+最后更新：2026-09-11
 关联代码：`src/qed_tracker/application/book_fetch.py`（编排母本）、`src/qed_tracker/downloader.py`、`src/qed_tracker/application/resources.py`、`src/qed_tracker/inventory.py`、`src/qed_tracker/catalog.py`（catalog run 与冻结目录）、`src/qed_tracker/matching.py`（严格匹配）、`src/qed_tracker/catalogs/math-qe.json`（math-qe 冻结书单）、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/providers/books.py`、`src/qed_tracker/providers/book_advisor.py`、`src/qed_tracker/api/main.py`（书籍组端点）、`src/qed_tracker/cli.py`（mainline/books/catalog 命令）
 关联测试：`tests/test_book_providers.py`、`tests/test_book_fetch.py`、`tests/test_book_llm_advisor.py`、`tests/test_book_acceptance.py`、`tests/test_book_api.py`、`tests/test_download_inventory.py`、`tests/test_services.py`、`tests/test_config_catalog_matching.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0003](../adr/0003-pending-design-location.md)、[ADR 0008](../adr/0008-design-doc-scope-reshuffle.md)
@@ -24,11 +24,18 @@
 
 2026-09-03 书库化裁决（QED-050-B/C）把 qt_books 重构为「选用四态
 （candidate/decided/parallel/retired）+ 持有态（holding=owned/missing）」，下载执行态与
-哈希/来源移交 qt_sources 与资源清单，旧八态下载状态机及其仓储方法
-（start_download/complete_download/verify_book 等）随之删除。书库化后曾出现的半重构中间态
-（书籍组端点与 mainline 命令调用已删仓储方法、书籍搜索层无 LLM）已由 QED-050-D（2026-09-06）
-收口：API 35 路由重接、9 个旧八态端点删除、mainline 命令组重接、TaskManager 并发 409 防护、
-`mark_owned` 唯一登记入口；LLM 已接入取书链（检索词变体生成 + 候选确认评估，见阶段 1/2）。
+哈希/来源移交 qt_sources 与资源清单，**旧八态下载状态机**及其仓储方法
+（decide/retry/complete/reject/supersede 等）随之删除（2026-09-11 QED-060 另立**四态下载
+生命周期** downloading/downloaded/verified/failed，与选用四态并存，非旧机恢复）。书库化后
+曾出现的半重构中间态（书籍组端点与 mainline 命令调用已删仓储方法、书籍搜索层无 LLM）已由
+QED-050-D（2026-09-06）收口：API 35 路由重接、旧八态端点删除（其中 start/fail/verify/cancel
+4 个于 QED-060 以新语义恢复）、mainline 命令组重接、TaskManager 并发 409 防护、`mark_owned`
+唯一登记入口；LLM 已接入取书链（检索词变体生成 + 候选确认评估，见阶段 1/2）。
+
+2026-09-11 QED-060 裁决：为对齐前端五阶段（待下载/下载中/待验证/已完成/失败），qt_books
+**重新引入下载生命周期四态**（downloading/downloaded/verified/failed），与选用四态并存；
+`holding` 继续表达持有状态。下载执行事实仍同时落 qt_sources + 资源清单，但状态迁移由
+qt_books.status 承载（详见[数据库专用表设计](../architecture/database-private-tables.md)状态机节）。
 
 ## 目的与边界
 
@@ -114,7 +121,8 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
    允许跑完。
 4. **书级 owned 即完成**：单本书完成 = qt_books.holding=owned + file_path 回填 +
    qt_sources 渠道留痕完备；课程闭环 = 课程下 decided 书全部 owned（parallel 不计入），
-   派生只读查询，不动 exploration_stage。
+   派生只读查询，不动 exploration_stage。（2026-09-11 补充：登记同时置
+   `status=downloaded`，人工 verify 后 `status=verified`。）
 5. **增 original_title 可选列**：qt_books 重建时（模型 + ensure_schema，零成本）加
    nullable original_title；refs 数据契约增可选 original_title 字段（向后兼容）。
 6. **mainline CLI 处置**：download 重接新五阶段编排（教程级入口）；verify 改只读复核；
@@ -125,6 +133,29 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
    不得直接下载、不得把判断写入资源事实（判断只落 qt_sources 留痕与 qed_llm_calls 审计）。
 9. **双取书入口**：书级（单册）+ 教程级（按 qt_knowledge 一套教程批量，先排除已 owned，
    默认仅 decided，parallel 显式参数纳入）；课程级批量属后续扩展。
+
+### 补充裁决（2026-09-11，QED-060）
+
+1. **保留选用四态 + 下载生命周期四态并补齐闭环**：`decided → downloading → downloaded →
+   verified`，失败 `→ failed` 可重试（再次 fetch/start）；卡死 `downloading` 可
+   `POST /books/{id}/cancel` 复位 `decided`。写状态端点 = `start`/`fail`/`verify`/`cancel`；
+   非法迁移由全局 `InvalidTransition` 处理器统一映射 **409 `INVALID_TRANSITION`**。教程级
+   批处理遇单本非法状态**不整批中断**（该书失败继续下一本）。
+2. **下载落盘统一用书籍真实 `domain_id`**：`raw/<domain_id>/<course_id>/`，
+   不得回落默认 `math`；与探索产物（`raw/<domain_id>/...`）同域。
+3. **落盘收口口径**（与[探索管线设计](exploration-pipeline.md)对齐）：`mark_owned` 为
+   `downloaded` + `holding=owned` 的唯一写入口；import/register 直达 `downloaded`。
+
+### 成品命名规则（唯一事实源）
+
+- **最终成品**：`<slug>_<sha8>.pdf`（`sha8` = sha256 前 8 位，内容指纹确定性 → 同内容必同路径）。
+- `slug`：论文 = arXiv ID；教材/习题 = `safe_filename(title).stem`（CJK 保留、空白→`_`、
+  非法字符剔除、截断 120）；catalog run 追加 `{target.id}_` 前缀。
+- **落盘目录**：自动取书 `raw/<domain_id>/<course_id>/`（refs 反查课程），无归属 →
+  `raw/<domain_id>/_general/`；论文 → `raw/<domain_id>/_general/papers/<year>/`；
+  人工导入 → 显式 `target_path` 或 `raw/<domain_id>/<course_id>/`。
+- **staging**：`tmp/qed-tracker/downloads/<slug>[_<tag>].download`，机器验收通过后
+  `os.replace` 进 `raw/`。
 
 ## 五阶段流程总览
 
@@ -146,9 +177,9 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
   │                          文本层软信号只记录；未过门槛文件永不进 raw/
   ▼
 阶段5 登记    sha256 去重 → 原子落盘 raw/<domain_id>/<course_id>/
-              → qt_books.holding=owned + file_path 回填 + qt_sources(ok=1) + 资源 JSON
+              → qt_books.holding=owned + file_path 回填 + status=downloaded + qt_sources(ok=1) + 资源 JSON
   │
-全部耗尽 ──→ qt_tasks failed + 人工下载指引（file_keywords + links）
+全部耗尽 ──→ qt_books.status=failed（holding 仍 missing）+ qt_tasks failed + 人工下载指引（file_keywords + links）
 ```
 
 各阶段失败出口与留痕见「事实落点表」节。
@@ -246,15 +277,21 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
 ## 阶段 5：登记与课程闭环
 
 - **书级完成判据**（裁决 4）：`qt_books.holding='owned'` + `file_path` 回填（数据根相对
-  路径）+ qt_sources 存在 ≥1 条 ok=1 记录指向最终文件来源。
+  路径）+ `status='downloaded'`（2026-09-11 QED-060：下载生命周期由 qt_books 承载，不再
+  只靠 holding）+ qt_sources 存在 ≥1 条 ok=1 记录指向最终文件来源。人工 verify 后
+  `status='verified'`（`POST /books/{id}/verify`）。
 - **落盘**：`raw/<domain_id>/<course_id>/<safe_name>_<sha8>.pdf`（D9 规则：期望路径不含
-  sha 后缀，落盘自动补 `_<sha8>`）；sha256 去重命中复用既有记录不重复落盘；资源 JSON
-  `register_candidate` 登记（provider/provider_id/page_url/download_url/retrieved_at）。
+  sha 后缀，落盘自动补 `_<sha8>`）；**`domain_id` 必须取书籍/课程行的真实领域标识**
+  （2026-09-11 裁决：统一 `raw/<domain_id>/<course_id>/`，不得回落默认 `math`）；sha256
+  去重命中复用既有记录不重复落盘；资源 JSON `register_candidate` 登记
+  （provider/provider_id/page_url/download_url/retrieved_at）。
 - **课程闭环口径**：经 qt_knowledge 的 textbook_ref/exercise_ref/parallel_ref 聚合
   book_id（去重）→ 其中 `status=decided` 的书全部满足书级完成。**派生只读查询，不写任何
   表**；`exploration_stage` 不动；candidate/parallel 书不参与判定。
-- 不设任何「验收/移交」写状态端点：downloaded/verified/approved 等八态已退役，课程闭环
-  是查询口径而非状态迁移。
+- **下载生命周期写状态端点**（2026-09-11 QED-060 恢复）：`POST /books/{id}/start`
+  （decided→downloading）、`/fail`（downloading→failed）、`/verify`（downloaded→verified）、
+  `/cancel`（downloading→decided，仅 downloading 可取消）；非法迁移统一 **409
+  `INVALID_TRANSITION`**（全局处理器）。课程闭环仍是**查询口径**而非状态迁移（不写任何表）。
 
 ## 双入口与教程级批处理
 
@@ -297,11 +334,12 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
 | LLM 检索词变体 | 不写 | 可选 1 条（channel=search） | — | **1 条**（book-query/variants@v1） | 不写 | 不产生 |
 | 确定性预筛 | 不写 | 不逐条（进批次摘要） | — | 不写 | 不写 | 不产生 |
 | LLM 确认评估 | 不写 | 1 条/候选（ok=0, note=verdict+summary） | — | **1 条/批**（book-confirm/assess@v1） | 不写 | 不产生 |
+| 开始取书 | **status=downloading** | 不写 | progress | 不写 | 不写 | 不产生 |
 | resolve/下载失败 | 不写 | 1 条/候选（ok=0, note=原因） | — | 不写 | 不写 | .part 由下载器清理 |
-| 下载成功 | **holding=owned + file_path** | 1 条（ok=1, note=resource_id） | succeeded+result | 不写 | register_candidate | 原子 replace 进 raw |
+| 下载成功 | **holding=owned + file_path + status=downloaded** | 1 条（ok=1, note=resource_id） | succeeded+result | 不写 | register_candidate | 原子 replace 进 raw |
 | 硬门槛拒绝 | 不写 | 1 条（ok=0, note=门槛项+软信号） | — | 不写 | **不登记** | 删除 |
-| 人工导入 | **holding=owned + file_path** | 1 条（channel=local_import, ok=1, note=具体情况） | 可选任务 | 不写 | 登记 | tmp→os.replace |
-| 全部耗尽 | **不动**（holding 仍 missing，无 failed 态可置） | 1 条（ok=0, note=人工指引摘要） | failed+error=人工指引 | — | 不写 | — |
+| 人工导入 | **holding=owned + file_path + status=downloaded** | 1 条（channel=local_import, ok=1, note=具体情况） | 可选任务 | 不写 | 登记 | tmp→os.replace |
+| 全部耗尽 | **status=failed**（holding 仍 missing） | 1 条（ok=0, note=人工指引摘要） | failed+error=人工指引 | — | 不写 | — |
 
 **「LLM 判断不写入资源事实」的精确含义**：
 
@@ -360,8 +398,10 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
 - **幂等保证**：sha256 身份 + Inventory 去重（同文件复用既有记录）；文件名
   `<safe_name>_<sha8>.pdf` 内容指纹确定性；qt_sources 按尝试追加留痕；已 owned 书重复
   fetch → no-op；教程级重跑自动跳过已完成书。
-- **重试 = 再次提交 fetch**（幂等重放），无「复位」动作——qt_books 无 downloading 中间态
-  （选用态与持有态分离），旧 cancel/retry 端点失去存在理由。
+- **状态复位与重试**（2026-09-11 QED-060）：书级失败置 `status=failed`（holding 仍 missing）；
+  重试 = 再次提交 fetch（`failed → downloading`，幂等重放）；卡死的 `downloading` 经
+  `POST /books/{id}/cancel` 复位到 `decided`（`cancel` 仅允许 downloading 态）。教程级
+  批处理遇单本非法状态**不整批中断**，汇总为该书失败继续下一本。
 - **并发防护**：同书仅允许一个活动 fetch 任务（提交前查 qt_tasks 同 params 的
   queued/running → 409；TaskManager 现无去重，实现轮新增）。
 - qt_sources.file_keywords 语义 = 人工下载检索关键词（DDL 注释口径）；IA 渠道内部按文件名
@@ -380,7 +420,7 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
 **catalog run 冻结目录链路完全不动**：`run_catalog` + `match_candidate`（strict 严格匹配、
 不确定候选不自动落盘）保持现状；本设计的预筛/确认逻辑不触碰两模块公开语义。
 
-**books API 端点处置**（实现轮执行，api.md ④ 组同步重写）：
+**books API 端点处置**（QED-050-D 重接 + QED-060 恢复下载生命周期端点，api.md ⑤ 组同步）：
 
 | 端点 | 处置 |
 |---|---|
@@ -389,8 +429,9 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
 | POST /books/{id}/import | 重接线（人工导入新语义） |
 | POST /books/{id}/register | 保留，与 import 共用登记服务 |
 | POST /books/{id}/fetch | 重接线：202 + 后台任务跑新五阶段编排 |
-| POST /knowledge/{id}/fetch | **新增**：教程级批量取书（命名实现计划定） |
-| decide/start/fail/retry/complete/verify/reject/supersede/cancel | **删除**（9 个，八态下载机无对应语义） |
+| POST /knowledge/{id}/fetch | **新增**：教程级批量取书 |
+| POST /books/{id}/start、/fail、/verify、/cancel | **2026-09-11 QED-060 新增**：下载生命周期迁移（decided→downloading→downloaded→verified；failed 可重试；cancel 仅 downloading 复位 decided） |
+| decide/retry/complete/reject/supersede | **删除**（旧八态下载机无对应语义） |
 | GET /books/search | 保留不动（⑥ 组，无 repo 依赖） |
 
 **mainline CLI 处置**（裁决 6）：
@@ -447,8 +488,12 @@ catalog run 冻结目录链与严格匹配、资源 JSON/Inventory 原语为 QED
 本文档 2026-09-07 收编其契约（ADR 0008），行为不变。
 
 原在途收尾项（00/01/02 真实环境闭环）已随 QED-014 验收关闭（2026-09-09，见[完成台账](../trackers/completed.md)）；
-定向测试预存在失败修复（签名对齐）跟踪于[遗留问题清单](../plans/2026-09-doc-cleanup-leftovers.md) L-14（归 QED-057），
-不在本设计文档声明范围。
+定向测试预存在失败修复（L-14，签名对齐）已随 QED-057 修复（2026-09-11），遗留清单归档于
+[历史基线](../history/baselines/2026-09-doc-cleanup-leftovers.md)。
+
+2026-09-11 QED-060 更新：选用四态 + 下载生命周期四态 + cancel/retry 闭环、教程级批处理不中断、
+落盘统一真实 `domain_id`、成品命名规则入文；实现轮由
+[完成台账](../trackers/completed.md)（QED-060）承接。实现轮已完成（2026-09-11），全量测试通过。
 
 ## 关联文档
 
@@ -466,6 +511,7 @@ catalog run 冻结目录链与严格匹配、资源 JSON/Inventory 原语为 QED
 
 | 日期 | 变更 | 说明 |
 |---|---|---|
+| 2026-09-11 | QED-060 补充裁决与命名规则 | 选用四态 + 下载生命周期四态（downloading/downloaded/verified/failed）与 start/fail/verify/cancel 闭环、教程级批处理不中断、落盘统一真实 `domain_id`、成品命名规则唯一事实源；事实落点表与状态机同步 |
 | 2026-09-07 | 改名 download-pipeline + 吸收合并（ADR 0008） | 自 book-download-registration.md 改名；并入 acquisition-and-inventory.md（来源协议/选书要求/通用下载器与资源登记原语/通用失败语义）与 tracker-service.md 的 math-qe 书单规格（id 修正为 math-qe）；catalog 冻结目录链纳入本文档职责 |
 | 2026-09-07 | 确认状态转正 + 实现状态 Implemented | QED-050-D Phases 0~6 完成与人工闭环验证；设计文档域重整轮（头部实现状态、关联测试、背景与实现状态节按收口事实更新） |
 | 2026-09-04 | 用户确认设计，自 plans 晋升（ADR 0003 路径） | 设计状态 Accepted，确认状态暂定 |

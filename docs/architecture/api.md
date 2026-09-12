@@ -3,14 +3,15 @@
 设计状态：Accepted
 确认状态：已确认
 实现状态：Implemented
-最后更新：2026-09-09
+最后更新：2026-09-11
 关联代码：`src/qed_tracker/api/main.py`、`src/qed_tracker/api/tasks.py`
 关联测试：`tests/test_api.py`、`tests/test_knowledge_api.py`、`tests/test_book_api.py`、`tests/test_knowledge_import.py`、`tests/test_prompt_lab_api.py`、`tests/test_book_fetch.py`、`tests/test_exploration_stage.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
 
 > **确认状态：已确认**——2026-09-09 经用户转正评审（QED-044 收口），本文件为 8901 API 唯一事实源。
-> 端点口径：**主线 31 条按五组写六要素 + 非主线端点 7 条附录一览**；探索阶段端点 2 条已
-> 实现并入②组；代码注册 38 条以 `src/qed_tracker/api/main.py` 为准。DB 未配置时，五层端点
+> 端点口径：**主线端点按五组写六要素 + 非主线端点 7 条附录一览**；探索阶段端点 2 条已
+> 实现并入②组；代码注册路由以 `src/qed_tracker/api/main.py` 为准（QED-060 新增
+> start/fail/verify/cancel）。DB 未配置时，五层端点
 > 按契约统一 409「数据库未配置」（下文各端点不再重复标注）。
 >
 > 本文件另含 **8902 消费面契约**（文末「外部接口」节）：QED-Tracker 作为客户端消费
@@ -65,6 +66,8 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | `DELETE /api/v1/courses/{id}` | 双轨[手动] | 同步 | - | 删除课程 |
 | `POST /api/v1/courses/{id}/knowledge` | 双轨[手动] | 同步 | - | 采纳推荐建教程 |
 | `POST /api/v1/knowledge/{id}/confirm` | 双轨[手动] | 同步 | - | 确认教程（draft→confirmed） |
+| `PATCH /api/v1/knowledge/{id}` | 双轨[手动] | 同步 | - | 更新教程 |
+| `DELETE /api/v1/knowledge/{id}` | 双轨[手动] | 同步 | - | 删除教程 |
 | `POST /api/v1/books` | 双轨[手动] | 同步 | - | 书库化创建 |
 | `POST /api/v1/books/{id}/sources` | 双轨[手动] | 同步 | - | 添加渠道记录 |
 | `POST /api/v1/books/{id}/register` | 双轨[手动] | 同步 | - | 原地登记已有 PDF |
@@ -78,6 +81,10 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | `POST /api/v1/courses/{id}/re-explore` | 双轨[自动] | 202 异步 | Yes | 重置课程探索（tutorials@v2） |
 | `POST /api/v1/knowledge/{id}/fetch` | 双轨[自动] | 202 异步 | Yes | 教程级批量取书 |
 | `POST /api/v1/books/{id}/fetch` | 双轨[自动] | 202 异步 | Yes | 书级自动取书 |
+| `POST /api/v1/books/{id}/start` | 双轨[手动] | 同步 | - | 开始下载（decided→downloading） |
+| `POST /api/v1/books/{id}/fail` | 双轨[手动] | 同步 | - | 标记下载失败（downloading→failed） |
+| `POST /api/v1/books/{id}/verify` | 双轨[手动] | 同步 | - | 验收通过（downloaded→verified） |
+| `POST /api/v1/books/{id}/cancel` | 双轨[手动] | 同步 | - | 取消下载（downloading→decided，仅 downloading 可取消） |
 | `GET /api/v1/books/search` | 非主线 | 同步 | - | 教材候选搜索 |
 | `GET /api/v1/papers/search` | 非主线 | 同步 | - | 论文候选搜索 |
 | `GET /api/v1/catalogs` | 非主线 | 同步 | - | 目录列表 |
@@ -119,7 +126,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
     "status": "succeeded",
     "progress": 100,
     "message": "完成",
-    "result": {"ok": true, "book_id": "01mathanalysis-b01", "file_path": "raw/math/01_math_analysis/数学分析_a1b2c3d4.pdf"},
+    "result": {"ok": true, "book_id": "mathanalysis-b01", "file_path": "raw/math/math_analysis/数学分析_a1b2c3d4.pdf"},
     "error": ""
   }
   ```
@@ -128,6 +135,12 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   （见③④⑤各组取书/重探端点的任务 result 说明）。
 
 ## ② 领域与课程
+
+> **`courses.json` 生命周期（2026-09-11 QED-061）**：`raw/{domain_id}/courses.json` 是领域
+> 探索第二轮的**中间态**文件（confirm 含 courses 分支 / courses@v8 handler / `courses/import`
+> 捷径写入，`待确认` 态供审阅）。领域 `apply-results` 到达 `已完成` 时，其内容被**反写进
+> `raw/{domain_id}/domains.json`（含最终课程）并删除该文件**；此后领域层只保留可重新导入的
+> `domains.json`。本组各端点对 courses.json 的读取仅发生在 `待确认` 及之前。
 
 ### `GET /api/v1/courses`
 
@@ -152,7 +165,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
       "stages": ["基础", "进阶"],
       "courses": [
         {
-          "course_id": "01_math_analysis",
+          "course_id": "math_analysis",
           "name": "数学分析",
           "aliases": ["高等数学（工科称呼）"],
           "track": "分析学",
@@ -211,8 +224,9 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   // 响应 201
   {"domain_id": "math", "name": "数学", "description": "", "stages": ["基础", "进阶"], "level": "本科-硕士"}
   ```
-- **解释：** `domain_id` 缺省时服务端生成——规范名（course_id 格式）直接用作标识，否则
-  `d_<md5[:10]>`。
+- **解释：** `domain_id` 生成（2026-09-11 QED-062）：① 调用方显式提供；② ASCII 名称机械
+  kebab slug 化（小写字母/数字/连字符）；③ 中文名等无法派生时 **422 `INVALID_PARAMS`** 要求
+  显式提供（不再用 `d_<md5>` 兜底）。
 
 ### `PATCH /api/v1/domains/{domain_id}`
 
@@ -255,7 +269,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
     "domain_id": "math-advanced", "name": "数学（高等数学）",
     "description": "…", "stages": ["基础", "主干", "分支", "前沿"],
     "level": "本科", "scope": "…", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}],
-    "courses": [{"course_id": "01_math_analysis", "name": "数学分析", "summary": "..."}],
+    "courses": [{"course_id": "math_analysis", "name": "数学分析", "summary": "..."}],
     "exploration_stage": "已生成", "source": "json_file"
   }
   ```
@@ -285,7 +299,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 - **范例：**
   ```json
   // 请求
-  {"domain": {"domain": "math-advanced", "name": "数学（高等数学）", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}], "stages": ["基础", "主干", "分支", "前沿"], "courses": [{"course_id": "01_math_analysis", "name": "数学分析", "track": "分析学", "stage": "基础", "summary": "..."}]}}
+  {"domain": {"domain": "math-advanced", "name": "数学（高等数学）", "classic_tracks": [{"name": "分析学", "summary": "...", "kind": "main"}], "stages": ["基础", "主干", "分支", "前沿"], "courses": [{"course_id": "math_analysis", "name": "数学分析", "track": "分析学", "stage": "基础", "summary": "..."}]}}
 
   // 响应 200
   {"domain_id": "math-advanced", "file_path": "raw/math-advanced/domains.json", "exploration_stage": "已生成", "message": "领域知识已写入文件，状态更新为已生成"}
@@ -352,7 +366,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   | 字段 | 类型 | 必填 | 说明 |
   |---|---|---|---|
   | name | string | 是 | 课程名称 |
-  | course_id | string | 否 | 课程标识（缺省服务端生成 `c_<md5[:10]>`；显式指定须匹配 course_id 格式规则） |
+  | course_id | string | 否 | 课程标识（2026-09-11 QED-062：显式优先；缺省由 ASCII 名称生成 snake slug；中文名等无法派生 → 422 `INVALID_PARAMS`；显式指定须匹配 course_id 格式规则） |
   | stage | string | 否 | 所属阶段（值域来自 qed_domain.stages） |
   | sort_order | int | 否 | 学习顺序（默认 0） |
   | description | string | 否 | 课程介绍 |
@@ -365,10 +379,10 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 - **范例：**
   ```json
   // 请求
-  {"name": "数学分析", "course_id": "01_math_analysis", "stage": "基础", "track": "分析学"}
+  {"name": "数学分析", "course_id": "math_analysis", "stage": "基础", "track": "分析学"}
 
   // 响应 201
-  {"course_id": "01_math_analysis", "name": "数学分析", "stage": "基础", "track": "分析学", "sort_order": 0, "…": "其余列见 qed_course"}
+  {"course_id": "math_analysis", "name": "数学分析", "stage": "基础", "track": "分析学", "sort_order": 0, "…": "其余列见 qed_course"}
   ```
 - **解释：** `course_id` 显式指定用于与标准答案 JSON / 目录对齐的场景；格式规则同
   共享表列约束（见[数据库共享表设计](database-shared-tables.md)）。
@@ -377,13 +391,18 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 - **描述：** 更新课程（空 body = no-op）。
 - **输入：** 路径参数 `course_id`；请求体可选字段 `stage / sort_order / description / aliases /
-  track / prerequisites`（`name`/`course_id` 不可变；`exploration_stage` 由探索流程管理）。
-- **输出：** 200 完整课程字典；404 `COURSE_NOT_FOUND`。
+  track / prerequisites / exploration_stage / explore_pending`（`name`/`course_id` 不可变）。
+- **输出：** 200 完整课程字典；404 `COURSE_NOT_FOUND`；422 `INVALID_PARAMS`
+  （`exploration_stage` 不在课程 5 态值域，或 `explore_pending` 非对象/非 null）。
 - **范例：**
   ```json
-  {"stage": "主干", "prerequisites": ["00_foundations"]}
+  {"stage": "主干", "prerequisites": ["00_foundations"], "exploration_stage": "探索中"}
   ```
-- **解释：** 探索产物流转（explore_pending/exploration_stage）不经本端点维护，见③组。
+- **解释：** 2026-09-11 REQ-077（D3=B）：本端点支持 `exploration_stage`/`explore_pending`，
+  8900 课程阶段流转改经此端点（不再直写共享表）。`exploration_stage` 值域为**课程 5 态**
+  `未开始/探索中/待确认/已完成/失败`——**不含「已生成」**（仅领域保留），非法值返回 422
+  `INVALID_PARAMS`；`explore_pending.kind` 仅 `review_results`/`name_confirmation`/`error`
+  三形态。领域阶段流转见 `PATCH /domains/{id}`，探索审阅见③组。
 
 ### `DELETE /api/v1/courses/{course_id}`
 
@@ -464,7 +483,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   {
     "dry_run": true,
     "report": {
-      "course": {"course_id": "01_math_analysis", "name": "数学分析"},
+      "course": {"course_id": "math_analysis", "name": "数学分析"},
       "tutorials": [
         {"set_no": "1", "name": "教程1：作者《书名》", "position": "beginner", "intro": "…六要素简介…",
          "textbook_ref": [{"title": "书名", "part": "", "authors": [{"name": "作者", "role": "author"}], "publisher": "出版社", "edition": "第3版", "year": 2006, "language": "zh", "roles": ["textbook"]}],
@@ -476,8 +495,8 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   ```
 - **解释：** `report.tutorials` 即采纳端点 `POST /courses/{course_id}/knowledge` 的
   `tutorials` 输入结构（审阅后可直传采纳）；8901 离线时本端点不可达——采纳步骤依赖本端点
-  产物，根仓库探索会话挂起等待（X3 确认）；课程探索状态（exploration_stage）由 8900 在
-  探索会话管理中直写（写权限例外），本端点自身不写。
+  产物，根仓库探索会话挂起等待（X3 确认）；课程探索状态（exploration_stage）由 8900 经
+  `PATCH /courses/{id}` 推进（REQ-077 D3=B），本端点自身不写。
 
 ### `POST /api/v1/courses/{course_id}/knowledge`
 
@@ -502,7 +521,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   {"source": "manual", "tutorials": [{"set_no": "1", "name": "教程1：比廷杰《微积分及其应用》", "position": "beginner", "intro": "…120 字以上…", "textbook_ref": [{"title": "微积分及其应用", "part": "", "authors": [{"name": "比廷杰", "role": "author"}], "publisher": "高等教育出版社", "edition": "", "year": 2006, "language": "zh", "roles": ["textbook"]}], "exercise_ref": null, "parallel_ref": null}]}
 
   // 响应 201
-  {"created": [{"knowledge_id": "kt-01ma-1", "set_no": "1", "name": "教程1：比廷杰《微积分及其应用》", "status": "draft", "existing": false}]}
+  {"created": [{"knowledge_id": "kt-mathanalysis-1", "set_no": "1", "name": "教程1：比廷杰《微积分及其应用》", "status": "draft", "existing": false}]}
   ```
 - **解释：** 语义定稿（adopt_tutorials 仓储）：
   - **幂等**：命中既有行 → 返回该行且 `existing: true`，不改动已落库内容；
@@ -527,7 +546,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 - **范例：**
   ```json
   // 请求
-  {"selected_courses": ["01_math_analysis", "02_algebra"]}
+  {"selected_courses": ["math_analysis", "abstract_algebra"]}
 
   // 响应
   {"domain_id": "math", "courses_kept": 2}
@@ -568,7 +587,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   {"selected_tutorials": ["1", "2"]}
 
   // 响应
-  {"course_id": "01_math_analysis", "tutorials_kept": 2}
+  {"course_id": "math_analysis", "tutorials_kept": 2}
   ```
 - **解释：** 与领域 apply-results 对称；删除的教程行连同其书引用关系一并清理
   （书行为域级资产，不随教程删除）。
@@ -603,7 +622,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   [数据库专用表设计](database-private-tables.md) qt_knowledge 节）。
 - **范例：**
   ```json
-  [{"knowledge_id": "kt-01ma-1", "course_id": "01_math_analysis", "kind": "tutorial", "set_no": "1", "name": "教程1：…", "position": "beginner", "status": "draft", "textbook_ref": [], "exercise_ref": null, "parallel_ref": null, "confirmed_at": null}]
+  [{"knowledge_id": "kt-mathanalysis-1", "course_id": "math_analysis", "kind": "tutorial", "set_no": "1", "name": "教程1：…", "position": "beginner", "status": "draft", "textbook_ref": [], "exercise_ref": null, "parallel_ref": null, "confirmed_at": null}]
   ```
 - **解释：** CLI `mainline review` 与前端教程列表消费；列表不含 `books[]`
   （聚合视图见详情端点）。
@@ -611,15 +630,15 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 ### `GET /api/v1/knowledge/{knowledge_id}`
 
 - **描述：** 教程详情（含关联书籍列表 `books[]`）。
-- **输入：** 路径参数 `knowledge_id` — 教程标识（如 `kt-01ma-1`）。
+- **输入：** 路径参数 `knowledge_id` — 教程标识（如 `kt-mathanalysis-1`）。
 - **输出：** 200 教程行 + `books[]`（**由 refs 数组聚合**：从 `textbook_ref[]`/`exercise_ref[]`/
   `parallel_ref[]` 内的 `book_id` 汇总，每行为 `QtBook.to_dict()` 全列）；404 教程不存在。
 - **范例：**
   ```json
   {
-    "knowledge_id": "kt-01ma-1", "course_id": "01_math_analysis", "kind": "tutorial", "status": "draft",
-    "textbook_ref": [{"book_id": "01mathanalysis-b01", "title": "数学分析", "roles": ["textbook"]}],
-    "books": [{"book_id": "01mathanalysis-b01", "title": "数学分析", "holding": "missing", "status": "decided"}]
+    "knowledge_id": "kt-mathanalysis-1", "course_id": "math_analysis", "kind": "tutorial", "status": "draft",
+    "textbook_ref": [{"book_id": "mathanalysis-b01", "title": "数学分析", "roles": ["textbook"]}],
+    "books": [{"book_id": "mathanalysis-b01", "title": "数学分析", "holding": "missing", "status": "decided"}]
   }
   ```
 - **解释：** 书籍响应契约（books[] 聚合规则、无 display_title/sha256 等列）见
@@ -634,10 +653,53 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   404 教程不存在；409 非法状态迁移。
 - **范例：**
   ```json
-  {"knowledge_id": "kt-01ma-1", "status": "confirmed", "confirmed_at": "2026-09-07T10:00:00"}
+  {"knowledge_id": "kt-mathanalysis-1", "status": "confirmed", "confirmed_at": "2026-09-07T10:00:00"}
   ```
 - **解释：** confirmed 为终态（无再迁移）；定稿后 refs 引用书集即为推荐书单，
   取书按 refs 驱动（见[知识录入设计](../design/knowledge-import.md)）。
+
+### `PATCH /api/v1/knowledge/{knowledge_id}`
+
+- **描述：** 更新教程信息（name、position、intro 等字段）。
+- **输入：** 路径参数 `knowledge_id`；请求体可选字段：`name`、`position`、`intro`、`set_no`、`kind`、`notes`。
+- **输出：** 200 返回更新后的教程详情（含 `books[]`）；404 教程不存在。
+- **范例：**
+  ```json
+  // 请求
+  PATCH /api/v1/knowledge/kt-cs01-1
+  {
+    "name": "教程1：算法导论（CLRS）",
+    "position": "intermediate"
+  }
+
+  // 响应
+  {
+    "knowledge_id": "kt-cs01-1",
+    "course_id": "cs01",
+    "name": "教程1：算法导论（CLRS）",
+    "position": "intermediate",
+    "intro": "本教程介绍算法设计与分析的基本概念...",
+    "status": "draft",
+    "books": []
+  }
+  ```
+- **解释：** 部分更新，只修改提供的字段；`knowledge_id` 和 `course_id` 不可变。
+
+### `DELETE /api/v1/knowledge/{knowledge_id}`
+
+- **描述：** 物理删除教程及其孤立的书库数据。
+- **输入：** 路径参数 `knowledge_id`。
+- **输出：** 200 `{"ok": "true"}`；404 教程不存在。
+- **范例：**
+  ```json
+  // 请求
+  DELETE /api/v1/knowledge/kt-cs01-1
+
+  // 响应
+  {"ok": "true"}
+  ```
+- **解释：** 物理删除教程记录；同时清理不再被任何教程引用的孤立书库数据（`qt_books`、`qt_sources`）；
+  仍被其他教程引用的书会被保留。
 
 ### `POST /api/v1/knowledge/{knowledge_id}/fetch`
 
@@ -657,7 +719,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   {"include_parallel": false}
 
   // 响应 202
-  {"task_id": "task_tutorial_fetch_001", "knowledge_id": "kt-01ma-1"}
+  {"task_id": "task_tutorial_fetch_001", "knowledge_id": "kt-mathanalysis-1"}
   ```
 - **解释：** 同书/同教程 dedup 查重仅计 queued/running（失败/完成不阻塞重提）；取书语义
   详见[下载管线设计](../design/download-pipeline.md)；CLI
@@ -665,11 +727,13 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 ## ⑤ 书籍与渠道
 
-> 书库化契约（QED-050-D，2026-09-06 实现对齐）：`qt_books` 为域级书库（选用四态
-> decided/parallel/candidate/retired + 持有态 holding owned/missing），行内无归属列
-> （归属由教程 refs 承载）；登记唯一写入口为 `mark_owned`；下载执行语义由 qt_sources +
-> 资源清单承接。旧「八态下载机」端点（decide/start/fail/retry/complete/verify/reject/
-> supersede/cancel）已删除。设计见[下载管线设计](../design/download-pipeline.md)。
+> 书库化契约（QED-050-D，2026-09-06 实现对齐；2026-09-11 QED-060 扩展）：`qt_books` 为
+> 域级书库（选用四态 decided/parallel/candidate/retired + 持有态 holding owned/missing +
+> 下载生命周期 downloading/downloaded/verified/failed），行内无归属列（归属由教程 refs
+> 承载）；登记唯一写入口为 `mark_owned`（同时置 `status=downloaded`）；下载执行语义由
+> qt_sources + 资源清单承接。旧「八态下载机」的 decide/retry/complete/reject/supersede
+> 端点保持删除；**下载生命周期端点 start/fail/verify/cancel 为 2026-09-11 QED-060 新增**
+> （见下方）。设计见[下载管线设计](../design/download-pipeline.md)。
 
 ### `POST /api/v1/books`
 
@@ -688,7 +752,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   | year | int | 否 | 出版年份（整数或 null） |
   | language | string | 否 | `zh`/`en`（zh 含中译本） |
   | roles | string[] | 否 | textbook/exercises/solutions |
-  | status | string | 否 | decided/parallel/candidate/retired（默认 candidate） |
+  | status | string | 否 | candidate/decided/parallel/retired/downloading/downloaded/verified/failed（默认 candidate） |
   | domain_id | string | 否 | 所属领域（按域查书库用） |
   | notes | string | 否 | 备注 |
 
@@ -698,7 +762,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   ```json
   // 请求
   {
-    "book_id": "01mathanalysis-b01",
+    "book_id": "mathanalysis-b01",
     "title": "数学分析",
     "original_title": "Principles of Mathematical Analysis",
     "authors": [{"name": "Rudin", "role": "author"}],
@@ -712,7 +776,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   }
 
   // 响应 201
-  {"book_id": "01mathanalysis-b01", "title": "数学分析", "holding": "missing", "status": "candidate", "priority": null}
+  {"book_id": "mathanalysis-b01", "title": "数学分析", "holding": "missing", "status": "candidate", "priority": null}
   ```
 - **解释：** 常规书行由采纳端点（③组）自动创建（decided/parallel）；本端点供人工补录
   （默认 candidate，如论文/博客快照、手动候选）；退役（retired + retire_reason）与补书
@@ -764,10 +828,10 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 - **范例：**
   ```json
   // 请求
-  {"relative_path": "raw/math/01_math_analysis/math_analysis.pdf"}
+  {"relative_path": "raw/math/math_analysis/math_analysis.pdf"}
 
   // 响应
-  {"book_id": "01mathanalysis-b01", "holding": "owned", "file_path": "raw/math/01_math_analysis/math_analysis.pdf"}
+  {"book_id": "mathanalysis-b01", "holding": "owned", "file_path": "raw/math/math_analysis/math_analysis.pdf"}
   ```
 - **解释：** 完整性校验（魔数 + pypdf + sha256；**跳过初筛门槛**）→ `mark_owned` 唯一写
   入口；文件不移动（与 import 的 tmp 暂存落盘相对）。
@@ -789,10 +853,10 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 - **范例：**
   ```json
   // 请求
-  {"file_path": "C:/downloads/textbook.pdf", "target_path": "raw/math/01_math_analysis/斯图尔特微积分.pdf"}
+  {"file_path": "C:/downloads/textbook.pdf", "target_path": "raw/math/math_analysis/斯图尔特微积分.pdf"}
 
   // 响应
-  {"book_id": "01mathanalysis-b01", "holding": "owned", "file_path": "raw/math/01_math_analysis/斯图尔特微积分_a1b2c3d4.pdf"}
+  {"book_id": "mathanalysis-b01", "holding": "owned", "file_path": "raw/math/math_analysis/斯图尔特微积分_a1b2c3d4.pdf"}
   ```
 - **解释：** 完整性校验（魔数 + pypdf + sha256；**跳过初筛门槛**）→ tmp 暂存原子落盘 →
   登记；目标已存在且同 sha256 → 复用既有文件不重复落盘；resolve 后必须在数据根内。
@@ -808,11 +872,52 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 - **范例：**
   ```json
   // 响应 202
-  {"task_id": "task_book_download_001", "book_id": "01mathanalysis-b01"}
+  {"task_id": "task_book_download_001", "book_id": "mathanalysis-b01"}
   ```
 - **解释：** 已 owned → 编排层 no-op（`skipped: true`）；与教程级 fetch（④组）共用五阶段
   编排与 dedup 规则；结果经 `GET /api/v1/tasks/{task_id}` 轮询；
   CLI `books fetch <book_id>` 消费本端点。
+
+### `POST /api/v1/books/{book_id}/start`
+
+- **描述：** 开始下载（2026-09-11 QED-060）：`decided → downloading`。
+- **输入：** 路径参数 `book_id`；无 body。
+- **输出：** 200 书行全列；404 `BOOK_NOT_FOUND`；409 非法迁移（`INVALID_TRANSITION`）。
+- **范例：**
+  ```json
+  {"book_id": "mathanalysis-b01", "status": "downloading", "holding": "missing"}
+  ```
+- **解释：** 五阶段编排在进入下载前内部调用；本端点供前端/人工推进状态机。
+  设计见[下载管线设计](../design/download-pipeline.md)、[数据库专用表设计](database-private-tables.md)状态机节。
+
+### `POST /api/v1/books/{book_id}/fail`
+
+- **描述：** 标记下载失败（2026-09-11 QED-060）：`downloading → failed`（holding 仍 missing）。
+- **输入：** 路径参数 `book_id`；无 body。
+- **输出：** 200 书行全列；404 `BOOK_NOT_FOUND`；409 非法迁移。
+- **范例：**
+  ```json
+  {"book_id": "mathanalysis-b01", "status": "failed", "holding": "missing"}
+  ```
+- **解释：** 失败后可再次提交 `fetch`（`failed → downloading`）重试。
+
+### `POST /api/v1/books/{book_id}/verify`
+
+- **描述：** 验收通过（2026-09-11 QED-060）：`downloaded → verified`（下载终态）。
+- **输入：** 路径参数 `book_id`；无 body。
+- **输出：** 200 书行全列；404 `BOOK_NOT_FOUND`；409 非法迁移。
+- **范例：**
+  ```json
+  {"book_id": "mathanalysis-b01", "status": "verified", "holding": "owned", "file_path": "raw/math-advanced/math_analysis/数学分析_ab12cd34.pdf"}
+  ```
+- **解释：** 与 `mainline verify`（只读复核）区别：本端点做状态迁移，只读复核不改状态。
+
+### `POST /api/v1/books/{book_id}/cancel`
+
+- **描述：** 取消下载（2026-09-11 QED-060）：`downloading → decided`（复位）。
+- **输入：** 路径参数 `book_id`；无 body。
+- **输出：** 200 书行全列；404 `BOOK_NOT_FOUND`；409 非法迁移（仅 `downloading` 可 cancel）。
+- **解释：** 用于解除卡死的 `downloading`，使书可重新取书；不删除已落盘文件。
 
 ## 错误码
 
@@ -823,14 +928,14 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | 202 | 任务已接受（后台执行） |
 | 400 | 请求格式错误（INVALID_PARAMS：校验失败/文件不可读/JSON 解析失败/PDF 校验失败/路径越界） |
 | 404 | 资源不存在（DOMAIN_NOT_FOUND / COURSE_NOT_FOUND，及教程/书籍/文件/目录/任务的 plain-detail 404） |
-| 409 | 冲突与守卫：DOMAIN_NAME_CONFLICT / COURSE_ALREADY_EXISTS / COURSE_HAS_KNOWLEDGE / DOMAIN_NOT_EMPTY / SET_NO_CONFLICT / BOOK_ALREADY_EXISTS / BOOK_RETIRED / NO_COURSE_REF / TASK_ALREADY_RUNNING / TARGET_CONFLICT / LLM_UNAVAILABLE / 非法状态迁移 / 数据库未配置 |
+| 409 | 冲突与守卫：DOMAIN_NAME_CONFLICT / COURSE_ALREADY_EXISTS / COURSE_HAS_KNOWLEDGE / DOMAIN_NOT_EMPTY / SET_NO_CONFLICT / BOOK_ALREADY_EXISTS / BOOK_RETIRED / NO_COURSE_REF / TASK_ALREADY_RUNNING / TARGET_CONFLICT / LLM_UNAVAILABLE / INVALID_TRANSITION（非法状态迁移）/ 数据库未配置 |
 | 422 | 参数校验失败（缺必填字段、格式错误、值域错误） |
 | 502 | 上游模型调用失败（管线错误码透传：LLM_UNAVAILABLE / BUDGET_EXHAUSTED 等） |
 
 ## 非主线端点附录
 
 以下 7 条端点**全链路流程（评估→确认→下载→验收→登记→展示）未消费**，代码保留不删，
-登记于此以对齐「主线 31 条 + 非主线 7 条 = 代码 38 条」口径：
+登记于此以对齐「主线端点 + 非主线 7 条」口径（代码路由数以 `main.py` 为准）：
 
 | 方法/路径 | 说明 | 备注/消费方 |
 | --- | --- | --- |
@@ -863,7 +968,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   "description": "...",
   "status": "frozen",
   "targets": [
-    {"id": "01-rudin-zh", "course_id": "01_math_analysis", "course_name": "数学分析", "kind": "book", "title": "数学分析原理", "authors": ["Walter Rudin"], "query": "...", "roles": ["textbook"], "set_no": "1"}
+    {"id": "01-rudin-zh", "course_id": "math_analysis", "course_name": "数学分析", "kind": "book", "title": "数学分析原理", "authors": ["Walter Rudin"], "query": "...", "roles": ["textbook"], "set_no": "1"}
   ]
 }
 ```

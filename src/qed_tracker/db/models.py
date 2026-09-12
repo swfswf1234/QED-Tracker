@@ -29,12 +29,18 @@ class KnowledgeStatus(StrEnum):
 
 
 class BookStatus(StrEnum):
-    """qt_books 选用状态：decided（已入选）/ parallel（平行读物）/ candidate（候选）/ retired（退役）。"""
+    """qt_books 选用状态 + 下载生命周期。"""
 
+    # 选用四态（原有）
+    CANDIDATE = "candidate"
     DECIDED = "decided"
     PARALLEL = "parallel"
-    CANDIDATE = "candidate"
     RETIRED = "retired"
+    # 下载生命周期（新增）
+    DOWNLOADING = "downloading"
+    DOWNLOADED = "downloaded"
+    VERIFIED = "verified"
+    FAILED = "failed"
 
 
 class Base(DeclarativeBase):

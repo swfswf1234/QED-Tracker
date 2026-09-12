@@ -45,7 +45,7 @@ from qed_tracker.application.resources import ResourceService
 from qed_tracker.config import Settings
 from qed_tracker.db.knowledge_repository import KnowledgeRepository, _refs_book_ids
 from qed_tracker.downloader import DownloadManager, accept_pdf
-from qed_tracker.inventory import Inventory, raw_course_dir, raw_general_dir
+from qed_tracker.inventory import DEFAULT_DOMAIN_ID, Inventory, raw_course_dir, raw_general_dir
 from qed_tracker.matching import _language, _similarity
 from qed_tracker.models import Availability, BookExpectation, Candidate, ResourceKind
 from qed_tracker.providers.books import create_book_providers
@@ -177,6 +177,17 @@ class BookFetchService:
         if book.holding == "owned":
             return {"ok": True, "book_id": book_id, "skipped": True, "reason": "已 owned，无需取书",
                     "file_path": book.file_path or ""}
+        # 状态检查：只有 candidate/decided/parallel/failed 状态可开始 fetch
+        from qed_tracker.db.models import BookStatus
+        current_status = BookStatus(book.status)
+        if current_status not in (BookStatus.CANDIDATE, BookStatus.DECIDED, BookStatus.PARALLEL, BookStatus.FAILED):
+            raise ValueError(
+                f"当前状态 {current_status.value} 不可取书"
+                "（允许 candidate/decided/parallel/failed，需先 cancel 复位）"
+            )
+        # 自动 decide：candidate/parallel → decided
+        if current_status in (BookStatus.CANDIDATE, BookStatus.PARALLEL):
+            self.repo.decide_book(book_id)
         expectation = _expectation(book)
 
         def report(value: int, message: str) -> None:
@@ -188,6 +199,8 @@ class BookFetchService:
         state = _RoundState(book_id=book_id)
         try:
             report(5, f"取书：{book.title}")
+            # 开始下载前设置状态：decided → downloading
+            self.repo.start_download(book_id)
             outcome, found_any = self._round(service, advisor, book, expectation, _hardcoded_queries(expectation), state, report)
             if not found_any:
                 self.repo.add_source(
@@ -218,12 +231,19 @@ class BookFetchService:
                     note=f"全部候选耗尽，转人工处理。{self._prescreen_note(state)}",
                     file_keywords="；".join(dict.fromkeys(state.queries_used)),
                 )
+                # 下载失败：downloading → failed
+                self.repo.fail_download(book_id)
                 raise BookFetchError(self._failure_message(state))
             return outcome
         except BookFetchError:
             raise
         except Exception as exc:  # noqa: BLE001 - 任务层兜底：异常汇总为书级失败并留痕
             self.repo.add_source(book_id, channel="download", ok=False, note=f"取书任务异常：{exc}")
+            # 下载失败：仅 downloading 时置 failed，避免异常发生在 mark_owned 之后时
+            # 用 InvalidTransition 掩盖原始异常（QED-060）。
+            current = self.repo.get_book(book_id)
+            if current is not None and current.status == "downloading":
+                self.repo.fail_download(book_id)
             raise BookFetchError(f"取书任务异常：{exc}") from exc
         finally:
             service.close()
@@ -265,6 +285,8 @@ class BookFetchService:
                                 "file_path": outcome.get("file_path", ""), "skipped": outcome.get("skipped", False)})
             except BookFetchError as exc:
                 results.append({"book_id": book_id, "ok": False, "error": str(exc)})
+            except Exception as exc:  # noqa: BLE001 - QED-060：单本非法状态等异常不中断整批
+                results.append({"book_id": book_id, "ok": False, "error": f"取书任务异常：{exc}"})
         failures = [item for item in results if not item["ok"]]
         return {
             "ok": not failures,
@@ -350,7 +372,7 @@ class BookFetchService:
                                          provider_id=candidate.provider_id, page_url=candidate.page_url,
                                          download_url=candidate.download_url, ok=True, note=record.resource_id)
                     # 阶段5 登记（裁决 4 书级完成判据）：mark_owned 唯一写 holding/file_path
-                    self.repo.mark_owned(state.book_id, file_path=record.file["relative_path"])
+                    self.repo.mark_owned(state.book_id, file_path=record.file["relative_path"], status="downloaded")
                     state.attempts.append({"provider": candidate.provider, "title": candidate.title,
                                            "ok": True, "note": record.resource_id})
                     report(95, f"下载完成：{record.file['relative_path']}")
@@ -439,11 +461,16 @@ class BookFetchService:
     # ---------------- 内部 ----------------
 
     def _destination_dir(self, book) -> Path:
-        """成品桶：refs 反查归属课程 → raw/<domain>/<course>/；反查不到 → 领域通用桶。"""
+        """成品桶：refs 反查归属课程 → raw/<domain_id>/<course_id>/；反查不到 → 领域通用桶。
+
+        QED-060：`domain_id` 取书籍真实领域（`QtBook.domain_id`），不得回落默认 `math`；
+        为空时才用 `DEFAULT_DOMAIN_ID` 兜底。
+        """
         course_id = self.repo.first_course_for_book(book.book_id)
+        domain_id = (book.domain_id or "").strip() or DEFAULT_DOMAIN_ID
         if course_id:
-            return raw_course_dir(self.data_root, course_id)
-        return raw_general_dir(self.data_root)
+            return raw_course_dir(self.data_root, course_id, domain_id=domain_id)
+        return raw_general_dir(self.data_root, domain_id=domain_id)
 
     @staticmethod
     def _guidance(candidate: Candidate) -> dict:

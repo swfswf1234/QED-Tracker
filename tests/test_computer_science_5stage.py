@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 from qed_tracker.api.main import create_app
 from qed_tracker.config import load_settings
 
-
 # ------------------------------ Mock 数据 ------------------------------
 
 COMPUTER_SCIENCE_JSON = {

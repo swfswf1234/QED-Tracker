@@ -2,7 +2,7 @@
 
 状态：Current
 确认状态：已确认
-最后更新：2026-09-01
+最后更新：2026-09-11
 治理对象：文档分类与事实边界、确认状态、文档生命周期、代码与文档追溯、写作命名索引元数据、版本末期整理、归档与删除
 依据：QED-Engine 根仓库 `docs/standards/doc-governance.md` 治理模式，适配单仓库规模（[ADR 0004](../adr/0004-standards-governance-alignment.md)）
 关联测试：`tests/test_documentation.py`
@@ -199,13 +199,13 @@ version-cleanup.md 并入本节）。
 ### 归档与删除
 
 - Rejected/Superseded ADR 永久进入 `docs/history/adr/`。
-- **关闭计划两态判定**（todo 任务结束时对 `docs/plans/` 文档的处理）：
-  - **用户判定**：由用户在任务关闭时指定；未指定时 agent 按以下默认规则建议，经用户确认后执行；
-  - **Retain（归档 `history/baselines/` 等历史目录）**：仅当记录已执行数据操作、迁移/发布
-    里程碑、事故复盘或不可替代外部证据；
-  - **Delete（删除）**：其余计划在事实已并入固定文档或同步于 tracker，且 Git 锚点有效后删除，
-    不保留计划壳；
-  - 两态均同步 todo 镜像并在 `plans/index.md` 登记去处。
+- **关闭计划两态判定**（todo 任务结束时对 `docs/plans/` 文档的处理，2026-09-11 用户裁决 + [ADR 0009](../adr/0009-closed-plan-archival.md)）：
+  - **Retain（默认，归档 `history/baselines/` 等历史目录）**：关闭计划正文默认移入历史目录，
+    保留原文件名，不删除；
+  - **Delete（例外）**：仅当计划内容已完全并入固定文档且无独立查阅价值、或用户明确指示删除时，
+    且 Git 锚点有效后删除，不保留计划壳；
+  - **用户判定**：由用户在任务关闭时指定；未指定时按上述默认执行；
+  - 两态均同步 todo 镜像并在 `plans/index.md` 与 `docs/history/index.md` 登记去处。
 - `design/` 三态梳理规则见「版本末期文档整理」检查清单第 3 条。
 - 被整体替换的起源文档进入 `docs/history/baselines/`，标注范围、失效原因和不可变 Git commit
   摘要，不复制旧代码或文档树。

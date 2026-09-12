@@ -144,7 +144,7 @@ QED-Tracker 可**独立运行**，也可作为 QED-Engine 体系的**组件运�
 | `application/` | 分别编排 books、papers 和 resources 用例；不实现外部协议。 |
 | `application/book_fetch.py` | 五阶段取书编排（QED-050-D）：检索→确认（预筛→enrich→LLM）→候选级预算下载→staging 机器验收→mark_owned 登记；书级 fetch + 教程级 fetch_tutorial（refs 聚合、排除 owned、顺序逐书），全部失败转人工指引。 |
 | `application/knowledge_import.py` | 手动领域导入校验器（manual@v1）：领域/课程知识 JSON 契约校验，供 `POST /domains/import` 端点与 CLI 复用。 |
-| `application/domain_file.py` | 领域/课程探索 JSON 文件读写层：`raw/<domain_id>/domains.json`、`raw/<domain_id>/courses.json`、`raw/<domain_id>/<course_id>/tutorials.json` 的幂等写入与读取（覆盖前供确认视图与 confirm 双分支消费）。 |
+| `application/domain_file.py` | 领域/课程探索 JSON 文件读写层：`raw/<domain_id>/domains.json`、`raw/<domain_id>/courses.json`、`raw/<domain_id>/<course_id>/tutorials.json` 的幂等写入与读取（覆盖前供确认视图与 confirm 双分支消费）；已完成收口（QED-061）：domains.json 反写最终课程、courses.json 删除、tutorials.json 就地定稿。 |
 | `prompt_lab/` | 探索管线工作台：DomainPipeline（领域→课程两步，courses@v8 输出含 stage/prerequisites）/ CoursePipeline（tutorials@v2 单步）、模板注册表（domain@v4/courses@v8/tutorials@v2）与领域先验（priors.py）；dry-run 评估模式不写任何表。设计见[探索管线设计](../design/exploration-pipeline.md)。 |
 | `providers/` | 搜索外部来源并解析候选或下载地址，不写正式文件；libgen_li 为发现专用来源（恒 `metadata_only`）。 |
 | `providers/book_advisor.py` | 百炼书籍顾问：检索词变体（book-query/variants@v1）与候选确认评估（book-confirm/assess@v1，可审阅，不写资源事实）。 |
@@ -176,8 +176,8 @@ dataset/qed-tracker/
 ```
 
 探索与手动导入 JSON（`application/domain_file.py`）：`raw/<domain_id>/domains.json`（领域知识）、
-`raw/<domain_id>/courses.json`（领域课程探索/手动导入暂存）、`raw/<domain_id>/<course_id>/tutorials.json`
-（课程探索结果）。
+`raw/<domain_id>/courses.json`（领域课程探索/手动导入**中间态**，`已完成` 时反写 domains.json 并删除）、
+`raw/<domain_id>/<course_id>/tutorials.json`（课程探索结果，`已完成` 时就地定稿为课程知识 JSON）。
 
 主链路扩展（已实现，QED-050-D 书库化）：`courses.py`（包内，非数据根）提供课程体系；教程与
 书行落 `qt_knowledge`/`qt_books`（不再使用 `meta/main-line/` JSON 条目）。取书经五阶段链落

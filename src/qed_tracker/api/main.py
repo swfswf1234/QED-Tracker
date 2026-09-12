@@ -24,14 +24,18 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from qed_tracker import __version__
 from qed_tracker.api.tasks import TaskManager
 from qed_tracker.application import BookService, ResourceService
 from qed_tracker.application.book_fetch import BookFetchService, build_book_service
 from qed_tracker.application.domain_file import (
+    finalize_course_tutorials_file,
+    finalize_domain_file,
     read_domain_courses_file,
     read_domain_file,
+    write_course_tutorials_file,
     write_domain_courses_file,
     write_domain_file,
 )
@@ -45,6 +49,7 @@ from qed_tracker.db.knowledge_repository import (
     CourseHasKnowledge,
     DomainNotEmpty,
     InvalidExplorationTransition,
+    InvalidTransition,
     KnowledgeRepository,
 )
 from qed_tracker.db.models import BookStatus, QedDomain
@@ -240,7 +245,7 @@ def create_app(
         domain_id = str(params.get("domain_id", "")).strip()
         if not domain_id:
             raise ValueError("domain_id 必填")
-        mode = str(params.get("mode", "web")).strip() or "web"
+        mode = str(params.get("mode", "direct")).strip() or "direct"
         repo = _kn(app)
         domain = repo.get_domain(domain_id)
         if domain is None:
@@ -263,14 +268,17 @@ def create_app(
             pipeline.close()
         progress(80, "写入探索结果")
         # 组装与 import 同构的 domain JSON → 写入文件（不含 courses，courses 由 confirm-domain 后后台生成）
+        domain_report = report["domain"]
         domain_data = {
             "domain": domain_id,
             "name": domain.name,
-            "description": report["domain"].get("description", ""),
-            "stages": report["domain"].get("stages", []),
-            "level": domain.level or "",
-            "scope": domain.scope or "",
-            "classic_tracks": report["domain"].get("classic_tracks", []),
+            "description": domain_report.get("description", ""),
+            "stages": domain_report.get("stages", []),
+            "level": domain_report.get("level", domain.level or ""),
+            "scope": domain_report.get("scope", domain.scope or ""),
+            "entry_requirements": domain_report.get("entry_requirements", ""),
+            "classic_tracks": domain_report.get("classic_tracks", []),
+            "anchor_courses": domain_report.get("anchor_courses", []),
             "courses": [],  # courses@v8 尚未执行，留空
         }
         write_domain_file(app.settings.data_root, domain_id, domain_data)
@@ -292,7 +300,7 @@ def create_app(
         try:
             domain_info = read_domain_file(app.settings.data_root, domain_id)
         except FileNotFoundError:
-            raise ValueError(f"领域文件不存在：raw/{domain_id}/domains.json，请先完成领域探索")
+            raise ValueError(f"领域文件不存在：raw/{domain_id}/domains.json，请先完成领域探索") from None
         progress(20, "初始化管线")
         pipeline = DomainPipeline(**_advisor_kwargs())
         try:
@@ -331,7 +339,7 @@ def create_app(
         course_id = str(params.get("course_id", "")).strip()
         if not course_id:
             raise ValueError("course_id 必填")
-        mode = str(params.get("mode", "web")).strip() or "web"
+        mode = str(params.get("mode", "direct")).strip() or "direct"
         repo = _kn(app)
         course_row = repo.get_course(course_id)
         if course_row is None:
@@ -356,6 +364,18 @@ def create_app(
             pipeline.close()
         progress(80, "写入探索结果")
         tutorials = report.get("tutorials", [])
+
+        # 写入JSON文件到 raw/{domain_id}/{course_id}/tutorials.json（探索管线设计规范）
+        tutorials_data = {
+            "domain_id": course_row.domain_id,
+            "course_id": course_id,
+            "course_name": course_row.name,
+            "tutorials": tutorials,
+        }
+        write_course_tutorials_file(
+            app.settings.data_root, course_row.domain_id, course_id, tutorials_data
+        )
+
         explore_pending = {
             "kind": "review_results",
             "tutorials": [
@@ -383,15 +403,19 @@ def create_app(
     if app._session_factory is not None:
         task_store = TaskStore(app._session_factory)
     else:
+        import tempfile
+
         import sqlalchemy as _sa
-        from sqlalchemy.pool import StaticPool
 
         from qed_tracker.db.engine import session_factory as _sf
         from qed_tracker.db.models import Base as _Base
+        # 无 DB 回退：文件型 SQLite（跨线程安全）。in-memory + StaticPool 共享单连接
+        # 在后台任务线程与请求线程并发时会丢写（任务记录 404 竞态）。
+        _task_dir = Path(tempfile.mkdtemp(prefix="qed-tracker-tasks-"))
         _engine = _sa.create_engine(
-            "sqlite://", future=True,
+            f"sqlite:///{(_task_dir / 'tasks.db').as_posix()}",
+            future=True,
             connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
         )
         _Base.metadata.create_all(_engine)
         app._task_engine = _engine  # prevent GC
@@ -413,6 +437,14 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @fastapi_app.exception_handler(InvalidTransition)
+    async def _invalid_transition_handler(_, exc: InvalidTransition) -> JSONResponse:
+        """状态机非法迁移统一 409 INVALID_TRANSITION（QED-060：start/fail/verify/cancel）。"""
+        return JSONResponse(
+            status_code=409,
+            content={"detail": {"code": "INVALID_TRANSITION", "message": str(exc)}},
+        )
 
     @fastapi_app.get("/api/v1/health")
     def health() -> dict[str, str]:
@@ -605,16 +637,18 @@ def create_app(
         return _domain_view_flat(row)
 
     def _gen_domain_id(name: str) -> str:
-        """服务端 domain_id 生成：slug 直用，否则 d_<md5[:10]>。"""
+        """服务端 domain_id 生成（QED-062）：ASCII 名称 → kebab slug；无法派生 → ValueError。"""
         slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
         if _SLUG_RE.match(slug):
             return slug
-        import hashlib as _hl
-        return f"d_{_hl.md5(name.encode()).hexdigest()[:10]}"
+        raise ValueError(f"无法从名称派生 domain_id（需显式提供英文 slug）：{name}")
 
     def _gen_course_id(domain_id: str, name: str) -> str:
-        import hashlib as _hl
-        return f"c_{_hl.md5(f'{domain_id}:{name}'.encode()).hexdigest()[:10]}"
+        """服务端 course_id 生成（QED-062）：ASCII 名称 → snake slug；无法派生 → ValueError。"""
+        slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+        if _SLUG_RE.match(slug):
+            return slug
+        raise ValueError(f"无法从名称派生 course_id（需显式提供英文 slug）：{name}")
 
     _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}$")
 
@@ -636,7 +670,10 @@ def create_app(
             if repo.get_domain(domain_id) is not None:
                 raise api_error(409, "DOMAIN_NAME_CONFLICT", f"domain_id 已存在：{domain_id}")
         else:
-            domain_id = _gen_domain_id(name)
+            try:
+                domain_id = _gen_domain_id(name)
+            except ValueError as exc:
+                raise api_error(422, "INVALID_PARAMS", str(exc)) from None
         row = repo.create_domain(
             domain_id=domain_id,
             name=name,
@@ -665,7 +702,10 @@ def create_app(
             if repo.get_course(course_id) is not None:
                 raise api_error(409, "COURSE_ALREADY_EXISTS", f"course_id 已存在：{course_id}")
         else:
-            course_id = _gen_course_id(domain_id, name)
+            try:
+                course_id = _gen_course_id(domain_id, name)
+            except ValueError as exc:
+                raise api_error(422, "INVALID_PARAMS", str(exc)) from None
         row = repo.create_course(
             course_id=course_id,
             domain_id=domain_id,
@@ -682,7 +722,15 @@ def create_app(
     @fastapi_app.patch("/api/v1/courses/{course_id}")
     def patch_course(course_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         repo = _kn(app)
+        # REQ-077：exploration_stage/explore_pending 经本端点透传（8900 课程阶段流转，D3=B）
+        if "explore_pending" in payload:
+            pending = payload["explore_pending"]
+            if pending is not None and not isinstance(pending, dict):
+                raise api_error(422, "INVALID_PARAMS", "explore_pending 必须为对象或 null")
         try:
+            extra: dict[str, Any] = {}
+            if "explore_pending" in payload:
+                extra["explore_pending"] = payload["explore_pending"]
             row = repo.update_course(
                 course_id,
                 stage=payload.get("stage"),
@@ -691,9 +739,13 @@ def create_app(
                 aliases=payload.get("aliases"),
                 track=payload.get("track"),
                 prerequisites=payload.get("prerequisites"),
+                exploration_stage=payload.get("exploration_stage"),
+                **extra,
             )
         except KeyError:
             raise api_error(404, "COURSE_NOT_FOUND", f"课程不存在：{course_id}") from None
+        except ValueError as exc:
+            raise api_error(422, "INVALID_PARAMS", str(exc)) from None
         return row.to_dict()
 
     @fastapi_app.delete("/api/v1/courses/{course_id}")
@@ -765,6 +817,33 @@ def create_app(
             synced += 1
         return synced
 
+    def _tutorials_from_db(repo: KnowledgeRepository, course_id: str) -> list[dict[str, Any]]:
+        """从 qt_knowledge 行组装定稿知识 JSON 的 tutorials 数组（QED-061，含回填 ID）。"""
+        return [
+            {
+                "knowledge_id": row.knowledge_id,
+                "kind": row.kind,
+                "set_no": row.set_no,
+                "name": row.name,
+                "position": row.position,
+                "intro": row.intro,
+                "textbook_ref": row.textbook_ref or [],
+                "exercise_ref": row.exercise_ref,
+                "parallel_ref": row.parallel_ref,
+            }
+            for row in repo.list_knowledge(course_id=course_id)
+        ]
+
+    def _finalize_course_file(repo: KnowledgeRepository, course_id: str) -> None:
+        """课程已完成/采纳收口：按 DB 定稿行写 `raw/<domain>/<course>/tutorials.json`（QED-061）。"""
+        course = repo.get_course(course_id)
+        if course is None:
+            return
+        finalize_course_tutorials_file(
+            app.settings.data_root, course.domain_id, course_id,
+            course_name=course.name, tutorials=_tutorials_from_db(repo, course_id),
+        )
+
     @fastapi_app.post("/api/v1/domains/{domain_id}/apply-results")
     def domain_apply_results(domain_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         """确认领域探索结果：选择要保留的课程，删除其余，exploration_stage -> 已完成。"""
@@ -782,6 +861,8 @@ def create_app(
             kept = repo.apply_domain_results(domain_id, selected_courses)
         except InvalidExplorationTransition as exc:
             raise api_error(409, "INVALID_TRANSITION", str(exc)) from None
+        # QED-061 收口：最终课程反写 domains.json，删除中间态 courses.json
+        finalize_domain_file(app.settings.data_root, domain_id, selected_courses)
         return {"domain_id": domain_id, "courses_kept": kept}
 
     @fastapi_app.post("/api/v1/domains/{domain_id}/re-explore", status_code=202)
@@ -797,7 +878,7 @@ def create_app(
         repo.update_domain(domain_id, description=description,
                            exploration_stage="探索中", explore_pending=CLEAR)
         # 提交后台任务
-        record = manager.submit("domain_explore", {"domain_id": domain_id, "mode": payload.get("mode", "web")})
+        record = manager.submit("domain_explore", {"domain_id": domain_id, "mode": payload.get("mode", "direct")})
         return {"task_id": record.task_id}
 
     @fastapi_app.post("/api/v1/courses/{course_id}/apply-results")
@@ -815,6 +896,9 @@ def create_app(
             kept = repo.apply_course_results(course_id, selected_tutorials)
         except InvalidExplorationTransition as exc:
             raise api_error(409, "INVALID_TRANSITION", str(exc)) from None
+        # QED-061 收口：有采纳行时按最终保留集合定稿课程知识 JSON（含回填 ID）
+        if repo.list_knowledge(course_id=course_id):
+            _finalize_course_file(repo, course_id)
         return {"course_id": course_id, "tutorials_kept": kept}
 
     @fastapi_app.post("/api/v1/courses/{course_id}/re-explore", status_code=202)
@@ -830,7 +914,7 @@ def create_app(
         repo.update_course(course_id, description=description,
                            exploration_stage="探索中", explore_pending=CLEAR)
         # 提交后台任务
-        record = manager.submit("course_explore", {"course_id": course_id, "mode": payload.get("mode", "web")})
+        record = manager.submit("course_explore", {"course_id": course_id, "mode": payload.get("mode", "direct")})
         return {"task_id": record.task_id}
 
     @fastapi_app.post("/api/v1/domains/import")
@@ -890,7 +974,7 @@ def create_app(
         try:
             data = read_domain_file(app.settings.data_root, domain_id)
         except FileNotFoundError:
-            raise api_error(404, "FILE_NOT_FOUND", f"领域文件不存在：raw/{domain_id}/domains.json，请先导入")
+            raise api_error(404, "FILE_NOT_FOUND", f"领域文件不存在：raw/{domain_id}/domains.json，请先导入") from None
 
         # upsert domain
         if repo.get_domain(domain_id) is None:
@@ -953,7 +1037,7 @@ def create_app(
         try:
             data = read_domain_file(app.settings.data_root, domain_id)
         except FileNotFoundError:
-            raise api_error(404, "FILE_NOT_FOUND", f"领域文件不存在：raw/{domain_id}/domains.json")
+            raise api_error(404, "FILE_NOT_FOUND", f"领域文件不存在：raw/{domain_id}/domains.json") from None
 
         courses = data.get("courses", [])
         if not courses:
@@ -1004,6 +1088,32 @@ def create_app(
         _require_knowledge(repo, knowledge_id)
         row = repo.confirm_knowledge(knowledge_id)
         return _knowledge_view(repo, row)
+
+    @fastapi_app.patch("/api/v1/knowledge/{knowledge_id}")
+    def patch_knowledge(knowledge_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
+        repo = _kn(app)
+        try:
+            row = repo.update_knowledge(
+                knowledge_id,
+                name=payload.get("name"),
+                position=payload.get("position"),
+                intro=payload.get("intro"),
+                set_no=payload.get("set_no"),
+                kind=payload.get("kind"),
+                notes=payload.get("notes"),
+            )
+        except KeyError:
+            raise api_error(404, "KNOWLEDGE_NOT_FOUND", f"教程不存在：{knowledge_id}") from None
+        return _knowledge_view(repo, row)
+
+    @fastapi_app.delete("/api/v1/knowledge/{knowledge_id}")
+    def delete_knowledge(knowledge_id: str) -> dict[str, str]:
+        repo = _kn(app)
+        try:
+            repo.delete_knowledge(knowledge_id)
+        except KeyError:
+            raise api_error(404, "KNOWLEDGE_NOT_FOUND", f"教程不存在：{knowledge_id}") from None
+        return {"ok": "true"}
 
     @fastapi_app.post("/api/v1/books", status_code=201)
     def create_book(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1107,7 +1217,7 @@ def create_app(
         if not path.is_file():
             raise api_error(404, "FILE_NOT_FOUND", f"文件不存在：{relative}")
         digest, size, pages = _inspect_local_pdf(path)
-        repo.mark_owned(book_id, file_path=path.relative_to(app.resources.inventory.data_root).as_posix())
+        repo.mark_owned(book_id, file_path=path.relative_to(app.resources.inventory.data_root).as_posix(), status="downloaded")
         repo.add_source(book_id, channel="local_import", ok=True, download_url=relative,
                         note=f"原地登记（{size} bytes，{pages} 页，sha256 {digest[:8]}）")
         return repo.get_book(book_id).to_dict()
@@ -1149,7 +1259,7 @@ def create_app(
                 raise api_error(422, "NO_COURSE_REF",
                                 "书籍无教程引用归属，无法推导默认路径（请显式提供 target_path）")
             base = safe_filename(row.title).removesuffix(".pdf")
-            target = raw_course_dir(data_root, course_id) / f"{base}_{digest[:8]}.pdf"
+            target = raw_course_dir(data_root, course_id, domain_id=row.domain_id) / f"{base}_{digest[:8]}.pdf"
         # D9：期望路径不含 sha 后缀 → 落盘按命名规则补 _<sha8>
         if target.suffix.lower() == ".pdf" and not target.stem.endswith(f"_{digest[:8]}"):
             target = target.with_name(f"{target.stem}_{digest[:8]}.pdf")
@@ -1170,7 +1280,7 @@ def create_app(
             os.replace(staging, target)
 
         relative = target.relative_to(data_root).as_posix()
-        repo.mark_owned(book_id, file_path=relative)
+        repo.mark_owned(book_id, file_path=relative, status="downloaded")
         repo.add_source(book_id, channel="local_import", ok=True, download_url=str(source),
                         note=f"手工导入（{size} bytes，{pages} 页，sha256 {digest[:8]}；跳过初筛门槛）")
         return repo.get_book(book_id).to_dict()
@@ -1192,6 +1302,46 @@ def create_app(
         except ActiveTaskExists as exc:
             raise api_error(409, "TASK_ALREADY_RUNNING", str(exc)) from exc
         return {"task_id": record.task_id, "book_id": book_id}
+
+    @fastapi_app.post("/api/v1/books/{book_id}/start")
+    def book_start(book_id: str) -> dict[str, Any]:
+        """decided → downloading（开始下载）。"""
+        repo = _kn(app)
+        row = repo.get_book(book_id)
+        if row is None:
+            raise api_error(404, "BOOK_NOT_FOUND", f"书籍不存在：{book_id}")
+        updated = repo.start_download(book_id)
+        return updated.to_dict()
+
+    @fastapi_app.post("/api/v1/books/{book_id}/fail")
+    def book_fail(book_id: str) -> dict[str, Any]:
+        """downloading → failed（下载失败）。"""
+        repo = _kn(app)
+        row = repo.get_book(book_id)
+        if row is None:
+            raise api_error(404, "BOOK_NOT_FOUND", f"书籍不存在：{book_id}")
+        updated = repo.fail_download(book_id)
+        return updated.to_dict()
+
+    @fastapi_app.post("/api/v1/books/{book_id}/verify")
+    def book_verify(book_id: str) -> dict[str, Any]:
+        """downloaded → verified（验收通过）。"""
+        repo = _kn(app)
+        row = repo.get_book(book_id)
+        if row is None:
+            raise api_error(404, "BOOK_NOT_FOUND", f"书籍不存在：{book_id}")
+        updated = repo.verify_book(book_id)
+        return updated.to_dict()
+
+    @fastapi_app.post("/api/v1/books/{book_id}/cancel")
+    def book_cancel(book_id: str) -> dict[str, Any]:
+        """downloading → decided（取消下载复位，QED-060）。"""
+        repo = _kn(app)
+        row = repo.get_book(book_id)
+        if row is None:
+            raise api_error(404, "BOOK_NOT_FOUND", f"书籍不存在：{book_id}")
+        updated = repo.cancel_download(book_id)
+        return updated.to_dict()
 
     @fastapi_app.post("/api/v1/knowledge/{knowledge_id}/fetch", status_code=202)
     def knowledge_fetch(knowledge_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, str]:
@@ -1336,6 +1486,8 @@ def create_app(
         except ValueError as exc:
             # 数据文件版显式 knowledge_id/book_id 格式错误（kt-{abbr}-{set_no} / {abbr}-b{NN}）
             raise api_error(422, "INVALID_PARAMS", str(exc)) from exc
+        # QED-061 落盘一致性：手动/采纳路径同样写课程知识 JSON（含回填 ID）
+        _finalize_course_file(repo, course_id)
         return {"created": results}
 
     @fastapi_app.get("/api/v1/tasks/{task_id}")

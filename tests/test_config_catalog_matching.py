@@ -200,10 +200,10 @@ def test_math_catalog_is_frozen_and_has_unique_targets():
     assert len(catalog.targets) == 54
     assert len({target.id for target in catalog.targets}) == 54
     assert {target.course_id for target in catalog.targets} == {
-        "01_math_analysis", "02_linear_algebra", "03_topology", "04_real_analysis",
-        "05_complex_analysis", "06_functional_analysis", "07_ode", "08_pde",
-        "09_abstract_algebra", "10_qe_prep", "11_probability",
-        "12_stochastic_processes", "13_high_dim_prob",
+        "math_analysis", "linear_algebra", "topology", "real_analysis",
+        "complex_analysis", "functional_analysis", "ordinary_differential_equations",
+        "partial_differential_equations", "abstract_algebra", "qe_prep", "probability",
+        "stochastic_processes", "high_dimensional_probability",
     }
 
 
@@ -245,8 +245,8 @@ def test_math_catalog_includes_chenjixiu_volumes():
     v1 = targets["01-chenjixiu-v1"]
     v2 = targets["01-chenjixiu-v2"]
     answers = targets["01-chenjixiu-answers"]
-    assert v1.course_id == "01_math_analysis" and v1.kind == "book" and v1.file_hint == "第三版 上"
-    assert v2.course_id == "01_math_analysis" and v2.kind == "book" and v2.file_hint == "第三版 下"
+    assert v1.course_id == "math_analysis" and v1.kind == "book" and v1.file_hint == "第三版 上"
+    assert v2.course_id == "math_analysis" and v2.kind == "book" and v2.file_hint == "第三版 下"
     assert answers.kind == ResourceKind.EXERCISE and answers.file_hint == "习题答案"
     assert all(target.title == "数学分析" and target.language == "zh" and "陈纪修" in target.authors for target in (v1, v2, answers))
 

@@ -9,13 +9,30 @@ QED-Tracker 是 QED 的前置 PDF 获取组件。它负责发现、下载、校�
 1. 从 [README](README.md) 确认产品边界和最短使用路径。
 2. 阅读 [待办列表](docs/trackers/todo.md)，再从 [文档索引](docs/index.md) 进入对应架构、设计、计划或指南。
 3. 工程治理规则以 `docs/standards/` 为唯一事实源，入口[规范索引](docs/standards/index.md)；跨项目协作与测试门禁规则分别见[跨项目协作规范](docs/standards/cross-project-collaboration.md)与[测试架构与门禁](docs/standards/testing.md)。
-4. 用 `rg` 搜索真实实现和测试，不根据历史文件名推断行为。
+4. 按下方「标准映射」定位本任务需要的标准与文档；用 `rg` 搜索真实实现和测试，不根据历史文件名推断行为。
 5. 只有追溯旧系统或 Math-QE 人工盘点时才阅读 `docs/history/`。
 6. 跨项目契约（服务端口 8901/8902、根 `.env` 变量、dataset 布局）以 QED-Engine 根仓库 `docs/` 为准，本仓库文档只链接不复制。
 
 **文档优先级**：agent 与项目开发优先读取**已确认文档**（当前：`standards/` 全部五份标准——文档治理、ADR 治理、测试门禁、跨项目协作、本地开发环境，均已确认）；`architecture/`、`design/` 文档的确认状态登记列入 QED-039 版本末期轮，登记前按暂定对待（可读可执行但待评审）。确认状态、冲突优先级与转正规则见[文档治理规范](docs/standards/doc-governance.md)「确认状态」节。
 
 事实冲突时依次采用：运行代码和测试、当前设计、当前架构、当前指南、路线图、历史资料。历史资料不能覆盖当前实现。
+
+## 标准映射（概念 → 本仓库文件）
+
+全局 agent 工具层与技能只引用「概念」，实际文件以本表为准。
+
+| 概念 | 本仓库文件 |
+| --- | --- |
+| 项目状态快照 | [docs/trackers/project-status.md](docs/trackers/project-status.md) |
+| 文档治理 | [docs/standards/doc-governance.md](docs/standards/doc-governance.md) |
+| ADR 治理 | [docs/standards/adr-governance.md](docs/standards/adr-governance.md) |
+| 任务生命周期 | 内联于本文件「变更分级与边界」（本仓库暂无独立标准） |
+| 测试门禁 | [docs/standards/testing.md](docs/standards/testing.md) |
+| 跨项目协作 | [docs/standards/cross-project-collaboration.md](docs/standards/cross-project-collaboration.md) |
+| 本地环境 | [docs/standards/local-dev.md](docs/standards/local-dev.md) |
+| 模块映射 | [docs/architecture/code-map.md](docs/architecture/code-map.md) |
+| 开发/联调门禁 | [docs/guides/development.md](docs/guides/development.md) |
+| 全部入口汇总 | [docs/index.md](docs/index.md) |
 
 ## 任务路由
 
@@ -46,8 +63,33 @@ QED-Tracker 是 QED 的前置 PDF 获取组件。它负责发现、下载、校�
 - 当检测到本地机器UUID与[本地开发环境](docs/standards/local-dev.md)匹配时，必须遵循该文档的本地配置约定。
 - 修改文档或执行todo任务时，必须遵守[文档治理规范](docs/standards/doc-governance.md)中的规定，包括文档生命周期、确认状态和归档规则。
 
+## 变更分级与边界（AI 开发守则）
+
+本项目以**文档控制代码**：先文档后实现，实现完成后文档与代码同步收口。任何改动先按下表
+定级，再按[开发指南](docs/guides/development.md)六步模式执行；**未定级不实施**，无法判定时
+询问用户。
+
+| 变更对象 | 定级 | 前置动作 |
+| --- | --- | --- |
+| `docs/architecture/`（固定架构：API、数据库、code-map、system-overview 等） | 大修改 | 先建 todo 任务 + `plans/` 计划，评审后才动文档与代码 |
+| `docs/` 目录结构（新建/删除/移动目录或治理类目） | **阻止项** | 默认阻止；仅用户明确同意且建 todo + `plans/` 计划后执行 |
+| `docs/design/` 大变更（新增/重写设计契约） | 大修改 | todo + `plans/` 计划，评审确认后晋升 |
+| `docs/design/` 小修/bug | 小修改 | 登记对应长期台账（无则新建）并补设计文档，不单独立项 |
+| 一般小改（措辞、链接、错别字、无行为修正） | 豁免 | 差异 + 验证记录承接，不入 todo |
+| `standards/` 实质规则变更 | 先立 ADR | 按[文档治理规范·变更与取代](docs/standards/doc-governance.md)新增 ADR |
+
+任务分类（Plan / Defect / Validation / Candidate）与状态枚举见[待办列表](docs/trackers/todo.md)「规则」节；本仓库暂无独立任务生命周期标准。
+
 ## 分支与完成门禁
 
 日常开发直接在 `develop`，较大改动从它派生 `feat/*` 并合回。发布候选由 `develop` 合入 `main`；`main` 上的修复发布后必须同步回 `develop`。提交保持单一目的，不维护逐日 worklog。
 
 完成前运行 [开发指南](docs/guides/development.md) 中的完整门禁，保留用户已有改动，并确认没有读取或修改真实数据根。
+
+### 完成检查
+
+1. 公开 CLI / 配置 / 目录 schema / 资源 schema / Axiom 契约变更已同步设计、指南与测试。
+2. 文档变更已运行 `tests/test_documentation.py` 且全绿。
+3. 未读取或修改真实数据根，未产生越界代码改动。
+4. 声称完成前已运行验证命令并展示输出。
+5. 未获得明确要求不提交 git。

@@ -118,7 +118,7 @@ class BookService:
         self, catalog: Catalog, *, course: str = "", download: bool = False, limit: int = 8
     ) -> list[CatalogAttempt]:
         attempts: list[CatalogAttempt] = []
-        targets = [target for target in catalog.targets if not course or target.course_id.startswith(course.zfill(2))]
+        targets = [target for target in catalog.targets if not course or target.course_id == course]
         for target in targets:
             existing = self.resources.inventory.find_by_catalog_target(catalog.id, target.id)
             if existing:

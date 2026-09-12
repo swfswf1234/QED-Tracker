@@ -1,9 +1,10 @@
-"""手动知识导入链路（QED-050）：领域 JSON 校验器 + POST /domains/import 契约。
+"""手动知识导入链路（QED-050/QED-061）：领域 JSON 校验器 + POST /domains/import 契约 + 书籍导入。
 
 守护面：
-- validate_domain manual@v1：course_id/方向 kind/stages 值域/track∈已列方向（main 或 branch）/前置引用与无环/一句话；
-- /domains/import：内联与 file_path 两模式、幂等 upsert、exploration_stage 由 source 控制、错误码；
-- 知识正本合规：docs/knowledge/math-advanced.json 及其课程 JSON 均通过对应校验器（正本=契约守护）。
+- validate_domain manual@v1 与 validate_course 数据文件版契约；
+- /domains/import：内联与 file_path 两模式、只落盘不落库、错误码；
+- /books/{id}/import：人工导入落盘（数据根相对路径 + domain_id）；
+- 知识正本合规：docs/knowledge/ 通过对应校验器。
 """
 
 from __future__ import annotations
@@ -76,12 +77,12 @@ def test_validate_domain_happy_path() -> None:
                        "summary": "简介", "prerequisites": []}]}, "track 必须逐字取自 classic_tracks"),
         ({"courses": [{"course_id": "a1", "name": "n", "track": "", "stage": "基础", "summary": "s",
                        "prerequisites": ["ghost"]},
-                       {"course_id": "a2", "name": "n2", "track": "", "stage": "基础", "summary": "s",
-                        "prerequisites": []}]}, "引用不在本批课程"),
+                      {"course_id": "a2", "name": "n2", "track": "", "stage": "基础", "summary": "s",
+                       "prerequisites": []}]}, "引用不在本批课程"),
         ({"courses": [{"course_id": "a1", "name": "n", "track": "", "stage": "基础", "summary": "s",
                        "prerequisites": ["a2"]},
-                       {"course_id": "a2", "name": "n2", "track": "", "stage": "基础", "summary": "s",
-                        "prerequisites": ["a1"]}]}, "存在循环"),
+                      {"course_id": "a2", "name": "n2", "track": "", "stage": "基础", "summary": "s",
+                       "prerequisites": ["a1"]}]}, "存在循环"),
     ],
 )
 def test_validate_domain_rejects(overrides, needle: str) -> None:
@@ -89,54 +90,62 @@ def test_validate_domain_rejects(overrides, needle: str) -> None:
         validate_domain(_domain_ok(**overrides))
 
 
-def test_validate_course_happy_path() -> None:
-    value = _course_ok()
-    assert validate_course(value) is value
+# ---------------- 校验器（validate_course，数据文件版） ----------------
+
+
+def _ref(title: str = "教材", roles: list[str] | None = None) -> dict:
+    return {
+        "title": title, "part": "",
+        "authors": [{"name": "作者", "role": "author"}],
+        "publisher": "", "edition": "", "year": None, "language": "zh",
+        "roles": roles or ["textbook"],
+    }
 
 
 def _course_ok(**overrides) -> dict:
     value = {
-        "meta": {"contract": "course-knowledge/manual@v1", "confirmed_at": "2026-08-29"},
-        "domain": "math-advanced",
-        "course": {"course_id": "01_math_analysis", "name": "数学分析", "aliases": ["微积分"]},
-        "tutorials": [
-            {"set_no": "1", "set_name": "教程1：测试教程",
-             "textbook": {"title": "测试教材", "original_title": "Test", "authors": ["Tester"],
-                          "version": {"edition": "第1版"}, "roles": ["textbook", "exercises"],
-                          "position": "beginner", "intro": "教材简介。",
-                          "target_path": "raw/math-advanced/01_math_analysis/测试教材.pdf"},
-             "exercise": None, "reason": "理由"},
-            {"set_no": "2", "set_name": "教程2：配置",
-             "textbook": {"title": "配置教材", "authors": ["Tester2"], "roles": ["textbook"],
-                          "position": "advanced", "intro": "教材简介之二。"},
-             "exercise": {"title": "测试习题集", "authors": ["Tester3"], "roles": ["exercises"],
-                          "position": "advanced", "intro": "习题集简介。"},
-             "reason": ""},
-        ],
+        "domain_id": "math-advanced",
+        "course_id": "math_analysis",
+        "course_name": "数学分析",
+        "tutorials": [{
+            "knowledge_id": "kt-mathanalysis-1",
+            "kind": "tutorial",
+            "set_no": "1",
+            "name": "教程1：测试教程",
+            "position": "beginner",
+            "intro": "教材简介。" * 40,
+            "textbook_ref": [_ref()],
+            "exercise_ref": None,
+            "parallel_ref": None,
+        }],
     }
     value.update(overrides)
     return value
 
 
+def test_validate_course_happy_path() -> None:
+    value = _course_ok()
+    assert validate_course(value) is value
+
+
 @pytest.mark.parametrize(
     "overrides, needle",
     [
-        ({"tutorials": []}, "tutorials 必须为 1~4 套"),
-        ({"tutorials": [{"set_no": "1", "set_name": "s", "textbook": {"title": "t", "authors": [],
-                                                                     "roles": ["textbook"], "intro": "i"},
-                        "exercise": None, "reason": "r"}]}, "textbook.authors"),
-        ({"tutorials": [{"set_no": "1", "set_name": "s",
-                         "textbook": {"title": "t", "authors": ["a"], "roles": ["exercises"],
-                                      "intro": "i"},
-                         "exercise": None, "reason": "r"}]}, "textbook.roles"),
-        ({"tutorials": [{"set_no": "1", "set_name": "s",
-                         "textbook": {"title": "t", "authors": ["a"], "roles": ["textbook"],
-                                      "intro": "i", "target_path": "/abs/out.pdf"},
-                         "exercise": None, "reason": "r"}]}, "数据根相对路径"),
-        ({"tutorials": [{"set_no": "1", "set_name": "s",
-                         "textbook": {"title": "t", "authors": ["a"], "roles": ["textbook"],
-                                      "intro": "i"},
-                         "exercise": {"title": "x"}, "reason": "r"}]}, "exercise.authors"),
+        ({"tutorials": []}, "tutorials 必须为 1~6 套"),
+        ({"domain_id": "Bad"}, "domain_id"),
+        ({"course_id": "Bad"}, "course_id"),
+        ({"tutorials": [{"set_no": "", "name": "n", "position": "beginner", "intro": "x" * 130,
+                         "textbook_ref": [_ref()]}]}, "set_no"),
+        ({"tutorials": [{"set_no": "1", "name": "n", "position": "bad", "intro": "x" * 130,
+                         "textbook_ref": [_ref()]}]}, "position"),
+        ({"tutorials": [{"set_no": "1", "name": "n", "position": "beginner", "intro": "短",
+                         "textbook_ref": [_ref()]}]}, "至少 120 字"),
+        ({"tutorials": [{"set_no": "1", "name": "n", "position": "beginner", "intro": "x" * 130,
+                         "textbook_ref": []}]}, "textbook_ref"),
+        ({"tutorials": [{"set_no": "1", "name": "n", "position": "beginner", "intro": "x" * 130,
+                         "textbook_ref": [{"title": "t", "authors": [], "roles": ["textbook"]}]}]}, "authors"),
+        ({"tutorials": [{"set_no": "1", "name": "n", "position": "beginner", "intro": "x" * 130,
+                         "textbook_ref": [_ref(roles=["notes"])]}]}, "roles"),
     ],
 )
 def test_validate_course_rejects(overrides, needle: str) -> None:
@@ -144,7 +153,7 @@ def test_validate_course_rejects(overrides, needle: str) -> None:
         validate_course(_course_ok(**overrides))
 
 
-# ---------------- API：POST /domains/import ----------------
+# ---------------- API：POST /domains/import（只落盘 + 已生成） ----------------
 
 
 @pytest.fixture
@@ -156,10 +165,12 @@ def repo(tmp_path):
     from qed_tracker.db.engine import utc_now
 
     now = utc_now()
-    session.add(QedDomain(domain_id="math", name="数学", description="d", stages=["本科基础"],
+    session.add(QedDomain(domain_id="test-math", name="测试数学", description="d", stages=["基础"],
                           created_at=now, updated_at=now))
-    session.add(QedCourse(course_id="01_math_analysis", domain_id="math", sort_order=1, name="数学分析",
-                          aliases=[], stage="本科基础", prerequisites=[], related_targets=[],
+    session.add(QedDomain(domain_id="math", name="数学", description="d", stages=["基础"],
+                          created_at=now, updated_at=now))
+    session.add(QedCourse(course_id="math_analysis", domain_id="math", sort_order=1, name="数学分析",
+                          aliases=[], stage="基础", prerequisites=[], related_targets=[],
                           created_at=now, updated_at=now))
     session.commit()
     yield KnowledgeRepository(lambda: factory())
@@ -174,37 +185,24 @@ def client(tmp_path, repo):
         yield test_client
 
 
-def test_domain_import_creates_domain_and_courses(client, repo) -> None:
+def test_domain_import_writes_file_and_sets_generated(client, repo, tmp_path) -> None:
     response = client.post("/api/v1/domains/import", json={"domain": _domain_ok()})
     assert response.status_code == 200
     body = response.json()
     assert body["domain_id"] == "test-math"
-    assert body["courses_created"] == 2
-    assert body["courses_updated"] == 0
-    # 无 source → 已生成（待人工审核）
     assert body["exploration_stage"] == "已生成"
-
-    domain = repo.get_domain("test-math")
-    assert domain.name == "测试数学"
-    assert domain.exploration_stage == "已生成"
-    assert domain.explore_pending is not None
-    assert domain.explore_pending["kind"] == "review_results"
-    assert domain.classic_tracks[0]["kind"] == "main"
-    course = repo.get_course("test_analysis")
-    assert course.stage == "基础"
-    assert course.description == "测试课程简介。"
+    assert (tmp_path / "raw" / "test-math" / "domains.json").exists()
+    assert repo.get_domain("test-math").exploration_stage == "已生成"
 
 
-def test_domain_import_is_idempotent_upsert(client, repo) -> None:
+def test_domain_import_is_idempotent_overwrite(client, tmp_path) -> None:
     payload = _domain_ok()
-    assert client.post("/api/v1/domains/import", json={"domain": payload, "source": "cli"}).status_code == 200
+    assert client.post("/api/v1/domains/import", json={"domain": payload}).status_code == 200
     payload["description"] = "更新后的描述。"
-    response = client.post("/api/v1/domains/import", json={"domain": payload, "source": "cli"})
+    response = client.post("/api/v1/domains/import", json={"domain": payload})
     assert response.status_code == 200
-    body = response.json()
-    assert body["courses_created"] == 0
-    assert body["courses_updated"] == 2
-    assert repo.get_domain("test-math").description == "更新后的描述。"
+    data = json.loads((tmp_path / "raw" / "test-math" / "domains.json").read_text(encoding="utf-8"))
+    assert data["description"] == "更新后的描述。"
 
 
 def test_domain_import_accepts_file_path_mode(client, tmp_path) -> None:
@@ -224,13 +222,17 @@ def test_domain_import_rejects_invalid_payload(client) -> None:
 
 
 def test_domain_import_requires_domain_or_file_path(client) -> None:
-    response = client.post("/api/v1/domains/import", json={})
-    assert response.status_code == 422
+    assert client.post("/api/v1/domains/import", json={}).status_code == 422
 
 
 def test_domain_import_unreadable_file_400(client) -> None:
-    response = client.post("/api/v1/domains/import", json={"file_path": "N:/not/exist.json"})
-    assert response.status_code == 400
+    assert client.post("/api/v1/domains/import", json={"file_path": "N:/not/exist.json"}).status_code == 400
+
+
+def test_domain_import_unknown_domain_404(client) -> None:
+    payload = _domain_ok(domain="ghost-domain")
+    response = client.post("/api/v1/domains/import", json={"domain": payload})
+    assert response.status_code == 404
 
 
 def test_domain_import_no_db_409(tmp_path) -> None:
@@ -243,80 +245,7 @@ def test_domain_import_no_db_409(tmp_path) -> None:
         assert response.status_code == 409
 
 
-def test_domain_import_source_cli_direct_to_completed(client, repo) -> None:
-    response = client.post("/api/v1/domains/import", json={"domain": _domain_ok(), "source": "cli"})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["domain_id"] == "test-math"
-    assert body["exploration_stage"] == "已完成"
-    domain = repo.get_domain("test-math")
-    assert domain.exploration_stage == "已完成"
-
-
-def test_domain_import_no_source_stays_at_generated(client, repo) -> None:
-    response = client.post("/api/v1/domains/import", json={"domain": _domain_ok()})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["domain_id"] == "test-math"
-    assert body["exploration_stage"] == "已生成"
-    domain = repo.get_domain("test-math")
-    assert domain.exploration_stage == "已生成"
-    assert domain.explore_pending is not None
-    assert domain.explore_pending["kind"] == "review_results"
-
-
-# ---------------- API：A2 source=manual 扩展（QED-050 M5） ----------------
-
-
-def _tutorial_import(set_no: str = "1", **overrides) -> dict:
-    item = {
-        "set_no": set_no,
-        "set_name": f"教程{set_no}：测试教程",
-        "textbook": {"title": "测试教材", "authors": ["Tester"], "roles": ["textbook", "exercises"],
-                     "position": "beginner", "intro": f"教材简介{set_no}。",
-                     "target_path": f"raw/math-advanced/01_math_analysis/测试教材_{set_no}.pdf"},
-        "exercise": None,
-        "reason": "理由",
-    }
-    item.update(overrides)
-    return item
-
-
-def test_manual_source_adopt_persists_target_path(client, repo) -> None:
-    response = client.post("/api/v1/courses/01_math_analysis/knowledge",
-                           json={"tutorials": [_tutorial_import("1")], "source": "manual"})
-    assert response.status_code == 201
-    assert response.json()["created"][0]["status"] == "draft"
-    rows = client.get("/api/v1/knowledge", params={"course_id": "01_math_analysis"}).json()
-    ref = rows[0]["textbook_ref"]
-    assert ref["target_path"] == "raw/math-advanced/01_math_analysis/测试教材_1.pdf"
-
-
-def test_manual_source_requires_textbook_roles(client) -> None:
-    bad = _tutorial_import("1", textbook={"title": "无角色教材"})
-    response = client.post("/api/v1/courses/01_math_analysis/knowledge",
-                           json={"tutorials": [bad], "source": "manual"})
-    assert response.status_code == 422
-
-
-def test_manual_source_rejects_unknown_source(client) -> None:
-    response = client.post("/api/v1/courses/01_math_analysis/knowledge",
-                           json={"tutorials": [_tutorial_import("1")], "source": "scheduled"})
-    assert response.status_code == 422
-
-
-def test_manual_source_exercise_roles_required(client) -> None:
-    bad_exercise = _tutorial_import(
-        "1",
-        textbook={"title": "教材", "roles": ["textbook"], "intro": "简介。"},
-        exercise={"title": "习题集", "roles": ["notes"]},
-    )
-    response = client.post("/api/v1/courses/01_math_analysis/knowledge",
-                           json={"tutorials": [bad_exercise], "source": "manual"})
-    assert response.status_code == 422
-
-
-# ---------------- API：POST /books/{id}/import（QED-050 M6） ----------------
+# ---------------- API：POST /books/{id}/import ----------------
 
 
 def _make_pdf(path: Path) -> None:
@@ -328,11 +257,15 @@ def _make_pdf(path: Path) -> None:
         writer.write(stream)
 
 
-def _seed_book(repo: KnowledgeRepository) -> str:
-    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
-                                      kind="tutorial", set_no="9", name="教程9：导入测试")
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="导入测试教材",
-                            authors=["Tester"])
+def _seed_book(repo: KnowledgeRepository, *, domain_id: str = "math-advanced") -> str:
+    knowledge = repo.create_knowledge(course_id="math_analysis", set_no="9", name="教程9：导入测试")
+    book = repo.create_book("mathanalysis-b09", title="导入测试教材",
+                            authors=[{"name": "Tester", "role": "author"}], language="zh", domain_id=domain_id)
+    knowledge.textbook_ref = [{"book_id": book.book_id, "title": book.title}]
+    session = repo.session_factory()
+    session.merge(knowledge)
+    session.commit()
+    session.close()
     return book.book_id
 
 
@@ -344,9 +277,9 @@ def test_book_import_local_pdf_to_data_root(client, repo, tmp_path_factory) -> N
     response = client.post(f"/api/v1/books/{book_id}/import", json={"file_path": str(pdf)})
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "downloaded"
-    assert body["relative_path"].startswith("raw/math/01_math_analysis/")
-    assert body["relative_path"].endswith(".pdf")
+    assert body["holding"] == "owned"
+    assert body["file_path"].startswith("raw/math-advanced/math_analysis/")
+    assert body["file_path"].endswith(".pdf")
     local = client.get("/api/v1/books/" + book_id + "/sources").json()
     assert any(s["channel"] == "local_import" and s["ok"] for s in local)
 
@@ -358,12 +291,12 @@ def test_book_import_target_path_override(client, repo, tmp_path_factory) -> Non
     book_id = _seed_book(repo)
     response = client.post(
         f"/api/v1/books/{book_id}/import",
-        json={"file_path": str(pdf), "target_path": "raw/math-advanced/01_math_analysis/自定义.pdf"},
+        json={"file_path": str(pdf), "target_path": "raw/math-advanced/math_analysis/自定义.pdf"},
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["relative_path"].startswith("raw/math-advanced/01_math_analysis/自定义_")
-    assert body["relative_path"].endswith(".pdf")
+    assert body["file_path"].startswith("raw/math-advanced/math_analysis/自定义_")
+    assert body["file_path"].endswith(".pdf")
 
 
 def test_book_import_rejects_path_escape(client, repo, tmp_path_factory) -> None:
@@ -380,8 +313,7 @@ def test_book_import_rejects_path_escape(client, repo, tmp_path_factory) -> None
 
 def test_book_import_missing_file_404(client, repo) -> None:
     book_id = _seed_book(repo)
-    response = client.post(f"/api/v1/books/{book_id}/import", json={"file_path": "N:/no.pdf"})
-    assert response.status_code == 404
+    assert client.post(f"/api/v1/books/{book_id}/import", json={"file_path": "N:/no.pdf"}).status_code == 404
 
 
 def test_book_import_non_pdf_400(client, repo, tmp_path_factory) -> None:
@@ -389,31 +321,26 @@ def test_book_import_non_pdf_400(client, repo, tmp_path_factory) -> None:
     txt = external / "not.pdf"
     txt.write_text("hello", encoding="utf-8")
     book_id = _seed_book(repo)
-    response = client.post(f"/api/v1/books/{book_id}/import", json={"file_path": str(txt)})
-    assert response.status_code == 400
+    assert client.post(f"/api/v1/books/{book_id}/import", json={"file_path": str(txt)}).status_code == 400
 
 
 def test_book_import_requires_file_path(client, repo) -> None:
     book_id = _seed_book(repo)
-    response = client.post(f"/api/v1/books/{book_id}/import", json={})
-    assert response.status_code == 422
+    assert client.post(f"/api/v1/books/{book_id}/import", json={}).status_code == 422
 
 
-# ---------------- G2 修复：knowledge complete 回写课程探索状态 ----------------
-
-
-def test_complete_knowledge_updates_course_stage(client, repo) -> None:
-    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
-                                      kind="tutorial", set_no="8", name="教程8：回写测试")
-    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "教材"})
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="回写测试教材",
-                            authors=["T"])
-    repo.complete_download(book.book_id, sha256="a" * 64,
-                           relative_path="raw/math/01_math_analysis/回写测试.pdf")
-    repo.verify_book(book.book_id)
-    response = client.post(f"/api/v1/knowledge/{knowledge.knowledge_id}/complete")
+def test_book_import_uses_book_domain_id(client, repo, tmp_path_factory) -> None:
+    """QED-059 回归：book_import 使用书籍实际 domain_id 而非默认 math。"""
+    external = tmp_path_factory.mktemp("cs_import")
+    pdf = external / "algorithms.pdf"
+    _make_pdf(pdf)
+    book_id = _seed_book(repo, domain_id="computer-science")
+    response = client.post(f"/api/v1/books/{book_id}/import", json={"file_path": str(pdf)})
     assert response.status_code == 200
-    assert repo.get_course("01_math_analysis").exploration_stage == "已完成"
+    body = response.json()
+    assert body["holding"] == "owned"
+    assert body["file_path"].startswith("raw/computer-science/math_analysis/")
+    assert body["file_path"].endswith(".pdf")
 
 
 # ---------------- 知识正本合规（docs/knowledge/ = 契约守护） ----------------
@@ -425,16 +352,15 @@ def test_knowledge_docs_domain_conforms_to_contract() -> None:
 
 
 def test_knowledge_docs_computer_science_conforms_to_contract() -> None:
-    """QED-050：计算机领域范本（3 条主干方向 + 7 门基础/主干课，LLM 时代语境）契约合规。"""
     source = ROOT / "docs" / "knowledge" / "computer-science.json"
     data = json.loads(source.read_text(encoding="utf-8"))
     validate_domain(data)
     assert len(data["classic_tracks"]) == 3
     assert all(t["kind"] == "main" for t in data["classic_tracks"])
-    assert 3 <= len(data["courses"]) <= 7
-    assert all(c["stage"] in ("基础", "主干") for c in data["courses"])
 
 
 def test_knowledge_docs_courses_conform_to_contract() -> None:
     for course_file in sorted((ROOT / "docs" / "knowledge" / "math-advanced").glob("*.json")):
+        if course_file.name == "template.json":
+            continue  # 契约范本含占位符，不参与 validate_course
         validate_course(json.loads(course_file.read_text(encoding="utf-8")))

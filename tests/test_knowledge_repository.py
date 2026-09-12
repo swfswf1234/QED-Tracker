@@ -1,4 +1,11 @@
-"""五层模型（qt_knowledge/qt_books/qt_sources）状态机与隐藏过滤定向测试（SQLite 内存）。"""
+"""五层模型（qt_knowledge/qt_books/qt_sources）状态机与渠道定向测试（SQLite 内存）。
+
+覆盖当前契约（QED-050-D 书库化 + QED-060 下载生命周期）：
+- qt_knowledge 两态 draft→confirmed；
+- qt_books 选用四态 + 下载生命周期八态 + holding；
+- mark_owned 唯一登记入口；course_closure 派生闭环；
+- QED-062 course_abbr（全名 + 超长缩略）。
+"""
 
 from __future__ import annotations
 
@@ -7,7 +14,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from qed_tracker.db.engine import utc_now
-from qed_tracker.db.knowledge_repository import InvalidTransition, KnowledgeRepository
+from qed_tracker.db.knowledge_repository import (
+    InvalidTransition,
+    KnowledgeRepository,
+    _tutorial_knowledge_id,
+)
 from qed_tracker.db.models import Base, BookStatus, KnowledgeStatus, QedCourse, QedDomain
 
 
@@ -18,40 +29,38 @@ def repo():
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = factory()
     now = utc_now()
-    session.add(QedDomain(domain_id="math", name="数学", description="d", stages=["本科基础"],
+    session.add(QedDomain(domain_id="math", name="数学", description="d",
+                          stages=["基础", "主干", "分支", "前沿"],
                           created_at=now, updated_at=now))
-    session.add(QedCourse(course_id="01_math_analysis", domain_id="math", sort_order=1, name="数学分析",
-                          aliases=[], stage="本科基础", prerequisites=[], related_targets=[],
+    session.add(QedCourse(course_id="math_analysis", domain_id="math", sort_order=1, name="数学分析",
+                          aliases=[], stage="基础", prerequisites=[], related_targets=[],
                           created_at=now, updated_at=now))
     session.commit()
     yield KnowledgeRepository(factory)
     engine.dispose()
 
 
-def _knowledge(repo: KnowledgeRepository, *, name: str = "数学分析 套一", set_no: str = "1"):
-    return repo.create_knowledge(
-        domain_id="math", course_id="01_math_analysis", kind="tutorial",
-        set_no=set_no, name=name,
-    )
+def _knowledge(repo: KnowledgeRepository, *, set_no: str = "1", name: str = "数学分析 套一",
+               course_id: str = "math_analysis"):
+    return repo.create_knowledge(course_id=course_id, set_no=set_no, name=name)
 
 
-def _book(repo: KnowledgeRepository, knowledge_id: str, *, title: str = "微积分学教程",
-          part: str = "", kind: str = "textbook", roles: list[str] | None = None):
+def _book(repo: KnowledgeRepository, *, book_id: str = "mathanalysis-b01", title: str = "微积分学教程",
+          part: str = "", roles: list[str] | None = None, domain_id: str = "math"):
     return repo.create_book(
-        knowledge_id=knowledge_id, kind=kind, title=title, part=part,
-        roles=roles or ["textbook"], authors=["菲赫金哥尔茨"],
-        version={"edition": "第8版", "language": "zh"},
+        book_id, title=title, part=part, roles=roles or ["textbook"],
+        authors=[{"name": "菲赫金哥尔茨", "role": "author"}], language="zh", domain_id=domain_id,
     )
 
 
-# --- 教程状态机 ---
+# --- 教程状态机（两态） ---
 
 
 def test_knowledge_default_status_draft(repo):
     row = _knowledge(repo)
     assert row.status == KnowledgeStatus.DRAFT.value
     assert row.set_no == "1"
-    assert row.knowledge_id.startswith("kn_")
+    assert row.knowledge_id == "kt-mathanalysis-1"
 
 
 def test_knowledge_idempotent_create(repo):
@@ -60,203 +69,258 @@ def test_knowledge_idempotent_create(repo):
     assert first.knowledge_id == second.knowledge_id
 
 
-def test_knowledge_confirm_sets_refs(repo):
+def test_knowledge_confirm_sets_confirmed_at(repo):
     row = _knowledge(repo)
-    confirmed = repo.confirm_knowledge(
-        row.knowledge_id,
-        textbook_ref={"title": "微积分学教程", "version": "第8版"},
-        exercise_ref={"title": "数学分析习题集", "version": "第3版"},
-        textbook_intro="菲赫金哥尔茨三卷本，经典教材。",
-        exercise_intro="配套习题集。",
-    )
+    confirmed = repo.confirm_knowledge(row.knowledge_id)
     assert confirmed.status == KnowledgeStatus.CONFIRMED.value
     assert confirmed.confirmed_at is not None
-    assert confirmed.textbook_ref["title"] == "微积分学教程"
 
 
-def test_knowledge_reject_requires_reason(repo):
+def test_knowledge_confirm_twice_invalid(repo):
     row = _knowledge(repo)
-    with pytest.raises(ValueError):
-        repo.reject_knowledge(row.knowledge_id, reason=" ", by="cli")
-
-
-def test_knowledge_hidden_after_reject(repo):
-    row = _knowledge(repo)
-    repo.reject_knowledge(row.knowledge_id, reason="版本旧", by="cli")
-    assert repo.get_knowledge(row.knowledge_id) is None
-    assert repo.get_knowledge(row.knowledge_id, include_hidden=True) is not None
-    assert repo.list_knowledge(course_id="01_math_analysis") == []
-
-
-def test_knowledge_invalid_transition(repo):
-    row = _knowledge(repo)
-    repo.confirm_knowledge(row.knowledge_id, textbook_ref={}, exercise_ref={})
+    repo.confirm_knowledge(row.knowledge_id)
     with pytest.raises(InvalidTransition):
-        repo.complete_knowledge(row.knowledge_id)  # completed 需所辖书籍全 verified，此处无书籍
+        repo.confirm_knowledge(row.knowledge_id)
 
 
-def test_knowledge_supersede_from_confirmed(repo):
-    row = _knowledge(repo)
-    repo.confirm_knowledge(row.knowledge_id, textbook_ref={}, exercise_ref={})
-    updated = repo.supersede_knowledge(row.knowledge_id, reason="新版换代", by="cli")
-    assert updated.status == KnowledgeStatus.SUPERSEDED.value
-    assert updated.superseded_at is not None
+# --- 教程 update / delete（L-15/L-16） ---
 
 
-# --- 书籍状态机 ---
+def test_knowledge_update_fields():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    repo = KnowledgeRepository(factory)
+    kn = repo.create_knowledge(course_id="c_test", set_no="1", name="原始名称", position="beginner")
+    updated = repo.update_knowledge(kn.knowledge_id, name="新名称", position="intermediate")
+    assert updated.name == "新名称"
+    assert updated.position == "intermediate"
+    assert updated.knowledge_id == kn.knowledge_id
+    engine.dispose()
+
+
+def test_knowledge_update_nonexistent_raises():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    repo = KnowledgeRepository(factory)
+    with pytest.raises(KeyError, match="教程不存在"):
+        repo.update_knowledge("nonexistent-id", name="新名称")
+    engine.dispose()
+
+
+def test_knowledge_update_preserves_other_fields():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    repo = KnowledgeRepository(factory)
+    kn = repo.create_knowledge(course_id="c_test", set_no="1", name="原始名称", position="beginner", intro="简介")
+    updated = repo.update_knowledge(kn.knowledge_id, name="新名称")
+    assert updated.name == "新名称"
+    assert updated.position == "beginner"
+    assert updated.intro == "简介"
+    engine.dispose()
+
+
+def test_knowledge_delete():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    repo = KnowledgeRepository(factory)
+    kn = repo.create_knowledge(course_id="c_test", set_no="1", name="待删除")
+    repo.delete_knowledge(kn.knowledge_id)
+    assert repo.get_knowledge(kn.knowledge_id) is None
+    engine.dispose()
+
+
+def test_knowledge_delete_nonexistent_raises():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    repo = KnowledgeRepository(factory)
+    with pytest.raises(KeyError, match="教程不存在"):
+        repo.delete_knowledge("nonexistent-id")
+    engine.dispose()
+
+
+def test_knowledge_delete_cascades_orphaned_books():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    repo = KnowledgeRepository(factory)
+    kn = repo.create_knowledge(course_id="c_test", set_no="1", name="带书教程")
+    repo.create_book("test-b01", title="测试书", domain_id="d_test")
+    kn.textbook_ref = [{"book_id": "test-b01", "title": "测试书"}]
+    session = factory()
+    session.merge(kn)
+    session.commit()
+    session.close()
+    repo.delete_knowledge(kn.knowledge_id)
+    assert repo.get_book("test-b01") is None
+    engine.dispose()
+
+
+def test_knowledge_delete_preserves_referenced_books():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    repo = KnowledgeRepository(factory)
+    kn1 = repo.create_knowledge(course_id="c_test", set_no="1", name="教程1")
+    kn2 = repo.create_knowledge(course_id="c_test", set_no="2", name="教程2")
+    repo.create_book("test-b01", title="测试书", domain_id="d_test")
+    kn1.textbook_ref = [{"book_id": "test-b01", "title": "测试书"}]
+    kn2.textbook_ref = [{"book_id": "test-b01", "title": "测试书"}]
+    session = factory()
+    session.merge(kn1)
+    session.merge(kn2)
+    session.commit()
+    session.close()
+    repo.delete_knowledge(kn1.knowledge_id)
+    assert repo.get_book("test-b01") is not None
+    repo.delete_knowledge(kn2.knowledge_id)
+    assert repo.get_book("test-b01") is None
+    engine.dispose()
+
+
+# --- 书籍状态机（选用四态 + 下载生命周期） ---
 
 
 def test_book_default_status_candidate(repo):
-    knowledge = _knowledge(repo)
-    book = _book(repo, knowledge.knowledge_id)
+    book = _book(repo)
     assert book.status == BookStatus.CANDIDATE.value
-    assert book.book_id.startswith("bk_")
+    assert book.holding == "missing"
+    assert book.book_id == "mathanalysis-b01"
 
 
 def test_book_decide_then_download_verify(repo):
-    knowledge = _knowledge(repo)
-    book = _book(repo, knowledge.knowledge_id)
+    book = _book(repo)
     repo.decide_book(book.book_id)
     repo.start_download(book.book_id)
-    repo.complete_download(book.book_id, sha256="a" * 64, relative_path="raw/books/x.pdf", page_count=100)
+    repo.mark_owned(book.book_id, file_path="raw/math/math_analysis/x.pdf", status="downloaded")
+    owned = repo.get_book(book.book_id)
+    assert owned.status == BookStatus.DOWNLOADED.value
+    assert owned.holding == "owned"
     verified = repo.verify_book(book.book_id)
     assert verified.status == BookStatus.VERIFIED.value
-    assert verified.verified_at is not None
-
-
-def test_book_complete_requires_sha256(repo):
-    knowledge = _knowledge(repo)
-    book = _book(repo, knowledge.knowledge_id)
-    with pytest.raises(InvalidTransition):
-        repo.complete_download(book.book_id, sha256="", relative_path="")
 
 
 def test_book_fail_and_retry(repo):
-    knowledge = _knowledge(repo)
-    book = _book(repo, knowledge.knowledge_id)
+    book = _book(repo)
     repo.decide_book(book.book_id)
     repo.start_download(book.book_id)
     failed = repo.fail_download(book.book_id)
     assert failed.status == BookStatus.FAILED.value
-    retried = repo.retry_download(book.book_id)
+    retried = repo.start_download(book.book_id)
     assert retried.status == BookStatus.DOWNLOADING.value
 
 
 def test_book_candidate_to_failed_forbidden(repo):
-    knowledge = _knowledge(repo)
-    book = _book(repo, knowledge.knowledge_id)
+    book = _book(repo)
     with pytest.raises(InvalidTransition):
         repo.fail_download(book.book_id)
 
 
-def test_book_reject_and_supersede_terminal(repo):
-    knowledge = _knowledge(repo)
-    book = _book(repo, knowledge.knowledge_id)
-    rejected = repo.reject_book(book.book_id, reason="版本旧", by="cli")
-    assert rejected.status == BookStatus.REJECTED.value
-    with pytest.raises(InvalidTransition):
-        repo.decide_book(book.book_id)
-    other = _book(repo, knowledge.knowledge_id, title="另一本书")
-    repo.decide_book(other.book_id)
-    superseded = repo.supersede_book(other.book_id, reason="换代", by="cli")
-    assert superseded.status == BookStatus.SUPERSEDED.value
-
-
-def test_book_hidden_default(repo):
-    knowledge = _knowledge(repo)
-    book = _book(repo, knowledge.knowledge_id)
-    repo.reject_book(book.book_id, reason="不适用", by="cli")
-    assert repo.list_books(knowledge.knowledge_id) == []
-    assert len(repo.list_books(knowledge.knowledge_id, include_hidden=True)) == 1
-
-
-# --- 教程 completed 聚合 ---
-
-
-def test_knowledge_completed_when_all_books_verified(repo):
-    knowledge = _knowledge(repo)
-    repo.confirm_knowledge(
-        knowledge.knowledge_id,
-        textbook_ref={"title": "微积分学教程", "version": "第8版"},
-        exercise_ref={"title": "数学分析习题集", "version": "第3版"},
-        textbook_intro="教材简介。",
-        exercise_intro="习题集简介。",
-    )
-    book = _book(repo, knowledge.knowledge_id)
+def test_book_cancel_resets_to_decided(repo):
+    book = _book(repo)
     repo.decide_book(book.book_id)
     repo.start_download(book.book_id)
-    repo.complete_download(book.book_id, sha256="b" * 64, relative_path="raw/books/y.pdf")
-    repo.verify_book(book.book_id)
-    completed = repo.complete_knowledge(knowledge.knowledge_id)
-    assert completed.status == KnowledgeStatus.COMPLETED.value
-    assert completed.completed_at is not None
+    cancelled = repo.cancel_download(book.book_id)
+    assert cancelled.status == BookStatus.DECIDED.value
 
 
-def test_complete_knowledge_requires_all_verified(repo):
-    knowledge = _knowledge(repo)
-    book = _book(repo, knowledge.knowledge_id)
+def test_book_retire_terminal(repo):
+    book = _book(repo)
     repo.decide_book(book.book_id)
+    retired = repo.retire_book(book.book_id, reason="版本旧")
+    assert retired.status == BookStatus.RETIRED.value
     with pytest.raises(InvalidTransition):
-        repo.complete_knowledge(knowledge.knowledge_id)
+        repo.decide_book(book.book_id)
 
 
-def test_book_idempotent_create_same_title_part(repo):
-    knowledge = _knowledge(repo)
-    first = _book(repo, knowledge.knowledge_id)
-    second = _book(repo, knowledge.knowledge_id)
-    assert first.book_id == second.book_id
-    different = _book(repo, knowledge.knowledge_id, title="微积分学教程", part="第一册")
-    assert different.book_id != first.book_id
+def test_mark_owned_idempotent(repo):
+    book = _book(repo)
+    repo.decide_book(book.book_id)
+    repo.start_download(book.book_id)
+    first = repo.mark_owned(book.book_id, file_path="raw/math/math_analysis/x.pdf", status="downloaded")
+    second = repo.mark_owned(book.book_id, file_path="raw/math/math_analysis/x.pdf", status="downloaded")
+    assert first.file_path == second.file_path
+    assert second.holding == "owned"
 
 
 # --- 渠道 ---
 
 
 def test_add_and_list_sources(repo):
-    knowledge = _knowledge(repo)
-    book = _book(repo, knowledge.knowledge_id)
+    book = _book(repo)
     repo.add_source(book.book_id, channel="manual", ok=True, download_url="http://x")
     rows = repo.list_sources(book.book_id)
     assert len(rows) == 1
     assert rows[0].channel == "manual"
 
 
-def test_book_same_sha256_reuses_existing(repo):
-    """同 sha256 幂等：新行登记同 sha256 时复用既有行并删除新行。"""
-    knowledge = _knowledge(repo)
-    first = _book(repo, knowledge.knowledge_id)
-    repo.decide_book(first.book_id)
-    repo.start_download(first.book_id)
-    repo.complete_download(first.book_id, sha256="d" * 64, relative_path="raw/books/a.pdf")
-    second = _book(repo, knowledge.knowledge_id, title="另一本同名书")
-    repo.decide_book(second.book_id)
-    repo.start_download(second.book_id)
-    reused = repo.complete_download(second.book_id, sha256="d" * 64, relative_path="raw/books/b.pdf")
-    assert reused.book_id == first.book_id
-    assert repo.get_book(second.book_id, include_hidden=True) is None
-
-
-def test_book_failed_visible_and_blocks_completion(repo):
-    knowledge = _knowledge(repo)
-    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={}, exercise_ref={})
-    book = _book(repo, knowledge.knowledge_id)
-    repo.decide_book(book.book_id)
-    repo.start_download(book.book_id)
-    repo.fail_download(book.book_id)
-    assert len(repo.list_books(knowledge.knowledge_id)) == 1  # failed 可见
-    with pytest.raises(InvalidTransition):
-        repo.complete_knowledge(knowledge.knowledge_id)  # failed 阻塞 completed
-
-
-def test_create_book_unknown_knowledge_raises(repo):
-    with pytest.raises(KeyError):
-        repo.create_book("kn_nonexistent", kind="textbook", title="书")
-
-
 def test_list_sources_ok_only(repo):
-    knowledge = _knowledge(repo)
-    book = _book(repo, knowledge.knowledge_id)
+    book = _book(repo)
     repo.add_source(book.book_id, channel="manual", ok=True, download_url="http://a")
     repo.add_source(book.book_id, channel="internet_archive", ok=False, download_url="http://b")
     assert len(repo.list_sources(book.book_id)) == 2
     assert len(repo.list_sources(book.book_id, ok_only=True)) == 1
+
+
+def test_add_source_appends_even_with_same_timestamp(repo):
+    """渠道留痕按尝试追加：同一时间戳的两次尝试不得互相覆盖（Windows 时钟精度回归）。"""
+    from qed_tracker.db.engine import utc_now
+
+    book = _book(repo)
+    same = utc_now()
+    repo.add_source(book.book_id, channel="internet_archive", ok=True, attempted_at=same)
+    repo.add_source(book.book_id, channel="internet_archive", ok=False, attempted_at=same)
+    rows = repo.list_sources(book.book_id)
+    assert len(rows) == 2
+    assert {row.ok for row in rows} == {True, False}
+
+
+# --- 课程闭环（派生只读） ---
+
+
+def test_course_closure_not_closed_until_decided_owned(repo):
+    kn = repo.create_knowledge(course_id="math_analysis", set_no="1", name="教程1")
+    book = _book(repo)
+    kn.textbook_ref = [{"book_id": book.book_id, "title": book.title}]
+    session = repo.session_factory()
+    session.merge(kn)
+    session.commit()
+    session.close()
+    repo.decide_book(book.book_id)
+    closure = repo.course_closure("math_analysis")
+    assert closure["closed"] is False
+    assert book.book_id in closure["missing_book_ids"]
+
+    repo.mark_owned(book.book_id, file_path="raw/math/math_analysis/x.pdf", status="downloaded")
+    closure = repo.course_closure("math_analysis")
+    assert closure["closed"] is True
+
+
+# --- QED-062：course_abbr（全名 + 超长缩略） ---
+
+
+def test_tutorial_knowledge_id_full_name_abbr():
+    assert _tutorial_knowledge_id("math_analysis", "1") == "kt-mathanalysis-1"
+    assert _tutorial_knowledge_id("linear_algebra", "2") == "kt-linearalgebra-2"
+    assert _tutorial_knowledge_id("probability", "en") == "kt-probability-en"
+
+
+def test_tutorial_knowledge_id_long_name_acronym():
+    assert _tutorial_knowledge_id("ordinary_differential_equations", "1") == "kt-ode-1"
+    assert _tutorial_knowledge_id("partial_differential_equations", "3") == "kt-pde-3"
+
+
+def test_adopt_tutorials_book_id_uses_course_abbr(repo):
+    results = repo.adopt_tutorials("math_analysis", [{
+        "set_no": "1", "name": "教程1", "position": "beginner", "intro": "x" * 120,
+        "textbook_ref": [{"title": "微积分及其应用", "authors": [{"name": "比廷杰", "role": "author"}],
+                          "language": "zh", "roles": ["textbook"]}],
+        "exercise_ref": None, "parallel_ref": None,
+    }])
+    assert results[0]["knowledge_id"] == "kt-mathanalysis-1"
+    books = repo.list_books(results[0]["knowledge_id"])
+    assert books[0].book_id == "mathanalysis-b01"

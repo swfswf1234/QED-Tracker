@@ -208,7 +208,7 @@ def test_create_book_validations(client):
     base = {"book_id": f"{ABBR}-b01", "title": "微积分学教程"}
     assert client.post("/api/v1/books", json={"book_id": "bad id!", "title": "t"}).status_code == 422
     assert client.post("/api/v1/books", json={"book_id": f"{ABBR}-b01"}).status_code == 422
-    assert client.post("/api/v1/books", json={**base, "status": "downloaded"}).status_code == 422
+    assert client.post("/api/v1/books", json={**base, "status": "invalid_status"}).status_code == 422
     assert client.post("/api/v1/books", json={**base, "authors": ["文本作者"]}).status_code == 422
     assert client.post("/api/v1/books", json={**base, "year": "2006"}).status_code == 422
 
@@ -479,3 +479,36 @@ def test_knowledge_fetch_concurrent_dedup_409(tmp_path, repo):
         assert second.json()["detail"]["code"] == "TASK_ALREADY_RUNNING"
         release.set()
         assert _wait(fetch_client, first.json()["task_id"])["status"] == "succeeded"
+
+
+# --- QED-060：下载生命周期端点 ---
+
+
+def _make_book(repo, book_id: str) -> None:
+    repo.create_book(book_id, title="测试书", authors=[{"name": "作者", "role": "author"}],
+                     language="zh", domain_id="math")
+
+
+def test_book_cancel_endpoint_resets_downloading_to_decided(client, repo):
+    _make_book(repo, f"{ABBR}-b10")
+    repo.decide_book(f"{ABBR}-b10")
+    repo.start_download(f"{ABBR}-b10")
+    response = client.post(f"/api/v1/books/{ABBR}-b10/cancel")
+    assert response.status_code == 200
+    assert response.json()["status"] == "decided"
+
+
+def test_book_cancel_wrong_state_409(client, repo):
+    _make_book(repo, f"{ABBR}-b11")
+    response = client.post(f"/api/v1/books/{ABBR}-b11/cancel")
+    assert response.status_code == 409
+
+
+def test_book_start_fail_verify_lifecycle(client, repo):
+    _make_book(repo, f"{ABBR}-b12")
+    repo.decide_book(f"{ABBR}-b12")
+    assert client.post(f"/api/v1/books/{ABBR}-b12/start").json()["status"] == "downloading"
+    assert client.post(f"/api/v1/books/{ABBR}-b12/fail").json()["status"] == "failed"
+    repo.start_download(f"{ABBR}-b12")
+    repo.mark_owned(f"{ABBR}-b12", file_path="raw/math/math_analysis/x.pdf", status="downloaded")
+    assert client.post(f"/api/v1/books/{ABBR}-b12/verify").json()["status"] == "verified"

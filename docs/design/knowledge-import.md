@@ -3,7 +3,7 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-09
+最后更新：2026-09-11
 关联代码：`src/qed_tracker/application/knowledge_import.py`、`src/qed_tracker/application/domain_file.py`（domains.json/courses.json/tutorials.json 读写层）、`src/qed_tracker/db/knowledge_repository.py`（含 `tutorial_name` 命名函数与 `adopt_tutorials` 先查后建幂等）、`src/qed_tracker/api/main.py`（domains/import、domains/{id}/confirm 双分支、domains/{id}/courses/import、courses/knowledge、knowledge/{id}/confirm）、`src/qed_tracker/cli.py`（domains/knowledge import、mainline new/review 命名路径）
 关联测试：`tests/test_knowledge_import.py`、`tests/test_cli_knowledge_import.py`、`tests/test_prompt_lab_api.py`（A2）、`tests/test_main_line_cli.py`（mainline 命名）、`tests/test_knowledge_repository.py` 与 `tests/test_knowledge_api.py`（教程命名规范）
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0008](../adr/0008-design-doc-scope-reshuffle.md)
@@ -38,6 +38,17 @@ QED-050 设计手动+自动双轨知识获取：
 > 五阶段下载链，检索→确认→下载→机器验收→登记；人工导入跳过下载与初筛门槛，保留
 > 完整性校验，与自动路径汇合同一登记服务）。本文档只登记其入口与登记方向；书籍组端点
 > 已按 QED-050-D 重接线（见「实现状态与待对齐」书籍组行）。
+>
+> **落盘一致性（2026-09-11 QED-061）**：课程 JSON 导入（`POST /courses/{course_id}/knowledge`）
+> 与 LLM 探索轨写**同一课程知识文件** `raw/<domain_id>/<course_id>/tutorials.json`——
+> 导入时按采纳结果幂等覆盖，课程目录不存在则创建；完成后（`已完成`）该文件即课程定稿知识
+> JSON。领域导入 `domains.json` 的完成后反写见[探索管线设计](exploration-pipeline.md)
+> 「已完成落盘收口」。
+>
+> **dataset JSON 例外（2026-09-11 REQ-078）**：上述知识 JSON（`domains.json`/`tutorials.json`，
+> 及中间态 `courses.json`）落 `raw/` 是根仓库 dataset 契约「dataset 内不维护 JSON 状态事实源」
+> 的**例外**——状态事实源仍在 DB，JSON 只作知识正本与重导入输入；根侧口径见
+> [dataset 约定](../../../docs/design/dataset-conventions.md)「探索产物 JSON 例外」。
 
 ## 领域 JSON 契约（manual@v1）
 
@@ -56,7 +67,7 @@ QED-050 设计手动+自动双轨知识获取：
   "stages": ["基础", "主干", "分支", "前沿"],
   "anchor_courses": ["数学分析"],
   "courses": [
-    {"course_id": "01_math_analysis", "name": "数学分析", "track": "分析学",
+    {"course_id": "math_analysis", "name": "数学分析", "track": "分析学",
      "stage": "基础", "aliases": [], "summary": "...", "prerequisites": []}
   ]
 }
@@ -68,14 +79,18 @@ QED-050 设计手动+自动双轨知识获取：
 - `courses[].track` 须逐字取自 classic_tracks（或为空）；`stage` ∈ stages；`prerequisites`
   引用须为本批课程、无自环/循环。
 - 可选 `extensions_planned`（扩展规划）。
-- **course_id 命名规则（2026-09-03 确定）**：`course_id` 的**唯一事实源 = 领域标准答案**
-  （`docs/knowledge/<domain>.json` 的 `courses[].course_id`），分两类：
-  - **catalog 对齐课程**：沿用冻结目录 `catalogs/math-qe.json` 的编号式 slug
-    （`01_math_analysis`、`02_linear_algebra`、`11_probability`…，O1 决议对齐）；
-  - **扩展课程**：语义 slug（小写字母/数字/下划线，禁连字符，如 `abstract_algebra`、
-    `complex_analysis`）。
+- **course_id 命名规则（2026-09-11 更新）**：`course_id` 的**唯一事实源 = 领域标准答案**
+  （`docs/knowledge/<domain>.json` 的 `courses[].course_id`），统一为**有意义的英文语义 slug**
+  （小写字母/数字/下划线，禁连字符，如 `math_analysis`、`linear_algebra`、`probability`、
+  `ordinary_differential_equations`）。**不再使用编号前缀**（旧 `01_math_analysis`、
+  `11_probability` 退役）。冻结目录 `catalogs/math-qe.json` 的 `course_id` 与知识标准答案
+  逐字对齐并重新冻结；扩展课程同样用语义 slug（`abstract_algebra`、`complex_analysis`）。
   LLM 探索报告输出的 course_id 只是**提案**（dry-run 预览），不构成事实；
   `apply-results` 落库以人工选定为准，与标准答案对齐时采用标准答案 ID（避免两套 ID 并存）。
+- **domain_id 命名规则（2026-09-11 更新）**：`domain_id` 为有意义的英文语义 slug
+  （小写字母/数字/连字符/下划线，如 `math-advanced`、`computer-science`）。生成优先级：
+  ① 调用方显式提供；② ASCII 名称机械 slug 化；③ **中文名等无法派生时返回 422 要求显式提供**
+  （不再用 `d_<md5>` 兜底）。
 
 ## 课程 JSON 契约（数据文件版，2026-09-03 用户裁决）
 
@@ -86,18 +101,18 @@ QED-050 设计手动+自动双轨知识获取：
 ```json
 {
   "domain_id": "math-advanced",
-  "course_id": "01_math_analysis",
+  "course_id": "math_analysis",
   "course_name": "数学分析",
   "tutorials": [
     {
-      "knowledge_id": "kt-01ma-1",
+      "knowledge_id": "kt-mathanalysis-1",
       "kind": "tutorial",
       "set_no": "1",
       "name": "教程1：比廷杰《微积分及其应用》",
       "position": "beginner",
       "intro": "…120~字散文…",
       "textbook_ref": [
-        {"book_id": "01ma-b01", "title": "微积分及其应用", "part": "",
+        {"book_id": "mathanalysis-b01", "title": "微积分及其应用", "part": "",
          "authors": [{"name": "比廷杰", "role": "author"}, {"name": "杨奇", "role": "translator"}],
          "publisher": "机械工业出版社", "edition": "原书第8版", "year": 2006,
          "language": "zh", "roles": ["textbook", "exercises"]}
@@ -121,13 +136,20 @@ QED-050 设计手动+自动双轨知识获取：
 - `test_knowledge_import.py::test_knowledge_docs_courses_conform_to_contract` 遍历
   `docs/knowledge/math-advanced/*.json`（含 `template.json` 契约范本）守护本契约。
 
-## ID 生成规则（文件显式 + LLM 机械生成，2026-09-03 裁决）
+## ID 生成规则（文件显式 + LLM 机械生成，2026-09-11 更新）
 
 | 路径 | 来源 | 规则 |
 | --- | --- | --- |
 | 手动导入 | 文件显式携带 | 服务端校验格式（`kt-{abbr}-{set_no}` / `{abbr}-b{NN}`）并做重复检测，直接落库 |
-| LLM 探索采纳（A2 adopt） | 服务端生成 | abbr = `course_id` 去下划线（`01_math_analysis`→`01mathanalysis`，≤32 列宽安全）；book_id 域内 `max+1` 递增 |
+| LLM 探索采纳（A2 adopt） | 服务端生成 | `course_abbr` 按下方规则机械生成；book_id 域内 `max+1` 递增 |
 
+- **course_abbr 规则（2026-09-11 裁决，全名 + 超长缩略）**：
+  - `course_abbr = course_id` 去下划线（`math_analysis`→`mathanalysis`、`linear_algebra`→
+    `linearalgebra`、`probability`→`probability`）；
+  - 当去下划线后长度 **> 20** 时，改用**词首字母缩略**（acronym）：
+    `ordinary_differential_equations`→`ode`、`partial_differential_equations`→`pde`、
+    `data_structures_and_algorithms`→`dsa`、`machine_learning_basics`→`mlb`；
+  - 缩略须保证同域内唯一；`knowledge_id`/`book_id` 总长须 ≤ 列宽 32。
 - **格式**：`knowledge_id = kt-{course_abbr}-{set_no}`；`book_id = {course_abbr}-b{NN}`
   （NN 域内全局递增序号，按 `domain_id` 分组）。
 - **幂等键**：knowledge = (course_id, kind, set_no)；book = (title, part, language, edition)。
@@ -219,6 +241,11 @@ QED-050 设计手动+自动双轨知识获取：
     可调，非法状态 → 409；JSON 无课程 → 400 INVALID_PARAMS）。
 - **步骤 4**：复用 `apply-results`：手动场景无"删除未选课程"语义，`selected_courses` 省略/为空 =
   全部保留；落库前把 `courses.json` 幂等同步进 `qed_course`（courses_kept=0 事故的根因修复）。
+  **完成后落盘收口（2026-09-11 QED-061）**：领域 `已完成` 时把最终保留课程反写进
+  `raw/{domain_id}/domains.json` 并删除 `courses.json`（细则见
+  [探索管线设计](exploration-pipeline.md)「已完成落盘收口」）。
+- **步骤 6**：课程 `已完成` 时按最终保留集合就地定稿
+  `raw/{domain_id}/{course_id}/tutorials.json`（回填 `knowledge_id`/`book_id`）。
 - 步骤 5-6 复用现有课程探索 dry-run + apply-results。
 
 ### 与 LLM 探索路径的差异
@@ -248,9 +275,9 @@ docs/knowledge/
 ├── computer-science.json            # 领域 JSON（3 主干方向 + 7 门基础/主干课）
 └── math-advanced/
     ├── template.json                # 课程 JSON 契约范本（数据文件版，空占位）
-    ├── 01_math_analysis.json
-    ├── 02_linear_algebra.json
-    ├── 11_probability.json
+    ├── math_analysis.json
+    ├── linear_algebra.json
+    ├── probability.json
     └── ...
 ```
 
@@ -270,7 +297,7 @@ docs/knowledge/
 | --- | --- |
 | course 校验器契约 | 已实现数据文件版 `validate_course`（`domain_id`/`course_id`/`course_name` + 显式 `knowledge_id`/`book_id`，`tests/test_knowledge_import.py` 守护） |
 | 手动导入的审阅链 | 已按六步流程实现：`confirm` 双分支 + `courses/import` 手动捷径 + `GET /domains/{id}`/`GET /courses/{domain_id}` 确认视图（QED-050-D 联调接线） |
-| 书籍组端点（register/import/decide/start/fail/retry/complete/verify/reject/supersede/cancel/fetch） | **已实现（2026-09-06，QED-050-D）**：书级/教程级 fetch 与 import/register 重接线（[下载管线设计](download-pipeline.md)），9 个旧八态端点删除，契约见[架构 API](../architecture/api.md) ④ 组 |
+| 书籍组端点（register/import/decide/start/fail/retry/complete/verify/reject/supersede/cancel/fetch） | **已实现（2026-09-06，QED-050-D；2026-09-11 QED-060 扩展）**：书级/教程级 fetch 与 import/register 重接线（[下载管线设计](download-pipeline.md)），旧八态端点 decide/retry/complete/reject/supersede 删除，start/fail/verify/cancel 4 个以新语义恢复（下载生命周期），契约见[架构 API](../architecture/api.md) ⑤ 组 |
 | `import_domain` 落地范围 | 已对齐：`POST /domains/import` 只写文件 + 置已生成，courses 由 confirm 双分支/`courses/import` 写（`source` 参数退役） |
 | template.json | 已是数据文件版契约范本（`docs/knowledge/math-advanced/template.json`，干净文件名，`test_knowledge_docs_courses_conform_to_contract` 守护） |
 
@@ -282,7 +309,7 @@ docs/knowledge/
 | --- | --- |
 | [探索管线设计](exploration-pipeline.md) | 自动轨（LLM）与手动轨共用同一状态机 |
 | [下载管线设计](download-pipeline.md) | 书籍 PDF 导入的下载执行语义（唯一事实源） |
-| [数据库共享表设计](../architecture/database-shared-tables.md) | 6 态状态机写主体、写权限例外（唯一事实源） |
+| [数据库共享表设计](../architecture/database-shared-tables.md) | 状态机写主体（领域 6 态 / 课程 5 态）、写权限例外（唯一事实源） |
 | [数据库专用表设计](../architecture/database-private-tables.md) | qt_knowledge/qt_books DDL 与 ID 规则（qed_domain/qed_course 见共享表设计） |
 | [架构 API](../architecture/api.md) | domains/import、courses/knowledge、knowledge/confirm 端点定义 |
 | [探索管线设计](exploration-pipeline.md) 基线 | 标准答案数据为探索产出对照基准 |
@@ -292,5 +319,6 @@ docs/knowledge/
 
 | 日期 | 变更 | 说明 |
 | --- | --- | --- |
+| 2026-09-11 | 补课程知识 JSON 落盘一致性（QED-061） | 手动/采纳路径与 LLM 探索轨写同一 `raw/<domain>/<course>/tutorials.json`；领域反写见探索管线设计 |
 | 2026-09-09 | 六步流程与 CLI 语义对齐实现 + Phase 2 收口 | 流程表写入 confirm 双分支与 `courses/import` 捷径；CLI `domains import` 语义改为经 8901 同流程（`source=cli` 退役）；Phase 2 清单五项全部收口，实现状态转 Implemented |
 | 2026-09-07 | 并入教程命名规范（ADR 0008） | 自 tutorial-naming.md 并入命名格式、mainline 命名路径、前端展示边界与决策登记；书籍下载链接改指 download-pipeline.md |

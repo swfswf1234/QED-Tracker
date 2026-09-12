@@ -1,7 +1,7 @@
 # ADR 索引
 
 状态：Current
-最后更新：2026-09-07
+最后更新：2026-09-11
 当前版本：v0.1.0
 
 本目录登记影响长期约束的架构决策：决定、理由、后果和取代关系。规则见
@@ -19,8 +19,9 @@
 | [0006](0006-database-model-as-schema-rebuild.md) | v0.1 数据库策略：模型即 schema + 重建式自愈（Alembic 链退役；ensure_schema 缺表补建/不一致重建含共享表；qed_llm_calls 增量化自愈不 DROP；db/ 集中管理；JSON 标准答案备份基准） | 数据与持久化 | v0.1 | Accepted | — |
 | [0007](0007-database-docs-split-by-table-family.md) | 数据库设计文档按表族拆分（shared-tables.md → database-shared-tables.md、database-schema.md → database-private-tables.md；两文互链互不复制；DDL 展示统一为紧凑行尾 `--` 注释风格） | 工程治理 | v0.1 | Accepted | 部分取代 [0005](0005-shared-tables-doc-location.md)（决定③） |
 | [0008](0008-design-doc-scope-reshuffle.md) | 设计文档域职责重划（tracker-service 拆散退役；下载链合并改名 download-pipeline；新建 service-management 管理中心；source-discovery 移 plans；tutorial-naming 并入 knowledge-import；design/index.md 为职责登记处） | 工程治理 | v0.1 | Accepted | — |
+| [0009](0009-closed-plan-archival.md) | 关闭计划默认归档 docs/history/（关闭计划默认 Retain 至 history/baselines/；Delete 收窄为「内容已完全并入固定文档且无独立查阅价值」或用户明确指示） | 工程治理 | v0.1 | Accepted | — |
 
-下一个可用编号：0009
+下一个可用编号：0010
 
 ## 规则
 

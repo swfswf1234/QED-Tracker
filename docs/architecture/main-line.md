@@ -2,11 +2,11 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-09-09
+最后更新：2026-09-11
 关联代码：src/qed_tracker/courses.py、src/qed_tracker/main_line/（advisor.py）、src/qed_tracker/db/knowledge_repository.py、src/qed_tracker/application/book_fetch.py、src/qed_tracker/cli.py（courses/mainline/books 命令组）
 关联测试：tests/test_courses.py、tests/test_main_line_advisor.py、tests/test_main_line_cli.py、tests/test_book_fetch.py、tests/test_encoding_regression.py
 关联 ADR：—
-需求方：QED-Engine（8903 前端知识链路消费；根仓库 [course-acquisition-flow.md](../../../docs/design/course-acquisition-flow.md) 五阶段流程对齐）
+需求方：QED-Engine（8903 前端知识链路消费；根仓库 [downloads-flow.md](../../../docs/design/downloads-flow.md) 五阶段流程对齐）
 执行方：QED-Tracker
 
 > 本文件是主链路的架构文档。设计细节（数据模型、端点契约、评审表单）见
@@ -75,7 +75,7 @@ flowchart LR
 | 层 | 内容 |
 | --- | --- |
 | 课程体系（`courses.py`） | 课程体系读取：`qed_course` 共享表（数据经 `docs/knowledge/` 标准答案 JSON 确认导入，无迁移种子）：学科课程清单 + 前置关系（先修→后修 DAG）+ 学习阶段 + 名称映射。 |
-| 教程/书行（QED-031 起，QED-050-D 书库化） | 存储 = `qt_knowledge`（教程两态 draft/confirmed + refs 决定引用）+ `qt_books`（书库化：四选用态 candidate/decided/parallel/retired + 持有态 holding owned/missing），归属由 refs 承载；条目服务在 `db/knowledge_repository.py`。 |
+| 教程/书行（QED-031 起，QED-050-D 书库化） | 存储 = `qt_knowledge`（教程两态 draft/confirmed + refs 决定引用）+ `qt_books`（书库化：选用四态 candidate/decided/parallel/retired + 下载生命周期四态 downloading/downloaded/verified/failed + 持有态 holding owned/missing），归属由 refs 承载；条目服务在 `db/knowledge_repository.py`。 |
 | 取书链（`application/book_fetch.py`，QED-050-D） | 书级/教程级 fetch：五阶段（检索→确认→下载→staging 机器验收→登记 owned），人工导入经 `/books/{id}/import` 汇合同一登记服务。 |
 | 渠道记录 | qt_sources 运行时事实（来源、成功/失败、文件、备注），支撑「渠道有效性表」（`mainline channels` 聚合）。 |
 | 落位 | 数据根 `raw/<domain_id>/<course_id>/` 即成品区（机器验收通过才落盘）；无「复制移交根仓库」步骤。 |

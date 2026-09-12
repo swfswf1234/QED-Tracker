@@ -1,7 +1,8 @@
-"""BookFetchService 定向测试：搜索→逐候选限时下载→状态转移与渠道留痕。
+"""BookFetchService 定向测试：五阶段取书、状态机（QED-060）与落盘域。
 
 默认测试不得访问公网：提供者为假实现，下载走 MockTransport；
-超时语义用 attempt_timeout 注入（秒级），不等待真实 600s。
+候选级预算用注入的小值（秒级），不等待真实 300s。机器验收门在测试中放宽为
+1 页/1 字节（`pdf_bytes` 为单页小 PDF）。
 """
 
 from __future__ import annotations
@@ -66,16 +67,23 @@ def make_candidate(provider: str, title: str, *, downloadable: bool = True) -> C
     )
 
 
-def build_service(repo, providers, handler, *, attempt_timeout: float = 5.0, data_root):
+def build_service(repo, providers, handler, *, candidate_budget: float = 5.0, data_root):
     def factory():
         downloader = mock_downloader(handler)
         return BookService(list(providers), ResourceService(Inventory(data_root), downloader))
 
-    return BookFetchService(repo, factory, data_root=data_root, attempt_timeout=attempt_timeout)
+    return BookFetchService(
+        repo, factory, data_root=data_root, candidate_budget=candidate_budget,
+        min_pages=1, min_size_bytes=1, llm_query=False, llm_confirm=False,
+    )
 
 
 def static_handler(pdf: bytes):
     return lambda request: httpx.Response(200, content=pdf, request=request)
+
+
+def _author(name: str = "Author") -> list[dict]:
+    return [{"name": name, "role": "author"}]
 
 
 # ---------------- 夹具 ----------------
@@ -90,9 +98,9 @@ def repo(tmp_path):
     from qed_tracker.db.engine import utc_now
 
     now = utc_now()
-    session.add(QedDomain(domain_id="math", name="数学", description="d", stages=["基础"],
-                          created_at=now, updated_at=now))
-    session.add(QedCourse(course_id="01_math_analysis", domain_id="math", sort_order=1, name="数学分析",
+    session.add(QedDomain(domain_id="math-advanced", name="数学（高等数学）", description="d",
+                          stages=["基础", "主干", "分支", "前沿"], created_at=now, updated_at=now))
+    session.add(QedCourse(course_id="math_analysis", domain_id="math-advanced", sort_order=1, name="数学分析",
                           aliases=[], stage="基础", prerequisites=[], related_targets=[],
                           created_at=now, updated_at=now))
     session.commit()
@@ -102,31 +110,45 @@ def repo(tmp_path):
 
 @pytest.fixture
 def seeded_book(repo):
-    knowledge = repo.create_knowledge(
-        domain_id="math", course_id="01_math_analysis", kind="tutorial", set_no="1", name="教程1：测试",
+    knowledge = repo.create_knowledge(course_id="math_analysis", set_no="1", name="教程1：测试")
+    book = repo.create_book(
+        "mathanalysis-b01", title="测试书", authors=_author(), language="zh", domain_id="math-advanced",
     )
-    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "测试书"})
-    return repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
-                            title="测试书", authors=["Author"])
+    knowledge.textbook_ref = [{"book_id": book.book_id, "title": book.title}]
+    session = repo.session_factory()
+    session.merge(knowledge)
+    session.commit()
+    session.close()
+    return book
 
 
 # ---------------- 测试 ----------------
 
 
 def test_fetch_success_first_candidate(repo, seeded_book, pdf_bytes, tmp_path):
-    """首候选可下载 → downloaded + 渠道留痕 ok=True。"""
+    """首候选可下载 → holding=owned + status=downloaded + 渠道留痕 ok=True。"""
     provider = FakeProvider("fake", [make_candidate("fake", "测试书")])
     service = build_service(repo, [provider], static_handler(pdf_bytes), data_root=tmp_path)
     outcome = service.fetch(seeded_book.book_id)
     assert outcome["ok"] is True
-    assert outcome["status"] == "downloaded"
-    assert outcome["relative_path"]
-    book = repo.get_book(seeded_book.book_id, include_hidden=True)
+    assert outcome["file_path"]
+    book = repo.get_book(seeded_book.book_id)
     assert book.status == "downloaded"
+    assert book.holding == "owned"
     sources = repo.list_sources(seeded_book.book_id)
     assert len(sources) == 1
     assert sources[0].ok is True
     assert sources[0].channel == "fake"
+
+
+def test_fetch_lands_in_real_domain_course_dir(repo, seeded_book, pdf_bytes, tmp_path):
+    """QED-060：落盘用书籍真实 domain_id → raw/math-advanced/math_analysis/。"""
+    provider = FakeProvider("fake", [make_candidate("fake", "测试书")])
+    service = build_service(repo, [provider], static_handler(pdf_bytes), data_root=tmp_path)
+    outcome = service.fetch(seeded_book.book_id)
+    assert outcome["file_path"].startswith("raw/math-advanced/math_analysis/")
+    assert (tmp_path / "raw" / "math-advanced" / "math_analysis").exists()
+    assert not (tmp_path / "raw" / "math").exists()
 
 
 def test_fetch_query_uses_title_and_authors(repo, seeded_book, tmp_path):
@@ -135,45 +157,7 @@ def test_fetch_query_uses_title_and_authors(repo, seeded_book, tmp_path):
     service = build_service(repo, [provider], static_handler(b""), data_root=tmp_path)
     with pytest.raises(BookFetchError):
         service.fetch(seeded_book.book_id)
-    assert provider.queries == ["测试书 Author"]
-
-
-def _seed_with_ref(repo, *, ref: dict):
-    """自建 knowledge+book（可自定义 textbook_ref，避免 confirm 二次转移）。"""
-    knowledge = repo.create_knowledge(
-        domain_id="math", course_id="01_math_analysis", kind="tutorial", set_no="9", name="教程9：引用测试",
-    )
-    repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref=ref)
-    return repo.create_book(knowledge.knowledge_id, kind="textbook", roles=["textbook"],
-                            title="测试书", authors=["Author"])
-
-
-def test_fetch_prefers_original_title(repo, pdf_bytes, tmp_path):
-    """决策引用含 original_title（英文原名）时优先检索，命中即止。"""
-    book = _seed_with_ref(repo, ref={"title": "测试书", "original_title": "Calculus"})
-    provider = FakeProvider("fake", [make_candidate("fake", "Calculus")])
-    service = build_service(repo, [provider], static_handler(pdf_bytes), data_root=tmp_path)
-    outcome = service.fetch(book.book_id)
-    assert outcome["ok"] is True
-    assert provider.queries == ["Calculus Author"]  # 英文命中后不再用中文书名搜索
-
-
-def test_fetch_falls_back_to_chinese_title(repo, pdf_bytes, tmp_path):
-    """英文原名无候选 → 回退中文书名检索。"""
-
-    class SelectiveProvider(FakeProvider):
-        def search(self, query, limit=10):
-            self.queries.append(query)
-            if query.startswith("Calculus"):
-                return []
-            return [make_candidate("fake", "测试书")]
-
-    book = _seed_with_ref(repo, ref={"title": "测试书", "original_title": "Calculus"})
-    provider = SelectiveProvider("fake")
-    service = build_service(repo, [provider], static_handler(pdf_bytes), data_root=tmp_path)
-    outcome = service.fetch(book.book_id)
-    assert outcome["ok"] is True
-    assert provider.queries == ["Calculus Author", "测试书 Author"]
+    assert provider.queries[0] == "测试书 Author"
 
 
 def test_fetch_timeout_switches_to_next_candidate(repo, seeded_book, pdf_bytes, tmp_path):
@@ -182,23 +166,21 @@ def test_fetch_timeout_switches_to_next_candidate(repo, seeded_book, pdf_bytes, 
     def handler(request: httpx.Request) -> httpx.Response:
         if "slow" in str(request.url):
             time.sleep(0.5)
-            return httpx.Response(200, content=pdf_bytes, request=request)
         return httpx.Response(200, content=pdf_bytes, request=request)
 
     slow = FakeProvider("slow", [make_candidate("slow", "测试书")])
     fast = FakeProvider("fast", [make_candidate("fast", "测试书")])
-    service = build_service(repo, [slow, fast], handler, attempt_timeout=0.1, data_root=tmp_path)
+    service = build_service(repo, [slow, fast], handler, candidate_budget=0.1, data_root=tmp_path)
     outcome = service.fetch(seeded_book.book_id)
     assert outcome["ok"] is True
     attempts = {a["provider"]: a for a in outcome["attempts"]}
     assert "超时" in attempts["slow"]["note"]
     assert attempts["fast"]["ok"] is True
-    book = repo.get_book(seeded_book.book_id, include_hidden=True)
-    assert book.status == "downloaded"
+    assert repo.get_book(seeded_book.book_id).status == "downloaded"
 
 
 def test_fetch_all_fail_marks_failed(repo, seeded_book, tmp_path):
-    """可下载候选下载失败（HTTP 500）→ 书籍 failed + 全部渠道 ok=False。"""
+    """可下载候选下载失败（HTTP 500）→ status=failed + 全部渠道 ok=False。"""
     provider = FakeProvider("broken", [make_candidate("broken", "测试书")])
     service = build_service(
         repo, [provider], lambda request: httpx.Response(500, request=request), data_root=tmp_path
@@ -206,8 +188,9 @@ def test_fetch_all_fail_marks_failed(repo, seeded_book, tmp_path):
     with pytest.raises(BookFetchError) as exc_info:
         service.fetch(seeded_book.book_id)
     assert "broken" in str(exc_info.value)
-    book = repo.get_book(seeded_book.book_id, include_hidden=True)
+    book = repo.get_book(seeded_book.book_id)
     assert book.status == "failed"
+    assert book.holding == "missing"
     sources = repo.list_sources(seeded_book.book_id)
     assert sources and all(source.ok is False for source in sources)
 
@@ -219,8 +202,7 @@ def test_fetch_no_downloadable_candidates(repo, seeded_book, tmp_path):
     with pytest.raises(BookFetchError) as exc_info:
         service.fetch(seeded_book.book_id)
     assert "libgen.example" in str(exc_info.value)
-    book = repo.get_book(seeded_book.book_id, include_hidden=True)
-    assert book.status == "failed"
+    assert repo.get_book(seeded_book.book_id).status == "failed"
 
 
 def test_fetch_rejects_stuck_downloading_book(repo, seeded_book, tmp_path):
@@ -228,7 +210,7 @@ def test_fetch_rejects_stuck_downloading_book(repo, seeded_book, tmp_path):
     repo.decide_book(seeded_book.book_id)
     repo.start_download(seeded_book.book_id)
     service = build_service(repo, [FakeProvider("fake", [])], static_handler(b""), data_root=tmp_path)
-    with pytest.raises(ValueError, match="candidate/decided/failed"):
+    with pytest.raises(ValueError, match="candidate/decided/parallel/failed"):
         service.fetch(seeded_book.book_id)
 
 
@@ -238,17 +220,38 @@ def test_fetch_candidate_flow_decides_and_starts(repo, seeded_book, pdf_bytes, t
     service = build_service(repo, [provider], static_handler(pdf_bytes), data_root=tmp_path)
     outcome = service.fetch(seeded_book.book_id)
     assert outcome["ok"] is True
-    book = repo.get_book(seeded_book.book_id, include_hidden=True)
-    assert book.decided_at is not None
-    assert book.downloaded_at is not None
+    assert repo.get_book(seeded_book.book_id).status == "downloaded"
 
 
 def test_cancel_download_resets_to_decided(repo, seeded_book):
-    """cancel_download：downloading → decided，留痕 review_note。"""
+    """cancel_download：downloading → decided，可重新 start。"""
     repo.decide_book(seeded_book.book_id)
     repo.start_download(seeded_book.book_id)
-    book = repo.cancel_download(seeded_book.book_id, note="失联复位", by="web")
+    book = repo.cancel_download(seeded_book.book_id)
     assert book.status == "decided"
-    assert book.review_note == "失联复位"
-    # 复位后可重新 start（decided → downloading）
     assert repo.start_download(seeded_book.book_id).status == "downloading"
+
+
+def test_fetch_tutorial_continues_after_invalid_status(repo, pdf_bytes, tmp_path):
+    """QED-060：教程级批处理遇单本非法状态不整批中断，汇总为该书失败继续下一本。"""
+    knowledge = repo.create_knowledge(course_id="math_analysis", set_no="1", name="教程1：批量")
+    stuck = repo.create_book("mathanalysis-b01", title="卡住书", authors=_author(), language="zh",
+                             domain_id="math-advanced")
+    good = repo.create_book("mathanalysis-b02", title="可下书", authors=_author(), language="zh",
+                            domain_id="math-advanced")
+    knowledge.textbook_ref = [{"book_id": stuck.book_id}, {"book_id": good.book_id}]
+    session = repo.session_factory()
+    session.merge(knowledge)
+    session.commit()
+    session.close()
+    repo.decide_book(stuck.book_id)
+    repo.start_download(stuck.book_id)  # 卡在 downloading
+
+    provider = FakeProvider("fake", [make_candidate("fake", "可下书")])
+    service = build_service(repo, [provider], static_handler(pdf_bytes), data_root=tmp_path)
+    result = service.fetch_tutorial(knowledge.knowledge_id)
+    by_id = {item["book_id"]: item for item in result["processed"]}
+    assert result["ok"] is False
+    assert by_id[stuck.book_id]["ok"] is False
+    assert by_id[good.book_id]["ok"] is True
+    assert repo.get_book(good.book_id).status == "downloaded"

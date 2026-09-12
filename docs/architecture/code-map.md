@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-09-09
+最后更新：2026-09-11
 维护位置：`docs/architecture/code-map.md`
 关联代码：受管模块清单
 关联测试：`tests/test_documentation.py`（入口与引用守护）
@@ -21,7 +21,7 @@
 
 | 代码路径 | 层级/职责 | 状态 | 设计关联 | 关联测试 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| `src/qed_tracker/api/main.py` | FastAPI 服务入口（8901）：路由、后台任务注册、五层端点组（QED-031） | Current | `docs/architecture/api.md`、`docs/design/service-management.md`、`docs/architecture/database-private-tables.md` | `tests/test_api.py`、`tests/test_knowledge_api.py`、`tests/test_book_api.py` | 38 条路由（主线 31 + 非主线 7 附录），分组契约见 [API 设计文档](api.md)（`KnowledgeRepository` 注入，未配置 DB 时 409 降级）。 |
+| `src/qed_tracker/api/main.py` | FastAPI 服务入口（8901）：路由、后台任务注册、五层端点组（QED-031） | Current | `docs/architecture/api.md`、`docs/design/service-management.md`、`docs/architecture/database-private-tables.md` | `tests/test_api.py`、`tests/test_knowledge_api.py`、`tests/test_book_api.py` | 路由分组契约见 [API 设计文档](api.md)（`KnowledgeRepository` 注入，未配置 DB 时 409 降级）；QED-060 新增书籍下载生命周期端点 start/fail/verify/cancel；REQ-077 `PATCH /courses` 透传 exploration_stage/explore_pending + 课程 5 态校验（422）。 |
 | `src/qed_tracker/api/tasks.py` | 后台任务管理器与落盘（queued→running→succeeded/failed，并发上限 2，dedup 查重防同任务并发） | Current | `docs/design/service-management.md`、`docs/design/download-pipeline.md`、`docs/design/exploration-pipeline.md` | `tests/test_api.py`、`tests/test_book_api.py`、`tests/test_task_handlers.py` | 任务记录落 `qt_tasks` 表；注册类型 `book_download`/`tutorial_fetch`/`domain_explore`/`course_explore`/`domain_explore_courses`（`all_handlers` 注册点在 `api/main.py`）。 |
 | `src/qed_tracker/cli.py` | 唯一用户入口：命令树、机器输出、稳定退出码、serve | Current | `docs/design/service-management.md`、`docs/design/main-line-curriculum.md`（courses/mainline 命令组）、`docs/design/exploration-pipeline.md`（domains explore） | `tests/test_cli_architecture.py`、`tests/test_main_line_cli.py`、`tests/test_cli_domains_explore.py` | 主链路命令已转 HTTP 客户端并经真实 8901 全链路冒烟验收（QED-010 已关闭，2026-09-09，见 `docs/trackers/completed.md`）。 |
 | `src/qed_tracker/axiom.py` | Axiom-Flow HTTP 客户端（健康检查/上传/可选解析） | Current | `docs/architecture/api.md`（外部接口：Axiom-Flow 消费面） | `tests/test_axiom.py` | 默认不解析，不自动重试。 |
@@ -46,7 +46,7 @@
 | `src/qed_tracker/application/books.py` | 教材搜索编排、resolve 与目录运行（严格匹配 + 下载） | Current | `docs/design/download-pipeline.md` | `tests/test_services.py`、`tests/test_book_providers.py` | file_hint 选文件（QED-019/021）。 |
 | `src/qed_tracker/application/papers.py` | 论文搜索/推荐编排与选择报告下载 | Current | `docs/design/paper-discovery.md` | `tests/test_paper_application.py` | 报告快照显式下载。 |
 | `src/qed_tracker/application/resources.py` | 资源服务：候选下载与登记编排（`stage_download` staging 落盘 + `promote_staged` 内容指纹确定性入 raw/，QED-050-D） | Current | `docs/design/download-pipeline.md` | `tests/test_download_inventory.py`、`tests/test_services.py`、`tests/test_book_fetch.py` | 统一下载/校验/哈希入口。 |
-| `src/qed_tracker/application/book_fetch.py` | 五阶段取书编排（QED-050-D）：检索→确认（预筛→enrich→LLM）→候选级预算下载→staging 机器验收→mark_owned 登记；书级 fetch 与教程级 fetch_tutorial（refs 聚合、排除 owned、顺序逐书、部分失败汇总），全部失败转人工指引 | Current | `docs/design/download-pipeline.md` | `tests/test_book_fetch.py` | handler（`book_download`/`tutorial_fetch`）注册于 api/main.py；候选预算 `QED_BOOK_CANDIDATE_BUDGET`。 |
+| `src/qed_tracker/application/book_fetch.py` | 五阶段取书编排（QED-050-D）：检索→确认（预筛→enrich→LLM）→候选级预算下载→staging 机器验收→mark_owned 登记（status=downloaded）；书级 fetch 与教程级 fetch_tutorial（refs 聚合、排除 owned、顺序逐书、部分失败不中断），全部失败转人工指引；落盘取真实 `domain_id`（QED-060） | Current | `docs/design/download-pipeline.md` | `tests/test_book_fetch.py` | handler（`book_download`/`tutorial_fetch`）注册于 api/main.py；候选预算 `QED_BOOK_CANDIDATE_BUDGET`。 |
 | `src/qed_tracker/providers/books.py` | 教材来源适配器（internet_archive/open_library/google_books/libgen_li）与 `RETIRED_PROVIDERS` | Current | `docs/design/download-pipeline.md`、`docs/plans/2026-09-source-discovery.md` | `tests/test_book_providers.py` | libgen_li 发现专用（QED-021），CJK 查询策略（QED-018）。 |
 | `src/qed_tracker/providers/arxiv.py` | arXiv 搜索适配器 | Current | `docs/design/download-pipeline.md` | `tests/test_arxiv_provider.py` | 关键词/分类/作者/ID 查询。 |
 | `src/qed_tracker/providers/bailian.py` | 百炼论文顾问：检索计划与评分（不写资源事实） | Current | `docs/design/paper-discovery.md` | `tests/test_bailian_advisor.py` | 模型调用经 `llm_client.py` 兼容层（`API_KEY`，自身 `.env` → 根 `.env` 兜底；local 直连 / qed-engine 网关）。 |
@@ -74,7 +74,7 @@
 | `src/qed_tracker/db/engine.py` | 数据库连接管理（队列池参数化 + session_factory + utc_now + dispose；按 `QED_DB_*`） | Current | `docs/architecture/database-private-tables.md`、`docs/adr/0006-database-model-as-schema-rebuild.md` | `tests/test_schema.py` | 原 `database.py` 迁入并退役（ADR 0006）；所有数据库操作集中于 db/。 |
 | `src/qed_tracker/db/schema.py` | `ensure_schema` 快照自愈：Base.metadata 7 张声明表缺表补建/列不一致重建（含共享表，MySQL 挂起 FK 检查）；`qed_llm_calls` 缺失建表 + 缺列增量补齐（绝不 DROP）；幂等 | Current | `docs/architecture/database-shared-tables.md`、`docs/architecture/database-private-tables.md`、`docs/adr/0006-database-model-as-schema-rebuild.md` | `tests/test_schema.py`、`tests/test_schema_mysql_smoke.py` | 取代 Alembic 迁移链（ADR 0006）。 |
 | `src/qed_tracker/db/models.py` | 七表 ORM（QedDomain/QedCourse/QtKnowledge/QtBook/QtSource/QtTask/QtSelection）与状态枚举（KnowledgeStatus 两态、BookStatus 选用四态） | Current | `docs/architecture/database-shared-tables.md`、`docs/architecture/database-private-tables.md` | `tests/test_db_models.py` | schema 唯一实施事实源（ADR 0006）；表/列中文注释事实源 = 模型 `comment=`。 |
-| `src/qed_tracker/db/knowledge_repository.py` | 五层仓库（QED-031）：qt_knowledge 两态（draft→confirmed）/qt_books 选用四态 + holding 持有态 + 确定性幂等 ID + 领域/课程 CRUD | Current | `docs/architecture/database-private-tables.md`、`docs/architecture/database-shared-tables.md`、`docs/design/knowledge-import.md`、`docs/design/download-pipeline.md` | `tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、`tests/test_book_fetch.py` | `adopt_tutorials` 承接课程知识采纳（建 draft + 书行 decided/parallel + refs 回填 book_id）；`mark_owned` 登记唯一写入口（QED-050-D）；`first_course_for_book` refs 反查默认桶；`add_source` 记录渠道事实。 |
+| `src/qed_tracker/db/knowledge_repository.py` | 五层仓库（QED-031）：qt_knowledge 两态（draft→confirmed）/qt_books 选用四态 + 下载生命周期（downloading/downloaded/verified/failed）+ holding 持有态 + 确定性幂等 ID + 领域/课程 CRUD | Current | `docs/architecture/database-private-tables.md`、`docs/architecture/database-shared-tables.md`、`docs/design/knowledge-import.md`、`docs/design/download-pipeline.md` | `tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、`tests/test_book_fetch.py` | `adopt_tutorials` 承接课程知识采纳（建 draft + 书行 decided/parallel + refs 回填 book_id）；`mark_owned` 登记唯一写入口（同时置 status=downloaded，QED-050-D/QED-060）；`start_download`/`fail_download`/`verify_book`/`cancel_download` 生命周期迁移；`first_course_for_book` refs 反查默认桶；`add_source` 记录渠道事实；`update_course` 课程 5 态校验（REQ-076，拒绝「已生成」）。 |
 | `src/qed_tracker/db/selection_repository.py` | qt_selections 读写层（论文选择报告，REQ-032；`SelectionStore`/`SelectionStoreError`） | Current | `docs/design/paper-discovery.md`、`docs/architecture/database-private-tables.md` | `tests/test_profiles_and_selections.py`、`tests/test_paper_selection_cli.py` | 原 `selection_store.py` 迁入并退役（ADR 0006）。 |
 | `src/qed_tracker/db/tasks_repository.py` | qt_tasks 读写层（`TaskRecord`/`TaskStore`/`ActiveTaskExists`，REQ-032） | Current | `docs/design/service-management.md`、`docs/architecture/database-private-tables.md` | `tests/test_task_handlers.py` | `api/tasks.py` 仅留调度器 TaskManager（ADR 0006）。 |
 
@@ -83,7 +83,7 @@
 | 代码路径 | 层级/职责 | 状态 | 设计关联 | 关联测试 | 备注 |
 | --- | --- | --- | --- | --- | --- |
 | `src/qed_tracker/application/knowledge_import.py` | 手动知识录入校验器：`validate_domain`（manual@v1：slug/方向 kind/stages 值域/track∈已列方向/前置引用与无环/一句话契约）与 `validate_course`（数据文件版课程契约：顶层 domain_id/course_id/course_name + set_no/position 五档/intro ≥120 字/refs 数组 + original_title 可选） | Current | `docs/design/knowledge-import.md` | `tests/test_knowledge_import.py` | 正本 = `docs/knowledge/*.json`（契约守护，见守护测试块）。 |
-| `src/qed_tracker/application/domain_file.py` | 领域/课程探索 JSON 文件读写层：`raw/<domain_id>/domains.json`（领域知识）、`raw/<domain_id>/courses.json`（领域课程探索/手动导入暂存）、`raw/<domain_id>/<course_id>/tutorials.json`（课程探索结果）的幂等写入与读取 | Current | `docs/design/knowledge-import.md`、`docs/design/exploration-pipeline.md`、`docs/architecture/api.md`（confirm 双分支） | `tests/test_task_handlers.py`、`tests/test_knowledge_api.py` | `POST /domains/import` 落盘、`GET /domains/{id}`/`GET /courses/{domain_id}` 确认视图与探索结果暂存的共用文件层（api/main.py 9 处调用）。 |
+| `src/qed_tracker/application/domain_file.py` | 领域/课程探索 JSON 文件读写层：`raw/<domain_id>/domains.json`（领域知识，已完成反写）、`raw/<domain_id>/courses.json`（领域课程探索/手动导入暂存，已完成删除）、`raw/<domain_id>/<course_id>/tutorials.json`（课程知识 JSON，已完成定稿）的幂等写入、合并与读取 | Current | `docs/design/knowledge-import.md`、`docs/design/exploration-pipeline.md`、`docs/architecture/api.md`（confirm 双分支） | `tests/test_task_handlers.py`、`tests/test_knowledge_api.py` | `POST /domains/import` 落盘、`GET /domains/{id}`/`GET /courses/{domain_id}` 确认视图与探索结果暂存的共用文件层；QED-061 落盘收口。 |
 （Alembic 迁移链已随 ADR 0006 退役：迁移目录 migrations/ 全目录删除——0001~0018
 迁移文件与 data 种子/注释 JSON 不再登记；schema 演进由 db/models.py + db/schema.py
 承接，历史链仅作 Git 追溯。）
@@ -121,6 +121,7 @@
 | `tests/test_db_models.py` | ORM 模型与状态枚举 | `docs/architecture/database-private-tables.md`、`docs/history/three-table-schema.md` |
 | `tests/test_knowledge_repository.py` | 五层仓库状态机/隐藏/幂等 | `docs/architecture/database-private-tables.md` |
 | `tests/test_knowledge_api.py` | 五层 API 契约（knowledge 采纳/确认/教程级 fetch + courses/domains） | `docs/architecture/database-private-tables.md`、`docs/architecture/api.md` |
+| `tests/test_exploration_stage.py` | 探索状态机（领域 6 态 / 课程 5 态）与 apply-results/re-explore 端点、课程 5 态校验 | `docs/architecture/database-shared-tables.md`、`docs/architecture/api.md` |
 | `tests/test_schema.py` | ensure_schema 快照自愈（缺表补建/列不一致重建/幂等/未声明表不碰/qed_llm_calls 增量自愈） | `docs/architecture/database-shared-tables.md`、`docs/architecture/database-private-tables.md`、`docs/adr/0006-database-model-as-schema-rebuild.md` |
 | `tests/test_schema_mysql_smoke.py` | 真实 MySQL ensure_schema 契约冒烟（默认 skip；仅允许 qed_test 库） | `docs/architecture/database-shared-tables.md`、`docs/architecture/database-private-tables.md`、`docs/adr/0006-database-model-as-schema-rebuild.md` |
 | `tests/test_data_layout.py` | 数据布局与路径解析 | `docs/design/service-management.md` |

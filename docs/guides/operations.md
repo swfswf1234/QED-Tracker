@@ -1,7 +1,7 @@
 # 操作指南
 
 状态：Current
-最后更新：2026-09-06
+最后更新：2026-09-11
 
 本指南描述 QED-Tracker 的主流程操作：环境与本地配置 → 启动服务 → 健康检查 → 知识探索 → 下载（规划中）。命令均通过脚本或 `qed-tracker` CLI 执行；系统边界与契约见[系统总览](../architecture/system-overview.md)。
 
@@ -9,15 +9,10 @@
 
 ### 1.1 Python 环境
 
-项目使用 conda 环境 `qed_env`（Python 3.12，以 `pyproject.toml` 为准）。所有命令统一经
-`conda run -n qed_env` 执行，避免 shell 落到 anaconda base 缺少项目依赖：
-
-```powershell
-conda run -n qed_env python -m pip install -e ".[dev]"
-```
-
-机器绑定事实（conda 环境路径、UUID、服务端口速查）见[本地开发环境](../standards/local-dev.md)；
-该文档仅在指定机器上生效，其他环境需复制并修改。
+本机环境事实（conda 环境名/路径、Python 版本、机器标识、服务端口速查）以
+[本地开发环境](../standards/local-dev.md)为准，该文档仅在指定机器上生效、其他环境需复制并修改；
+安装与门禁命令见[开发指南](development.md)「环境速查与命令矩阵」。本仓库所有命令统一经该
+conda 环境执行，避免 shell 落到 anaconda base 缺少项目依赖。
 
 ### 1.2 配置来源与优先级
 
@@ -114,7 +109,7 @@ Invoke-RestMethod http://127.0.0.1:8901/api/v1/health
 
 ```powershell
 qed-tracker domains import docs/knowledge/math-advanced.json
-qed-tracker knowledge import docs/knowledge/math-advanced/01_math_analysis.json
+qed-tracker knowledge import docs/knowledge/math-advanced/math_analysis.json
 qed-tracker books import <book_id> <本地PDF绝对路径> --target raw/<domain>/<course>/<书名>.pdf
 ```
 
@@ -151,11 +146,11 @@ qed-tracker domains explore 高等数学 --confirm-name 高等数学
 4. **前置：确保课程存在**——课程探索作用于已知课程行：若走手动轨已 `domains import` 或领域探索
    已 `apply-results` 落库，`qed_course` 才有对应课程；否则课程 dry-run 返回
    `404 COURSE_NOT_FOUND`（表重建后默认无课程，走查前先执行本步）。
-5. **课程教材探索（只需选一门，如 `01_math_analysis`）**：当前 CLI 无课程探索命令，经 8901
+5. **课程教材探索（只需选一门，如 `math_analysis`）**：当前 CLI 无课程探索命令，经 8901
    API dry-run（PowerShell）：
 
    ```powershell
-   Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8901/api/v1/courses/01_math_analysis/prompt-explores/dry-run -ContentType 'application/json' -Body '{}'
+   Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8901/api/v1/courses/math_analysis/prompt-explores/dry-run -ContentType 'application/json' -Body '{}'
    ```
 
    - 返回 `{dry_run, report: {course, tutorials}, calls}`：`tutorials` 为 2~4 套方案
@@ -179,7 +174,7 @@ qed-tracker domains explore 高等数学 --confirm-name 高等数学
 | --- | --- | --- | --- |
 | 领域探索 `高等数学` | CLI `qed-tracker --json domains explore 高等数学` | ✅ 退出码 0，132s | 完整报告：领域 + 12 门课程（mathematical_analysis / advanced_algebra / probability_and_statistics /…），`calls` domain@v4 + courses@v8 |
 | 领域探索 `高等数学` | API `POST /api/v1/prompt-explores/dry-run` | ✅ HTTP 200，104.7s | 同报告，`confirmation_required=false` |
-| 课程探索 `01_math_analysis` | API `POST /api/v1/courses/01_math_analysis/prompt-explores/dry-run` | ✅ HTTP 200，135.9s | 4 套方案（教程1~4，position 五档，textbook_ref/exercise_ref/parallel_ref 齐全），`calls` tutorials@v2 |
+| 课程探索 `math_analysis` | API `POST /api/v1/courses/math_analysis/prompt-explores/dry-run` | ✅ HTTP 200，135.9s | 4 套方案（教程1~4，position 五档，textbook_ref/exercise_ref/parallel_ref 齐全），`calls` tutorials@v2 |
 
 - **遗留缺陷修复**：领域/课程管线输出曾因 `llm_max_tokens=4096` 触发 `finish_reason=length`
   （`LLM_UNAVAILABLE`）；`DomainPipeline`/`CoursePipeline` 已改为 `max_tokens ≥ 16384` 下限。

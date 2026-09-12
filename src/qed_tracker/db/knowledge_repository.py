@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import uuid
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -58,10 +59,20 @@ _KNOWLEDGE_TRANSITIONS: dict[KnowledgeStatus, set[KnowledgeStatus]] = {
 
 _BOOK_TRANSITIONS: dict[BookStatus, set[BookStatus]] = {
     BookStatus.CANDIDATE: {BookStatus.DECIDED, BookStatus.PARALLEL, BookStatus.RETIRED},
-    BookStatus.DECIDED: {BookStatus.RETIRED},
-    BookStatus.PARALLEL: {BookStatus.RETIRED},
+    BookStatus.DECIDED: {BookStatus.DOWNLOADING, BookStatus.RETIRED},
+    BookStatus.DOWNLOADING: {BookStatus.DOWNLOADED, BookStatus.FAILED, BookStatus.DECIDED, BookStatus.RETIRED},
+    BookStatus.DOWNLOADED: {BookStatus.VERIFIED, BookStatus.RETIRED},
+    BookStatus.VERIFIED: {BookStatus.RETIRED},
+    BookStatus.FAILED: {BookStatus.DOWNLOADING, BookStatus.RETIRED},  # 重试
+    BookStatus.PARALLEL: {BookStatus.DECIDED, BookStatus.RETIRED},
     BookStatus.RETIRED: set(),
 }
+
+_COURSE_STAGES: frozenset[str] = frozenset({"未开始", "探索中", "待确认", "已完成", "失败"})
+"""课程 exploration_stage 值域（5 态，**无「已生成」**；仅领域保留该态）。
+
+2026-09-11 用户裁决（REQ-076）：领域 6 态、课程 5 态不混用；运行时校验由 update_course 执行。
+"""
 
 
 def _id(prefix: str, *parts: Any) -> str:
@@ -76,13 +87,31 @@ _BOOK_ID_RE = re.compile(r"^[0-9a-z]+-b\d{2,}$")
 """数据文件版 book_id 格式：{abbr}-b{NN}（NN 两位起，域内全局递增）。"""
 
 
+_COURSE_ABBR_MAX = 20
+"""course_abbr 全名去下划线的长度上限；超过则用词首字母缩略（QED-062）。"""
+
+
+def _course_abbr(course_id: str) -> str:
+    """课程缩写（QED-062）：`course_id` 去下划线；>20 字符时用词首字母缩略。
+
+    例：`math_analysis`→`mathanalysis`；`ordinary_differential_equations`→`ode`；
+    `partial_differential_equations`→`pde`。保证 `kt-{abbr}-{set_no}` 与
+    `{abbr}-b{NN}` 不超列宽 32。
+    """
+    abbr = course_id.replace("_", "")
+    if len(abbr) > _COURSE_ABBR_MAX:
+        parts = [part for part in course_id.split("_") if part]
+        abbr = "".join(part[0] for part in parts)
+    return abbr
+
+
 def _tutorial_knowledge_id(course_id: str, set_no: str) -> str:
-    """LLM 采纳路径 knowledge_id：kt-{course_id 去下划线}-{set_no}（D4 裁决，不维护人工映射表）。
+    """LLM 采纳路径 knowledge_id：kt-{course_abbr}-{set_no}（D4 裁决 + QED-062 缩写规则）。
 
     set_no 为空（资料归类行）时退回 md5 后缀避免同课程多行冲突。
     """
     if set_no:
-        return f"kt-{course_id.replace('_', '')}-{set_no}"
+        return f"kt-{_course_abbr(course_id)}-{set_no}"
     return _id("kt", course_id)
 
 
@@ -265,7 +294,15 @@ class KnowledgeRepository:
                       prerequisites: list[str] | None = None,
                       exploration_stage: str | None = None,
                       explore_pending: dict[str, Any] | None = _MISSING) -> QedCourse:
-        """更新课程（name 不可变；exploration_stage/explore_pending 由探索流程管理）。"""
+        """更新课程（name 不可变；exploration_stage/explore_pending 由探索流程管理）。
+
+        exploration_stage 运行时校验（REQ-076）：值域为课程 5 态，拒绝「已生成」与未知值
+        （抛 ValueError，端点映射 422）。
+        """
+        if exploration_stage is not None and exploration_stage not in _COURSE_STAGES:
+            raise ValueError(
+                f"课程 exploration_stage 非法（5 态，无「已生成」）：{exploration_stage}"
+            )
         with self._session_factory() as session:
             row = session.get(QedCourse, course_id)
             if row is None:
@@ -478,7 +515,7 @@ class KnowledgeRepository:
             if course is None:
                 raise KeyError(f"课程不存在：{course_id}")
             domain_id = course.domain_id
-            course_abbr = course_id.replace("_", "")
+            course_abbr = _course_abbr(course_id)
 
             existing_rows = list(session.scalars(
                 select(QtKnowledge).where(
@@ -569,8 +606,13 @@ class KnowledgeRepository:
                     knowledge_id=knowledge_id,
                 )
                 row.textbook_ref = list(item.get("textbook_ref") or [])
-                row.exercise_ref = list(item.get("exercise_ref") or [])
-                row.parallel_ref = list(item.get("parallel_ref") or [])
+                # exercise_ref/parallel_ref 保持 null 语义（教材含习题时为空），不强制转 []
+                row.exercise_ref = (
+                    list(item["exercise_ref"]) if item.get("exercise_ref") is not None else None
+                )
+                row.parallel_ref = (
+                    list(item["parallel_ref"]) if item.get("parallel_ref") is not None else None
+                )
 
                 # 先建书并回填 book_id，行再入 session：JSON 列原地变更不会被 UPDATE，
                 # 必须保证首次 INSERT 即携带回填后的 refs。
@@ -652,6 +694,62 @@ class KnowledgeRepository:
             KnowledgeStatus.CONFIRMED,
             confirmed_at=utc_now(),
         )
+
+    def update_knowledge(
+        self,
+        knowledge_id: str,
+        *,
+        name: str | None = None,
+        position: str | None = None,
+        intro: str | None = None,
+        set_no: str | None = None,
+        kind: str | None = None,
+        notes: str | None = None,
+    ) -> QtKnowledge:
+        """更新教程（knowledge_id 和 course_id 不可变）。"""
+        with self._session_factory() as session:
+            row = session.get(QtKnowledge, knowledge_id)
+            if row is None:
+                raise KeyError(f"教程不存在：{knowledge_id}")
+            if name is not None:
+                row.name = name
+            if position is not None:
+                row.position = position
+            if intro is not None:
+                row.intro = intro
+            if set_no is not None:
+                row.set_no = set_no
+            if kind is not None:
+                row.kind = kind
+            if notes is not None:
+                row.notes = notes
+            row.updated_at = utc_now()
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def delete_knowledge(self, knowledge_id: str) -> None:
+        """删除教程：物理删除，处理关联的书库数据。"""
+        with self._session_factory() as session:
+            row = session.get(QtKnowledge, knowledge_id)
+            if row is None:
+                raise KeyError(f"教程不存在：{knowledge_id}")
+            book_ids = _refs_book_ids(row.textbook_ref, row.exercise_ref, row.parallel_ref)
+            if book_ids:
+                deleted_ids = {knowledge_id}
+                still_referenced: set[str] = set()
+                for other in session.scalars(select(QtKnowledge)):
+                    if other.knowledge_id in deleted_ids:
+                        continue
+                    still_referenced.update(
+                        _refs_book_ids(other.textbook_ref, other.exercise_ref, other.parallel_ref)
+                    )
+                orphaned = set(book_ids) - still_referenced
+                if orphaned:
+                    session.execute(sa.delete(QtSource).where(QtSource.book_id.in_(orphaned)))
+                    session.execute(sa.delete(QtBook).where(QtBook.book_id.in_(orphaned)))
+            session.delete(row)
+            session.commit()
 
     # ---------------- qt_books ----------------
 
@@ -742,8 +840,11 @@ class KnowledgeRepository:
 
     # ---------------- 登记服务（QED-050 阶段5：唯一写 holding/file_path 入口） ----------------
 
-    def mark_owned(self, book_id: str, *, file_path: str) -> QtBook:
+    def mark_owned(self, book_id: str, *, file_path: str, status: str | None = None) -> QtBook:
         """登记持有：holding=owned + file_path 回填（数据根相对路径）。
+
+        status: 可选，设置新的 status 值（如 "downloaded"）。
+                None 表示不改变 status（向后兼容）。
 
         下载成功（机器验收通过落盘）与人工导入共用此唯一写入口；LLM 判断不参与任何
         字段取值（download-pipeline.md 事实落点表）。幂等：同路径重复登记
@@ -756,10 +857,39 @@ class KnowledgeRepository:
             row = session.get(QtBook, book_id)
             if row is None:
                 raise KeyError(f"书籍不存在：{book_id}")
-            if row.holding == "owned" and row.file_path == file_path:
+            if row.holding == "owned" and row.file_path == file_path and (status is None or row.status == status):
                 return row
             row.holding = "owned"
             row.file_path = file_path
+            if status is not None:
+                row.status = status
+            row.updated_at = utc_now()
+            session.commit()
+            return row
+
+    def start_download(self, book_id: str) -> QtBook:
+        """decided → downloading（开始下载）。"""
+        return self._transition_book(book_id, BookStatus.DOWNLOADING)
+
+    def fail_download(self, book_id: str) -> QtBook:
+        """downloading → failed（下载失败）。"""
+        return self._transition_book(book_id, BookStatus.FAILED)
+
+    def verify_book(self, book_id: str) -> QtBook:
+        """downloaded → verified（验收通过）。"""
+        return self._transition_book(book_id, BookStatus.VERIFIED)
+
+    def cancel_download(self, book_id: str) -> QtBook:
+        """downloading → decided（取消下载，复位；QED-060）。仅 downloading 态可 cancel。"""
+        with self._session_factory() as session:
+            row = session.get(QtBook, book_id)
+            if row is None:
+                raise KeyError(f"书籍不存在：{book_id}")
+            if row.status != BookStatus.DOWNLOADING.value:
+                raise InvalidTransition(
+                    f"仅 downloading 可取消，当前 {row.status}（QED-060）"
+                )
+            row.status = BookStatus.DECIDED.value
             row.updated_at = utc_now()
             session.commit()
             return row
@@ -822,12 +952,11 @@ class KnowledgeRepository:
         attempted_at=None,
     ) -> QtSource:
         attempted_at = attempted_at or utc_now()
-        source_id = _id("src", book_id, channel, provider_id, str(attempted_at))
+        # 渠道留痕按尝试追加：加唯一后缀，避免 Windows 时钟精度下同时间戳互相覆盖
+        source_id = _id("src", book_id, channel, provider_id, str(attempted_at), uuid.uuid4().hex[:8])
         with self._session_factory() as session:
-            row = session.get(QtSource, source_id)
-            if row is None:
-                row = QtSource(source_id=source_id, book_id=book_id, channel=channel, attempted_at=attempted_at)
-                session.add(row)
+            row = QtSource(source_id=source_id, book_id=book_id, channel=channel, attempted_at=attempted_at)
+            session.add(row)
             row.provider_id = provider_id
             row.page_url = page_url
             row.download_url = download_url

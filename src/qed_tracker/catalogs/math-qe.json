@@ -7,7 +7,7 @@
   "targets": [
     {
       "id": "01-rudin-zh",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "book",
       "title": "数学分析原理",
@@ -24,7 +24,7 @@
     },
     {
       "id": "01-rudin-en",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "book",
       "title": "Principles of Mathematical Analysis",
@@ -41,7 +41,7 @@
     },
     {
       "id": "01-demidovich",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "exercise",
       "title": "吉米多维奇数学分析习题集",
@@ -58,7 +58,7 @@
     },
     {
       "id": "01-feidinghui",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "exercise",
       "title": "吉米多维奇数学分析习题集题解",
@@ -75,7 +75,7 @@
     },
     {
       "id": "01-fikhtengolts-v1",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "book",
       "title": "微积分学教程 第一卷",
@@ -92,7 +92,7 @@
     },
     {
       "id": "01-fikhtengolts-v2",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "book",
       "title": "微积分学教程 第二卷",
@@ -109,7 +109,7 @@
     },
     {
       "id": "01-fikhtengolts-v3",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "book",
       "title": "微积分学教程 第三卷",
@@ -126,7 +126,7 @@
     },
     {
       "id": "01-xiehuimin-v1",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "exercise",
       "title": "数学分析习题课讲义 上册",
@@ -143,7 +143,7 @@
     },
     {
       "id": "01-xiehuimin-v2",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "exercise",
       "title": "数学分析习题课讲义 下册",
@@ -160,7 +160,7 @@
     },
     {
       "id": "01-chenjixiu-v1",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "book",
       "title": "数学分析",
@@ -178,7 +178,7 @@
     },
     {
       "id": "01-chenjixiu-v2",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "book",
       "title": "数学分析",
@@ -196,7 +196,7 @@
     },
     {
       "id": "01-chenjixiu-answers",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "exercise",
       "title": "数学分析",
@@ -214,7 +214,7 @@
     },
     {
       "id": "01-polya",
-      "course_id": "01_math_analysis",
+      "course_id": "math_analysis",
       "course_name": "数学分析",
       "kind": "exercise",
       "title": "Problems and Theorems in Analysis I",
@@ -232,7 +232,7 @@
     },
     {
       "id": "02-axler-zh",
-      "course_id": "02_linear_algebra",
+      "course_id": "linear_algebra",
       "course_name": "线性代数",
       "kind": "book",
       "title": "线性代数应该这样学",
@@ -248,7 +248,7 @@
     },
     {
       "id": "02-axler-en",
-      "course_id": "02_linear_algebra",
+      "course_id": "linear_algebra",
       "course_name": "线性代数",
       "kind": "book",
       "title": "Linear Algebra Done Right",
@@ -264,7 +264,7 @@
     },
     {
       "id": "02-soviet-exercises",
-      "course_id": "02_linear_algebra",
+      "course_id": "linear_algebra",
       "course_name": "线性代数",
       "kind": "exercise",
       "title": "线性代数习题集",
@@ -280,7 +280,7 @@
     },
     {
       "id": "02-axler-solutions",
-      "course_id": "02_linear_algebra",
+      "course_id": "linear_algebra",
       "course_name": "线性代数",
       "kind": "exercise",
       "title": "Linear Algebra Done Right 4th Edition Solutions",
@@ -297,7 +297,7 @@
     },
     {
       "id": "03-xiong",
-      "course_id": "03_topology",
+      "course_id": "topology",
       "course_name": "点集拓扑",
       "kind": "book",
       "title": "点集拓扑学",
@@ -313,7 +313,7 @@
     },
     {
       "id": "03-munkres",
-      "course_id": "03_topology",
+      "course_id": "topology",
       "course_name": "点集拓扑",
       "kind": "book",
       "title": "Topology",
@@ -330,7 +330,7 @@
     },
     {
       "id": "04-zhou",
-      "course_id": "04_real_analysis",
+      "course_id": "real_analysis",
       "course_name": "实分析",
       "kind": "book",
       "title": "实变函数论",
@@ -347,7 +347,7 @@
     },
     {
       "id": "04-stein-en",
-      "course_id": "04_real_analysis",
+      "course_id": "real_analysis",
       "course_name": "实分析",
       "kind": "book",
       "title": "Real Analysis",
@@ -363,7 +363,7 @@
     },
     {
       "id": "04-stein-zh",
-      "course_id": "04_real_analysis",
+      "course_id": "real_analysis",
       "course_name": "实分析",
       "kind": "book",
       "title": "实分析：测度论、积分和希尔伯特空间",
@@ -379,7 +379,7 @@
     },
     {
       "id": "04-zhou-exercises",
-      "course_id": "04_real_analysis",
+      "course_id": "real_analysis",
       "course_name": "实分析",
       "kind": "exercise",
       "title": "实变函数解题指南",
@@ -395,7 +395,7 @@
     },
     {
       "id": "05-ahlfors-zh",
-      "course_id": "05_complex_analysis",
+      "course_id": "complex_analysis",
       "course_name": "复分析",
       "kind": "book",
       "title": "复分析",
@@ -411,7 +411,7 @@
     },
     {
       "id": "05-ahlfors-en",
-      "course_id": "05_complex_analysis",
+      "course_id": "complex_analysis",
       "course_name": "复分析",
       "kind": "book",
       "title": "Complex Analysis",
@@ -427,7 +427,7 @@
     },
     {
       "id": "05-stein-en",
-      "course_id": "05_complex_analysis",
+      "course_id": "complex_analysis",
       "course_name": "复分析",
       "kind": "book",
       "title": "Complex Analysis",
@@ -443,7 +443,7 @@
     },
     {
       "id": "05-stein-zh",
-      "course_id": "05_complex_analysis",
+      "course_id": "complex_analysis",
       "course_name": "复分析",
       "kind": "book",
       "title": "复分析",
@@ -459,7 +459,7 @@
     },
     {
       "id": "05-ahlfors-exercises",
-      "course_id": "05_complex_analysis",
+      "course_id": "complex_analysis",
       "course_name": "复分析",
       "kind": "exercise",
       "title": "复分析习题集",
@@ -475,7 +475,7 @@
     },
     {
       "id": "06-zhang",
-      "course_id": "06_functional_analysis",
+      "course_id": "functional_analysis",
       "course_name": "泛函分析",
       "kind": "book",
       "title": "泛函分析",
@@ -491,7 +491,7 @@
     },
     {
       "id": "06-stein",
-      "course_id": "06_functional_analysis",
+      "course_id": "functional_analysis",
       "course_name": "泛函分析",
       "kind": "book",
       "title": "Functional Analysis",
@@ -507,7 +507,7 @@
     },
     {
       "id": "06-lax",
-      "course_id": "06_functional_analysis",
+      "course_id": "functional_analysis",
       "course_name": "泛函分析",
       "kind": "book",
       "title": "泛函分析",
@@ -523,7 +523,7 @@
     },
     {
       "id": "06-exercises",
-      "course_id": "06_functional_analysis",
+      "course_id": "functional_analysis",
       "course_name": "泛函分析",
       "kind": "exercise",
       "title": "泛函分析学习指导",
@@ -537,7 +537,7 @@
     },
     {
       "id": "07-ding",
-      "course_id": "07_ode",
+      "course_id": "ordinary_differential_equations",
       "course_name": "常微分方程",
       "kind": "book",
       "title": "常微分方程",
@@ -553,7 +553,7 @@
     },
     {
       "id": "07-tenenbaum",
-      "course_id": "07_ode",
+      "course_id": "ordinary_differential_equations",
       "course_name": "常微分方程",
       "kind": "book",
       "title": "Ordinary Differential Equations",
@@ -569,7 +569,7 @@
     },
     {
       "id": "07-arnold",
-      "course_id": "07_ode",
+      "course_id": "ordinary_differential_equations",
       "course_name": "常微分方程",
       "kind": "book",
       "title": "常微分方程",
@@ -585,7 +585,7 @@
     },
     {
       "id": "07-exercises",
-      "course_id": "07_ode",
+      "course_id": "ordinary_differential_equations",
       "course_name": "常微分方程",
       "kind": "exercise",
       "title": "常微分方程习题解",
@@ -599,7 +599,7 @@
     },
     {
       "id": "08-evans-zh",
-      "course_id": "08_pde",
+      "course_id": "partial_differential_equations",
       "course_name": "偏微分方程",
       "kind": "book",
       "title": "偏微分方程",
@@ -615,7 +615,7 @@
     },
     {
       "id": "08-evans-en",
-      "course_id": "08_pde",
+      "course_id": "partial_differential_equations",
       "course_name": "偏微分方程",
       "kind": "book",
       "title": "Partial Differential Equations",
@@ -632,7 +632,7 @@
     },
     {
       "id": "08-exercises",
-      "course_id": "08_pde",
+      "course_id": "partial_differential_equations",
       "course_name": "偏微分方程",
       "kind": "exercise",
       "title": "偏微分方程习题集",
@@ -646,7 +646,7 @@
     },
     {
       "id": "09-feng",
-      "course_id": "09_abstract_algebra",
+      "course_id": "abstract_algebra",
       "course_name": "抽象代数",
       "kind": "book",
       "title": "近世代数引论",
@@ -663,7 +663,7 @@
     },
     {
       "id": "09-dummit",
-      "course_id": "09_abstract_algebra",
+      "course_id": "abstract_algebra",
       "course_name": "抽象代数",
       "kind": "book",
       "title": "Abstract Algebra",
@@ -679,7 +679,7 @@
     },
     {
       "id": "09-artin",
-      "course_id": "09_abstract_algebra",
+      "course_id": "abstract_algebra",
       "course_name": "抽象代数",
       "kind": "book",
       "title": "代数学",
@@ -695,7 +695,7 @@
     },
     {
       "id": "09-feng-exercises",
-      "course_id": "09_abstract_algebra",
+      "course_id": "abstract_algebra",
       "course_name": "抽象代数",
       "kind": "exercise",
       "title": "近世代数引论习题解答",
@@ -711,7 +711,7 @@
     },
     {
       "id": "10-berkeley-zh",
-      "course_id": "10_qe_prep",
+      "course_id": "qe_prep",
       "course_name": "QE 冲刺",
       "kind": "book",
       "title": "伯克利数学问题集",
@@ -725,7 +725,7 @@
     },
     {
       "id": "10-berkeley-en",
-      "course_id": "10_qe_prep",
+      "course_id": "qe_prep",
       "course_name": "QE 冲刺",
       "kind": "book",
       "title": "Berkeley Problems in Mathematics",
@@ -740,7 +740,7 @@
     },
     {
       "id": "11-durrett",
-      "course_id": "11_probability",
+      "course_id": "probability",
       "course_name": "测度论概率",
       "kind": "book",
       "title": "Probability: Theory and Examples",
@@ -756,7 +756,7 @@
     },
     {
       "id": "11-billingsley",
-      "course_id": "11_probability",
+      "course_id": "probability",
       "course_name": "测度论概率",
       "kind": "book",
       "title": "Probability and Measure",
@@ -772,7 +772,7 @@
     },
     {
       "id": "11-yan",
-      "course_id": "11_probability",
+      "course_id": "probability",
       "course_name": "测度论概率",
       "kind": "book",
       "title": "概率论基础",
@@ -788,7 +788,7 @@
     },
     {
       "id": "11-song-solutions",
-      "course_id": "11_probability",
+      "course_id": "probability",
       "course_name": "测度论概率",
       "kind": "exercise",
       "title": "Solutions Manual for Probability",
@@ -804,7 +804,7 @@
     },
     {
       "id": "11-yan-exercises",
-      "course_id": "11_probability",
+      "course_id": "probability",
       "course_name": "测度论概率",
       "kind": "exercise",
       "title": "概率论基础习题集",
@@ -820,7 +820,7 @@
     },
     {
       "id": "12-karatzas-shreve",
-      "course_id": "12_stochastic_processes",
+      "course_id": "stochastic_processes",
       "course_name": "随机过程",
       "kind": "book",
       "title": "Brownian Motion and Stochastic Calculus",
@@ -837,7 +837,7 @@
     },
     {
       "id": "12-ross",
-      "course_id": "12_stochastic_processes",
+      "course_id": "stochastic_processes",
       "course_name": "随机过程",
       "kind": "book",
       "title": "Stochastic Processes",
@@ -853,7 +853,7 @@
     },
     {
       "id": "12-asmussen",
-      "course_id": "12_stochastic_processes",
+      "course_id": "stochastic_processes",
       "course_name": "随机过程",
       "kind": "exercise",
       "title": "Applied Probability and Queues",
@@ -869,7 +869,7 @@
     },
     {
       "id": "13-vershynin",
-      "course_id": "13_high_dim_prob",
+      "course_id": "high_dimensional_probability",
       "course_name": "高维概率论",
       "kind": "book",
       "title": "High-Dimensional Probability",

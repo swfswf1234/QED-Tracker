@@ -1,10 +1,10 @@
 {
   "domain_id": "math-advanced",
-  "course_id": "01_math_analysis",
+  "course_id": "math_analysis",
   "course_name": "数学分析",
   "tutorials": [
     {
-      "knowledge_id": "kt-01ma-1",
+      "knowledge_id": "kt-mathanalysis-1",
       "kind": "tutorial",
       "set_no": "1",
       "name": "教程1：比廷杰《微积分及其应用》",
@@ -12,7 +12,7 @@
       "intro": "比廷杰《微积分及其应用》以应用为导向，有着大量经济、生命科学与物理背景的例题，先建立计算与建模直觉，适合零基础入门或非数学专业快速通读，目标是「会算」。教材自带习题及答案，逐章做完即可，无需额外题解；作为整条分析路线的最前端，它不追求证明语言，定理叙述以直观与使用为主。读完即可衔接教程3 的严格化训练，把「会算」升级为「会证」。",
       "textbook_ref": [
         {
-          "book_id": "01ma-b01",
+          "book_id": "mathanalysis-b01",
           "title": "微积分及其应用",
           "part": "",
           "authors": [
@@ -30,7 +30,7 @@
       "exercise_ref": null
     },
     {
-      "knowledge_id": "kt-01ma-2",
+      "knowledge_id": "kt-mathanalysis-2",
       "kind": "tutorial",
       "set_no": "2",
       "name": "教程2：Apostol《Calculus》两卷",
@@ -38,7 +38,7 @@
       "intro": "Apostol 被誉为「数学家的微积分」：从实数公理体系出发，积分先于微分展开，并将线性代数有机融入微积分，公理化严谨、证明完整，是深挖「为什么」而非「怎么算」的理论进阶经典，目标是从「会算」迈向「会证」。卷1 为单变量微积分与线性代数引论，卷2 为多元微积分与线性代数应用；以两卷为主线精读，章节习题（量大、多为证明题）务必亲手完成。卡住时可换 Fitzpatrick《高等微积分》作平行读物——同样严格演绎但叙述更舒展，从度量空间视角重述多元分析；该书无习题答案，不作训练主力。本教程暂无逐题详解，硬啃习题本身即是理论训练的一部分。",
       "textbook_ref": [
         {
-          "book_id": "01ma-b02",
+          "book_id": "mathanalysis-b02",
           "title": "Calculus",
           "part": "Vol.1",
           "authors": [{ "name": "Tom M. Apostol", "role": "author" }],
@@ -49,7 +49,7 @@
           "roles": ["textbook", "exercises"]
         },
         {
-          "book_id": "01ma-b03",
+          "book_id": "mathanalysis-b03",
           "title": "Calculus",
           "part": "Vol.2",
           "authors": [{ "name": "Tom M. Apostol", "role": "author" }],
@@ -63,7 +63,7 @@
       "exercise_ref": null,
       "parallel_ref": [
         {
-          "book_id": "01ma-b18",
+          "book_id": "mathanalysis-b18",
           "title": "高等微积分",
           "part": "",
           "authors": [{ "name": "Patrick M. Fitzpatrick", "role": "author" }],
@@ -76,7 +76,7 @@
       ]
     },
     {
-      "knowledge_id": "kt-01ma-3",
+      "knowledge_id": "kt-mathanalysis-3",
       "kind": "tutorial",
       "set_no": "3",
       "name": "教程3：Rudin《数学分析原理》+ 吉米多维奇习题集",
@@ -84,7 +84,7 @@
       "intro": "Rudin《数学分析原理》（Baby Rudin）是严格性的全球标杆：从实数拓扑与完备性出发，以简洁、精炼、抽象的语言建立极限、连续、微分、级数与多元函数的严格理论。Rudin 习题极精简且偏理论，训练量由吉米多维奇习题集（四千余题，覆盖全主题、由易到难）补足，构成「理论以 Rudin 为纲、训练以吉米多维奇为量」的完整闭环，是本课程的主力套系，自学与辅导通用。使用时以 Rudin 逐定理精读为主线，吉米多维奇按主题（极限→连续→微分→级数→多元）配量训练；费定晖题解逐题详解用于校验思路，切忌先看。Rudin 习题另配有英文版完整答案可核对；卡在叙述时可用 Apostol《数学分析》作平行读物——同一主题但叙述远比 Rudin 详尽，是该套的「详讲版」。",
       "textbook_ref": [
         {
-          "book_id": "01ma-b05",
+          "book_id": "mathanalysis-b05",
           "title": "数学分析原理",
           "part": "",
           "authors": [
@@ -100,7 +100,7 @@
       ],
       "exercise_ref": [
         {
-          "book_id": "01ma-b07",
+          "book_id": "mathanalysis-b07",
           "title": "数学分析习题集",
           "part": "",
           "authors": [{ "name": "Б. П. Демидович", "role": "author" }],
@@ -111,7 +111,7 @@
           "roles": ["exercises"]
         },
         {
-          "book_id": "01ma-b11",
+          "book_id": "mathanalysis-b11",
           "title": "吉米多维奇数学分析习题集题解",
           "part": "",
           "authors": [
@@ -125,7 +125,7 @@
           "roles": ["solutions"]
         },
         {
-          "book_id": "01ma-b17",
+          "book_id": "mathanalysis-b17",
           "title": "数学分析原理（英文版）习题完整答案",
           "part": "",
           "authors": [{ "name": "R. Phillips", "role": "author" }],
@@ -138,7 +138,7 @@
       ]
     },
     {
-      "knowledge_id": "kt-01ma-4",
+      "knowledge_id": "kt-mathanalysis-4",
       "kind": "tutorial",
       "set_no": "4",
       "name": "教程4：菲赫金哥尔茨《微积分学教程》+ 谢惠民《数学分析习题课讲义》",
@@ -146,7 +146,7 @@
       "intro": "菲赫金哥尔茨三卷本是苏联古典分析的代表作，叙述详尽、例题海量，系统演示估计技巧、Stolz 定理应用、一致收敛反例构造——Rudin 简洁、Apostol 公理化，但都不像菲氏这样把「数分真正难在哪」一步步讲出来。谢惠民《习题课讲义》是国内公认的思想方法型训练集：练习题与参考题两级分层，专练放大法、构造反例等技巧，与菲氏「一个给叙述、一个给训练」恰成最佳搭配，构成苏系古典线。适合在教程3 之后回头深化技巧，或与其并行使用（菲氏查细节、谢惠民练思想）。用法：以菲氏三卷为纲按主题精读，谢惠民按对应主题配训练，参考题量力选做。",
       "textbook_ref": [
         {
-          "book_id": "01ma-b12",
+          "book_id": "mathanalysis-b12",
           "title": "微积分学教程",
           "part": "Vol.1",
           "authors": [
@@ -159,7 +159,7 @@
           "roles": ["textbook"]
         },
         {
-          "book_id": "01ma-b13",
+          "book_id": "mathanalysis-b13",
           "title": "微积分学教程",
           "part": "Vol.2",
           "authors": [
@@ -172,7 +172,7 @@
           "roles": ["textbook"]
         },
         {
-          "book_id": "01ma-b14",
+          "book_id": "mathanalysis-b14",
           "title": "微积分学教程",
           "part": "Vol.3",
           "authors": [
@@ -187,7 +187,7 @@
       ],
       "exercise_ref": [
         {
-          "book_id": "01ma-b15",
+          "book_id": "mathanalysis-b15",
           "title": "数学分析习题课讲义",
           "part": "上册",
           "authors": [{ "name": "谢惠民 等", "role": "author" }],
@@ -198,7 +198,7 @@
           "roles": ["exercises"]
         },
         {
-          "book_id": "01ma-b16",
+          "book_id": "mathanalysis-b16",
           "title": "数学分析习题课讲义",
           "part": "下册",
           "authors": [{ "name": "谢惠民 等", "role": "author" }],
