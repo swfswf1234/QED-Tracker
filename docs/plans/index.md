@@ -1,7 +1,7 @@
 # 计划索引
 
 状态：Current
-最后更新：2026-09-11
+最后更新：2026-09-14
 
 本目录只保存尚未关闭的跨模块实施计划。任务状态以[待办列表](../trackers/todo.md)为准；计划完成后将关闭证据写入 completed，正文默认归档至 [历史基线](../history/index.md)（[ADR 0009](../adr/0009-closed-plan-archival.md)；Delete 仅限内容已完全并入固定文档且无独立查阅价值、或用户明确指示）。
 
@@ -30,12 +30,24 @@
 > `2026-09-11-exploration-contract-alignment.md`（QED-063/064/065）、
 > `2026-09-doc-cleanup-leftovers.md`（QED-056/057）按 [ADR 0009](../adr/0009-closed-plan-archival.md)
 > 归档至[历史基线](../history/baselines/)（不再删除）。
+> 2026-09-14 收尾轮（QED-066）：`2026-09-service-hardening.md`（REQ-017②③ + REQ-019）
+> 按 [ADR 0009](../adr/0009-closed-plan-archival.md) 归档至[历史基线](../history/baselines/)。
 
 ## 活跃计划
 
 - [来源探索与评估](2026-09-source-discovery.md)（2026-09-07，QED-054）：来源评估矩阵、渠道连通性/中文覆盖实测、待探索清单（持续工作）；2026-09-07 自 design/ 移入 plans（ADR 0008），设计契约部分已并入[下载管线设计](../design/download-pipeline.md)；2026-09-09 并入 REQ-020①② 承接口径。
 
+- [本地 LLM 模型对接与 LangChain 编排](2026-09-14-local-llm-langchain.md)（2026-09-14，QED-067，v1.0 主线）：经 8900 网关（`qed-engine` 模式）接入本地 qwen3.5 9B + LangChain(LCEL) 编排 prompt/pipeline，预留 MCP/skill。
+
+- [论文探索与下载链路整合](2026-09-14-paper-pipeline-alignment.md)（2026-09-14，QED-068）：论文链路现状说明 + 参照教程探索链路的整合简要计划（本轮不实现）。
+
+- [下载链路评估](2026-09-14-download-channel-evaluation.md)（2026-09-14，QED-069）：`qt_sources` 渠道表现状说明 + 数据利用简要计划（本轮不实现）。
+
+- [缺陷修复台账](2026-09-14-bugfix-ledger.md)（2026-09-14，QED-070）：v1.0 滚动缺陷登记与修复跟踪。
+
 ## 已完成计划
+
+- [服务稳定性优化（REQ-017②③ + REQ-019）](../history/baselines/2026-09-service-hardening.md)（2026-09-14，QED-066）：重启后 orphaned running/queued → failed（dedup 解除）+ `verify_content` 下载内容校验（首页文本 vs 登记标题，软信号写入 qt_sources.note）+ 进度上报评估。**已按 ADR 0009 归档至 history/baselines/**。
 
 - [探索契约对齐（REQ-076/077/078）](../history/baselines/2026-09-11-exploration-contract-alignment.md)（2026-09-11，QED-063/064/065）：课程探索 6→5 态 + `explore_pending.kind` 归一、`PATCH /courses` 支持 `exploration_stage`/`explore_pending`（含 5 态校验、8900 直写白名单调整）、dataset JSON 例外口径确认。**已按 ADR 0009 归档至 history/baselines/**。
 

@@ -331,6 +331,8 @@ CREATE TABLE qt_tasks (
 ```
 
 - **状态机**：`queued`（排队中）→ `running`（执行中）→ `succeeded`（成功）/ `failed`（失败）。
+  **启动恢复**（QED-066，REQ-017③）：8901 启动时 `TaskManager.recover_stale_tasks()` 将残留的
+  `queued`/`running` 记录置 `failed`（`error=ORPHANED`），解除 dedup 占用；不自动重试。
 - **写权限**：QED-Tracker 唯一写权限（TaskManager 通过 `manager.submit()` 写入，
   `manager.complete_task()` 更新；调度器在 `src/qed_tracker/api/tasks.py`）。
 - **清理策略**：succeeded 记录可定期清理；failed 记录保留用于排查。

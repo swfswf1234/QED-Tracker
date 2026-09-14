@@ -1,12 +1,13 @@
 # 完成台账
 
 状态：Current
-最后更新：2026-09-11
+最后更新：2026-09-14
 
 本文件只追加已关闭任务的简短结果、提交或本地验证证据。
 
 | ID | 关闭日期 | 结果 | 验证证据 |
 | --- | --- | --- | --- |
+| QED-066 | 2026-09-14 | 服务稳定性优化关闭（REQ-017②③ + REQ-019）：③ `TaskManager.recover_stale_tasks()` 启动恢复——`qt_tasks` 残留 running/queued → failed（`error=ORPHANED`），解除 dedup 占用，不自动重试；④ `downloader.verify_content()` 下载后内容校验——PDF 首页文本 vs `qt_books.title`/`original_title` 相似度比对（阈值 0.5，软信号不拒绝），自动下载路径（`_download_with_budget` 回传 note）与手工导入路径（`book_import`）结果含 score 写入 `qt_sources.note`；② 进度上报评估结论：后端基础设施（progress/message、`GET /tasks/{id}`、8900 代理）已就绪，缺口在前端轮询与 UI，单独立项。计划按 [ADR 0009](../adr/0009-closed-plan-archival.md) 归档[历史基线](../history/baselines/2026-09-service-hardening.md)。 | 新增 test_task_handlers 4 用例（running/queued→failed、terminal 不触碰、dedup 解除）+ test_downloader 8 用例（匹配/不匹配/扫描版/损坏/空标题/阈值）+ test_book_fetch 2 用例（自动下载 note 落痕）；全量 `pytest tests -q` **496 passed + 1 skipped**；`ruff check src tests scripts` clean；`qed-tracker --version` 0.5.0 + catalog 冒烟通过；`test_documentation.py` 8 passed。 |
 | QED-065 | 2026-09-11 | [跨项目] 探索产物 JSON 的 dataset 例外口径确认（需求方：QED-Engine REQ-078）：`domains.json`/`tutorials.json` 作知识正本与可重导入输入、`courses.json` 为中间态；落 `raw/` 是根 dataset 契约「不维护 JSON 状态事实源」的**例外**，状态事实源仍在 DB。 | QED-Tracker `exploration-pipeline.md`/`knowledge-import.md` 显式声明例外并引用根 `dataset-conventions.md`（跨仓库链接登记 `CROSS_REPO_LINKS`）；`test_documentation.py` 8 passed。回执根仓库由用户自行更新。 |
 | QED-064 | 2026-09-11 | [跨项目] `PATCH /courses/{id}` 支持 `exploration_stage`/`explore_pending`（需求方：QED-Engine REQ-077，D3=B）：`patch_course` 透传两字段（缺省 no-op，非对象 422）；`update_course` 课程 5 态运行时校验（拒绝「已生成」与未知值→422）；8900 直写白名单移除 `qed_course` 探索列，改经 8901。 | 新增 test_knowledge_api 3 用例（更新/422/no-op）+ test_exploration_stage 校验用例，先红后绿；`api.md`/`database-shared-tables.md`/`code-map.md` 同步；全量 482 passed + 1 skipped，ruff clean。 |
 | QED-063 | 2026-09-11 | [跨项目] 课程探索状态机 6→5 态 + `explore_pending.kind` 归一（需求方：QED-Engine REQ-076）：课程 `exploration_stage` 删「已生成」（仅领域保留 6 态），课程 5 态；`kind` 统一 `review_results`/`name_confirmation`/`error`。代码本就合规（课程从不写「已生成」），本轮为文档+测试对齐。 | `database-shared-tables.md`/`exploration-pipeline.md` 拆分领域 6 态/课程 5 态；test_exploration_stage 课程流转改 5 态、test_db_models 值域修正；全量 482 passed。 |

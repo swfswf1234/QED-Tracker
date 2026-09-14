@@ -141,6 +141,43 @@ def test_fetch_success_first_candidate(repo, seeded_book, pdf_bytes, tmp_path):
     assert sources[0].channel == "fake"
 
 
+def _seed_titled_book(repo, *, book_id: str, title: str) -> object:
+    knowledge = repo.create_knowledge(course_id="math_analysis", set_no="9", name="教程9：内容校验")
+    book = repo.create_book(book_id, title=title, authors=_author(), language="zh", domain_id="math-advanced")
+    knowledge.textbook_ref = [{"book_id": book.book_id, "title": book.title}]
+    session = repo.session_factory()
+    session.merge(knowledge)
+    session.commit()
+    session.close()
+    return book
+
+
+def test_fetch_writes_content_check_match_note(repo, tmp_path, text_pdf_bytes):
+    """QED-066：自动下载成功后内容校验结果（含 score）写入 qt_sources.note。"""
+    book = _seed_titled_book(repo, book_id="mathanalysis-b91", title="Mathematical Analysis")
+    provider = FakeProvider("fake", [make_candidate("fake", "Mathematical Analysis")])
+    service = build_service(repo, [provider], static_handler(text_pdf_bytes("Mathematical Analysis")),
+                            data_root=tmp_path)
+    outcome = service.fetch(book.book_id)
+    assert outcome["ok"] is True
+    ok_source = next(source for source in repo.list_sources(book.book_id) if source.ok)
+    assert "内容校验" in ok_source.note
+    assert "警告" not in ok_source.note
+
+
+def test_fetch_writes_content_check_mismatch_note(repo, tmp_path, text_pdf_bytes):
+    """QED-066：标题不匹配时内容校验警告写入 qt_sources.note（软信号，不拒绝下载）。"""
+    book = _seed_titled_book(repo, book_id="mathanalysis-b92", title="Mathematical Analysis")
+    provider = FakeProvider("fake", [make_candidate("fake", "Mathematical Analysis")])
+    service = build_service(repo, [provider], static_handler(text_pdf_bytes("Advanced Linear Algebra")),
+                            data_root=tmp_path)
+    outcome = service.fetch(book.book_id)
+    assert outcome["ok"] is True
+    assert repo.get_book(book.book_id).status == "downloaded"
+    ok_source = next(source for source in repo.list_sources(book.book_id) if source.ok)
+    assert "内容校验警告" in ok_source.note
+
+
 def test_fetch_lands_in_real_domain_course_dir(repo, seeded_book, pdf_bytes, tmp_path):
     """QED-060：落盘用书籍真实 domain_id → raw/math-advanced/math_analysis/。"""
     provider = FakeProvider("fake", [make_candidate("fake", "测试书")])

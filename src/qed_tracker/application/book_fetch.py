@@ -32,6 +32,7 @@ inventory）与 advisor，结束即 close（中止超时候选遗留的孤儿下
 
 from __future__ import annotations
 
+import logging
 import threading
 import uuid
 from collections.abc import Callable
@@ -44,13 +45,15 @@ from qed_tracker.application.books import BookService
 from qed_tracker.application.resources import ResourceService
 from qed_tracker.config import Settings
 from qed_tracker.db.knowledge_repository import KnowledgeRepository, _refs_book_ids
-from qed_tracker.downloader import DownloadManager, accept_pdf
+from qed_tracker.downloader import DownloadManager, accept_pdf, verify_content
 from qed_tracker.inventory import DEFAULT_DOMAIN_ID, Inventory, raw_course_dir, raw_general_dir
 from qed_tracker.matching import _language, _similarity
 from qed_tracker.models import Availability, BookExpectation, Candidate, ResourceKind
 from qed_tracker.providers.books import create_book_providers
 
 ProgressCallback = Callable[[int, str], None]
+
+logger = logging.getLogger("qed_tracker.book_fetch")
 
 
 class BookFetchError(RuntimeError):
@@ -358,8 +361,9 @@ class BookFetchService:
                         continue
                     report(40 + int(50 * (index - 1) / max(1, len(candidates))),
                            f"下载尝试：{candidate.provider} - {candidate.title}")
-                    record, failure = self._download_with_budget(
+                    record, failure, content_note = self._download_with_budget(
                         service, candidate, destination_dir=destination,
+                        expected_titles=[t for t in (expectation.title, expectation.original_title) if t],
                     )
                     if record is None:
                         state.attempts.append({"provider": candidate.provider, "title": candidate.title,
@@ -370,7 +374,8 @@ class BookFetchService:
                         continue
                     self.repo.add_source(state.book_id, channel=provider.name,
                                          provider_id=candidate.provider_id, page_url=candidate.page_url,
-                                         download_url=candidate.download_url, ok=True, note=record.resource_id)
+                                         download_url=candidate.download_url, ok=True,
+                                         note=f"{record.resource_id}{content_note}")
                     # 阶段5 登记（裁决 4 书级完成判据）：mark_owned 唯一写 holding/file_path
                     self.repo.mark_owned(state.book_id, file_path=record.file["relative_path"], status="downloaded")
                     state.attempts.append({"provider": candidate.provider, "title": candidate.title,
@@ -415,11 +420,12 @@ class BookFetchService:
     # ---------------- 阶段3+4：预算下载与 staging 验收 ----------------
 
     def _download_with_budget(self, service: BookService, candidate: Candidate, *,
-                              destination_dir: Path) -> tuple[object | None, str]:
-        """resolve → 预检 → 候选级预算下载 → staging 机器验收 → promote 落盘登记。
+                              destination_dir: Path,
+                              expected_titles: list[str] | None = None) -> tuple[object | None, str, str]:
+        """resolve → 预检 → 候选级预算下载 → staging 机器验收 → 内容校验 → promote 落盘登记。
 
         预算覆盖 resolve→开始稳定下载；首个 chunk 写入 .part 即释放（允许跑完）。
-        返回 (record, "") 或 (None, 失败原因)。
+        返回 (record, 失败原因, 内容校验 note)；成功时失败原因为空，失败时 note 为空。
         """
         started = threading.Event()
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qed-book-fetch")
@@ -440,10 +446,10 @@ class BookFetchService:
             except FuturesTimeoutError:
                 if not started.is_set():
                     # 未到释放点即超时：候选失败换下一个（孤儿线程随 close 断连自灭）
-                    return None, f"超时（{self.candidate_budget:g}s 内未开始稳定下载）"
+                    return None, f"超时（{self.candidate_budget:g}s 内未开始稳定下载）", ""
                 staged = future.result()  # 已开始稳定下载：预算释放，允许跑完
         except Exception as exc:  # noqa: BLE001 - resolve/预检/传输/md5 失败：候选失败留痕
-            return None, str(exc)[:300]
+            return None, str(exc)[:300], ""
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
@@ -451,12 +457,21 @@ class BookFetchService:
         result = accept_pdf(staged.path, min_pages=self.min_pages, min_size=self.min_size_bytes)
         if not result.accepted:
             staged.path.unlink(missing_ok=True)
-            return None, "机器验收拒绝：" + "；".join(result.reasons) + self._soft_signal_note(result)
+            return None, "机器验收拒绝：" + "；".join(result.reasons) + self._soft_signal_note(result), ""
+        # 阶段4.5 内容校验（REQ-019, QED-066）：PDF 首页文本 vs 登记标题（软信号，不拒绝）
+        content_note = ""
+        if expected_titles:
+            content_check = verify_content(staged.path, expected_titles)
+            if content_check.passed:
+                content_note = f"；内容校验 score={content_check.score:.2f}"
+            else:
+                content_note = f"；内容校验警告 score={content_check.score:.2f}（标题不匹配）"
+                logger.info("内容校验警告（%s）：%s", candidate.title, content_check.message)
         record = service.resources.promote_staged(
             staged, candidate, kind=ResourceKind.BOOK,
             destination_dir=destination_dir,
         )
-        return record, ""
+        return record, "", content_note
 
     # ---------------- 内部 ----------------
 

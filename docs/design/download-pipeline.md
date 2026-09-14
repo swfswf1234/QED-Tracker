@@ -274,6 +274,13 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
 文本层可抽取与否（pypdf extract_text 字符数）为**软信号**，只记录进 qt_sources.note，
 不拒绝（防误杀扫描版）。资源 JSON schema v1 不动。
 
+**内容校验**（REQ-019, QED-066）：硬门槛通过后、`promote_staged` 前调用
+`downloader.verify_content()`——提取 PDF 首页文本（前 500 字符）与登记标题
+（`qt_books.title` + `original_title`）做相似度比对（复用 `matching._similarity`）。
+相似度 ≥ 0.5 视为匹配；< 0.5 标记 `标题不匹配` 警告。**软信号，不拒绝**：扫描版/无文本层/
+提取失败/无基准标题一律放行。自动下载路径结果（含 score）追加进 `qt_sources.note`
+（成功行 `note=resource_id + ；内容校验 ...`），手工导入路径同样追加。
+
 ## 阶段 5：登记与课程闭环
 
 - **书级完成判据**（裁决 4）：`qt_books.holding='owned'` + `file_path` 回填（数据根相对
@@ -336,7 +343,7 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
 | LLM 确认评估 | 不写 | 1 条/候选（ok=0, note=verdict+summary） | — | **1 条/批**（book-confirm/assess@v1） | 不写 | 不产生 |
 | 开始取书 | **status=downloading** | 不写 | progress | 不写 | 不写 | 不产生 |
 | resolve/下载失败 | 不写 | 1 条/候选（ok=0, note=原因） | — | 不写 | 不写 | .part 由下载器清理 |
-| 下载成功 | **holding=owned + file_path + status=downloaded** | 1 条（ok=1, note=resource_id） | succeeded+result | 不写 | register_candidate | 原子 replace 进 raw |
+| 下载成功 | **holding=owned + file_path + status=downloaded** | 1 条（ok=1, note=resource_id + 内容校验 score/警告） | succeeded+result | 不写 | register_candidate | 原子 replace 进 raw |
 | 硬门槛拒绝 | 不写 | 1 条（ok=0, note=门槛项+软信号） | — | 不写 | **不登记** | 删除 |
 | 人工导入 | **holding=owned + file_path + status=downloaded** | 1 条（channel=local_import, ok=1, note=具体情况） | 可选任务 | 不写 | 登记 | tmp→os.replace |
 | 全部耗尽 | **status=failed**（holding 仍 missing） | 1 条（ok=0, note=人工指引摘要） | failed+error=人工指引 | — | 不写 | — |
@@ -404,6 +411,9 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
   批处理遇单本非法状态**不整批中断**，汇总为该书失败继续下一本。
 - **并发防护**：同书仅允许一个活动 fetch 任务（提交前查 qt_tasks 同 params 的
   queued/running → 409；TaskManager 现无去重，实现轮新增）。
+- **服务重启恢复**（REQ-017③, QED-066）：8901 启动时 `TaskManager.recover_stale_tasks()`
+  将 `qt_tasks` 中残留的 `running`/`queued` 记录置 `failed`（`error=ORPHANED`），
+  解除 dedup 占用使同参数任务可重新提交；**不做自动重试**（保持「无隐式重试」策略）。
 - qt_sources.file_keywords 语义 = 人工下载检索关键词（DDL 注释口径）；IA 渠道内部按文件名
   匹配 file_keywords 属 resolve 实现细节，两者不混淆。
 

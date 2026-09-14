@@ -1280,9 +1280,17 @@ def create_app(
             os.replace(staging, target)
 
         relative = target.relative_to(data_root).as_posix()
+        # 内容校验（REQ-019, QED-066）：PDF 首页文本 vs 登记标题（软信号，不拒绝）
+        from qed_tracker.downloader import verify_content
+        content_note = ""
+        expected = [t for t in (row.title, row.original_title) if t]
+        if expected:
+            cv = verify_content(target, expected)
+            if not cv.passed:
+                content_note = f"；内容校验警告：{cv.message}"
         repo.mark_owned(book_id, file_path=relative, status="downloaded")
         repo.add_source(book_id, channel="local_import", ok=True, download_url=str(source),
-                        note=f"手工导入（{size} bytes，{pages} 页，sha256 {digest[:8]}；跳过初筛门槛）")
+                        note=f"手工导入（{size} bytes，{pages} 页，sha256 {digest[:8]}；跳过初筛门槛）{content_note}")
         return repo.get_book(book_id).to_dict()
 
     @fastapi_app.post("/api/v1/books/{book_id}/fetch", status_code=202)

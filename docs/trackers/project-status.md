@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-09-11
+最后更新：2026-09-14
 关联代码：无（状态快照，不映射具体模块）
 关联测试：无
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -31,7 +31,10 @@
   全子轮）+ 数据库重构（QED-053）+ CLI 转 HTTP 客户端（QED-010）+ 8901 全链路联调（QED-014）
   + 重复下载链路验证（QED-011）全部完成并验收关闭；下载状态机/落盘/ID 收口（QED-060/061/062）、
   探索契约对齐（QED-063/064/065，REQ-076/077/078）、遗留清单（QED-056/057）均已关闭。
-  全量 `pytest tests -q` **482 passed + 1 skipped**，ruff clean。见[完成台账](completed.md)。
+- **服务稳定性优化关闭（2026-09-14，QED-066）**：服务重启后 orphaned running/queued 任务
+  恢复为 failed（dedup 解除）+ `verify_content` 下载后内容校验（首页文本 vs 登记标题，软信号
+  写入 qt_sources.note）；REQ-017② 进度上报评估结论已登记（后端就绪、缺口在前端）。
+  全量 `pytest tests -q` **496 passed + 1 skipped**，ruff clean。见[完成台账](completed.md)。
 - **下一阶段主线（待立项）**：本地 LLM 模型替换 + 论文探索。
 - **长期任务**：prompt 优化模块（QED-043）、来源探索与评估（QED-054，含 REQ-020①② 找得率基线
   持续采集与回执）；见[待办列表](todo.md)。
