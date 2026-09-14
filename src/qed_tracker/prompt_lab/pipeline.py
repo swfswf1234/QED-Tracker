@@ -197,7 +197,7 @@ class DomainPipeline(ExploreAdvisorBase):
     ) -> dict[str, Any]:
         """只跑 courses@v8，不跑 domain@v4。用于 confirm-domain 后的后台任务。"""
         courses_template = templates_mod.get_template("domain-explore", "courses")
-        reference = _read_reference(mode, ref_text, ref_doc_path)
+        _read_reference(mode, ref_text, ref_doc_path)  # 校验 mode/参考输入（无效即抛）
 
         tracks = domain_info.get("classic_tracks", [])
         courses = self._run(

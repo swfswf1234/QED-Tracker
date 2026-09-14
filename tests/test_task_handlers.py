@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
@@ -10,9 +12,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from qed_tracker.api.main import create_app
+from qed_tracker.api.tasks import TaskManager
 from qed_tracker.config import load_settings
 from qed_tracker.db.knowledge_repository import KnowledgeRepository
 from qed_tracker.db.models import Base, QedCourse, QedDomain
+from qed_tracker.db.tasks_repository import TaskRecord, TaskStore
 
 
 @pytest.fixture
@@ -317,3 +321,98 @@ def test_course_re_explore_wrong_stage_returns_409(client, repo):
     test_client, app = client
     response = test_client.post("/api/v1/courses/c01/re-explore", json={})
     assert response.status_code == 409
+
+
+# ===== recover_stale_tasks（QED-066, REQ-017③）=====
+
+
+def _seed_task(store, *, status, task_type="book_download", params=None):
+    """向 TaskStore 写入一条指定状态的任务记录。"""
+    record = TaskRecord(
+        task_id=secrets.token_hex(6),
+        type=task_type,
+        status=status,
+        created_at=datetime.now(UTC).isoformat(),
+        params=params or {"book_id": "b1"},
+        updated_at=datetime.now(UTC).isoformat(),
+    )
+    store.save(record)
+    return record
+
+
+def test_recover_running_tasks_marked_failed(tmp_path):
+    """启动恢复：running 任务 → failed（"服务重启，任务中断"）。"""
+    engine = create_engine(f"sqlite:///{tmp_path / 'recover.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    store = TaskStore(factory)
+    old = _seed_task(store, status="running")
+
+    manager = TaskManager(store, {}, max_workers=1)
+    record = store.load(old.task_id)
+
+    assert record.status == "failed"
+    assert "服务重启" in record.message
+    assert record.error == "ORPHANED"
+    manager.shutdown(wait=False)
+    engine.dispose()
+
+
+def test_recover_queued_tasks_marked_failed(tmp_path):
+    """启动恢复：queued 任务 → failed（"服务重启，任务取消"）。"""
+    engine = create_engine(f"sqlite:///{tmp_path / 'recover.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    store = TaskStore(factory)
+    old = _seed_task(store, status="queued")
+
+    manager = TaskManager(store, {}, max_workers=1)
+    record = store.load(old.task_id)
+
+    assert record.status == "failed"
+    assert "服务重启" in record.message
+    assert record.error == "ORPHANED"
+    manager.shutdown(wait=False)
+    engine.dispose()
+
+
+def test_recover_does_not_touch_terminal_tasks(tmp_path):
+    """启动恢复：succeeded/failed 记录不被触碰。"""
+    engine = create_engine(f"sqlite:///{tmp_path / 'recover.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    store = TaskStore(factory)
+    old_s = _seed_task(store, status="succeeded")
+    old_f = _seed_task(store, status="failed")
+
+    manager = TaskManager(store, {}, max_workers=1)
+    s = store.load(old_s.task_id)
+    f = store.load(old_f.task_id)
+
+    assert s.status == "succeeded"
+    assert f.status == "failed"
+    manager.shutdown(wait=False)
+    engine.dispose()
+
+
+def test_recover_allows_resubmit_after_recovery(tmp_path):
+    """启动恢复后：可重新提交同参数任务（dedup 不再阻塞）。"""
+    engine = create_engine(f"sqlite:///{tmp_path / 'recover.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    store = TaskStore(factory)
+    params = {"book_id": "b1"}
+    old = _seed_task(store, status="running", params=params)
+
+    def noop(params, progress):
+        return {}
+
+    manager = TaskManager(store, {"book_download": noop}, max_workers=1)
+    # 恢复后 dedup 不再命中（running → failed），提交不抛 ActiveTaskExists
+    new = manager.submit("book_download", params, dedup=params)
+    assert new.task_id != old.task_id
+    # handler 瞬间完成，状态可能已变为 succeeded
+    final = store.load(new.task_id)
+    assert final.status in ("queued", "running", "succeeded")
+    manager.shutdown(wait=True)
+    engine.dispose()

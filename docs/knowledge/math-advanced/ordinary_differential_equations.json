@@ -1,0 +1,124 @@
+{
+  "domain_id": "math-advanced",
+  "course_id": "ordinary_differential_equations",
+  "course_name": "常微分方程",
+  "tutorials": [
+    {
+      "knowledge_id": "kt-ode-1",
+      "kind": "tutorial",
+      "set_no": "1",
+      "name": "教程1：Boyce & DiPrima + Schaum's《常微分方程与边值问题》",
+      "position": "beginner",
+      "intro": "本教程面向快速复习与唤起记忆的场景：Boyce & DiPrima《常微分方程与边值问题》中译（机械工业出版社，原书第 11 版）是美系 ODE 的标准教材，解法覆盖全面——初等积分法、线性方程、级数解、Laplace 变换、方程组、数值方法与定性理论一章不缺，大量力学、电路、振动应用案例便于恢复工程语境的直觉。配 Schaum's Outline《微分方程》（中译，科学出版社「全美经典学习指导」系列）驱动练习：563 道习题全部带完整解答，每章先浓缩公式定理，再给大量已解例题与补充习题并附全部答案，与复习场景严丝合缝，构成计算训练的完整闭环。两者同为美系、风格统一。苏联菲利波夫《常微分方程习题集》（上海科学技术出版社 1981 中译）虽是 ODE 界的「吉米多维奇」，但偏理论证明、版式老旧，与复习场景错位，不作主力。",
+      "textbook_ref": [
+        {
+          "book_id": "ode-b01",
+          "title": "常微分方程与边值问题",
+          "part": "",
+          "authors": [
+            { "name": "William E. Boyce", "role": "author" },
+            { "name": "Richard C. DiPrima", "role": "author" }
+          ],
+          "publisher": "机械工业出版社",
+          "edition": "第11版",
+          "year": 2019,
+          "language": "zh",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": [
+        {
+          "book_id": "ode-b05",
+          "title": "Schaum's Outline: 微分方程",
+          "part": "",
+          "authors": [
+            { "name": "Richard Bronson", "role": "author" },
+            { "name": "Gabriel B. Costa", "role": "author" }
+          ],
+          "publisher": "科学出版社",
+          "edition": "",
+          "year": null,
+          "language": "zh",
+          "roles": ["exercises", "solutions"]
+        }
+      ]
+    },
+    {
+      "knowledge_id": "kt-ode-2",
+      "kind": "tutorial",
+      "set_no": "2",
+      "name": "教程2：Hirsch-Smale-Devaney《微分方程、动力系统与混沌导论》",
+      "position": "comprehensive",
+      "intro": "HSD 是美系 ODE 的现代主教材：三位动力系统顶尖数学家合著，从相空间与几何观点重构常微分方程理论，17 章覆盖一阶方程的几何理论、线性系统、存在唯一性、非线性系统、分岔与混沌，是数学专业现代视角的标准路线，学术术语与视野与研究生阶段直接衔接。以中译（甘少波译，人民邮电出版社 2008，对应英文第 2 版）为决定版本；世界图书出版公司 2016《引论》（英文第 3 版影印，内容更全、含离散系统内容）作平行提及，下载时以可得性为准。自带习题以分析证明为主、无官方题解，硬啃证明即训练；学习时应跳出解法视角，重点吸收相流、线性化、Hartman-Grobman 定理与分岔的几何图像。",
+      "textbook_ref": [
+        {
+          "book_id": "ode-b02",
+          "title": "微分方程、动力系统与混沌导论",
+          "part": "",
+          "authors": [
+            { "name": "Morris W. Hirsch", "role": "author" },
+            { "name": "Stephen Smale", "role": "author" },
+            { "name": "Robert L. Devaney", "role": "author" },
+            { "name": "甘少波", "role": "translator" }
+          ],
+          "publisher": "人民邮电出版社",
+          "edition": "第2版",
+          "year": 2008,
+          "language": "zh",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": null
+    },
+    {
+      "knowledge_id": "kt-ode-3",
+      "kind": "tutorial",
+      "set_no": "3",
+      "name": "教程3：Teschl《Ordinary Differential Equations and Dynamical Systems》",
+      "position": "advanced",
+      "intro": "Teschl 是研究生级严格理论的首选：AMS Graduate Studies in Mathematics 丛书（GSM 140），从压缩映射原理出发严格建立解的存在唯一性、解对初值与参数的依赖、线性系统、Sturm-Liouville 理论、Hilbert 空间方法与混沌的测度论处理，叙述紧凑、证明完整，为进入动力系统研究做理论准备。作者主页（TU Wien）提供官方免费 PDF——零成本、零版权问题，是本课配置中最干净的一环。作为教程2 的严格性补强与研究生预科使用：HSD 给几何图像，Teschl 给严格骨架，两者互补。",
+      "textbook_ref": [
+        {
+          "book_id": "ode-b03",
+          "title": "Ordinary Differential Equations and Dynamical Systems",
+          "part": "",
+          "authors": [
+            { "name": "Gerald Teschl", "role": "author" }
+          ],
+          "publisher": "American Mathematical Society",
+          "edition": "GSM 140",
+          "year": null,
+          "language": "en",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": null
+    },
+    {
+      "knowledge_id": "kt-ode-4",
+      "kind": "tutorial",
+      "set_no": "4",
+      "name": "教程4：Strogatz《非线性动力学与混沌》",
+      "position": "elective",
+      "intro": "Strogatz 是应用非线性动力学的世界名著（康奈尔应用数学家著）：几何直观极强，以相图、不动点、分岔、极限环、混沌为主线，配激光、生物节律、超导、混沌通信等海量跨学科案例，把「为什么关心动力系统」讲得最透。中译（孙梅、汪小帆译，机械工业出版社 2017，对应原书第 2 版），书末附部分练习题答案。与教程2 表面重叠、实则互补——HSD 是数学系的严格路线，Strogatz 是应用直观路线，一本补另一本的视角盲区；学完通往非线性科学与复杂系统方向。",
+      "textbook_ref": [
+        {
+          "book_id": "ode-b04",
+          "title": "非线性动力学与混沌",
+          "part": "",
+          "authors": [
+            { "name": "Steven H. Strogatz", "role": "author" },
+            { "name": "孙梅", "role": "translator" },
+            { "name": "汪小帆", "role": "translator" }
+          ],
+          "publisher": "机械工业出版社",
+          "edition": "第2版",
+          "year": 2017,
+          "language": "zh",
+          "roles": ["textbook", "exercises"]
+        }
+      ],
+      "exercise_ref": null
+    }
+  ]
+}

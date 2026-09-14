@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-09-06
+最后更新：2026-09-14
 关联代码：无（状态快照，不映射具体模块）
 关联测试：无
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -18,42 +18,26 @@
 | 能力 | 端口/形态 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 8901 HTTP 服务（`/api/v1`） | 8901 | 已服务化 | FastAPI + 后台任务轮询（并发上限 2）；只读查询同步、轻量状态迁移同步；长操作走任务。 |
-| MySQL 登记索引 | 共享 `qed` 库五层模型 `qed_domain`/`qed_course`（共享）→ `qt_knowledge`/`qt_books`/`qt_sources`（私有） | 已实现 | 知识层次重构（QED-031，Alembic 0006）+ 书库化重建（QED-050-D，0018：qt_knowledge/qt_books 无条件重建 + original_title 列）；无 `QED_DB_PASSWORD` 降级运行。课程体系只读端点（QED-033 `/courses`）。 |
-| CLI | `qed-tracker` | 已实现（未转客户端） | 命令树/退出码/机器输出；`serve`/`books`/`courses`/`domains`/`knowledge`/`mainline` 入口（`migrate` 已随旧三表退役删除）；CLI 闭环命令（catalog evaluate / resources …）未实现，属 QED-010。 |
+| MySQL 登记索引 | 共享 `qed` 库五层模型 `qed_domain`/`qed_course`（共享）→ `qt_knowledge`/`qt_books`/`qt_sources`（私有） | 已实现 | 书库化重建（QED-050-D）+ 模型即 schema 重建式自愈（QED-053，ADR 0006：`db/schema.py` `ensure_schema`，Alembic 链已退役）；无 `QED_DB_PASSWORD` 降级运行。课程体系只读端点（QED-033 `/courses`）。 |
+| CLI | `qed-tracker` | 已实现（已转 HTTP 客户端） | 命令树/退出码/机器输出；`serve`/`books`/`courses`/`domains`/`knowledge`/`mainline` 入口；主链路命令经 8901 提交+轮询（QED-010 已验收，2026-09-09，`migrate` 已随旧三表退役删除）。 |
 | 教材来源 | IA / Open Library / Google Books / libgen_li | 已实现 | libgen_li 发现专用（恒 metadata_only，人工下载后登记）；annas_archive/zlib 退役。 |
 | arXiv 与论文发现 | arXiv + 百炼 | 已实现 | 检索计划 + 可审阅评分，不写资源事实、不自动下载。 |
 | Axiom-Flow 交接 | HTTP（默认 8902） | 已实现 | 默认只上传，显式 `--parse` 才创建解析任务。 |
-| 模型调用模式 | local（直连 dashscope qwen）/ qed-engine（8900 网关） | 改造中 | QED-037 执行中：自身 `.env` + `llm_client.py` 兼容层 + service `--mode` + qed_llm_calls 调用记录。 |
+| 模型调用模式 | local（直连 dashscope qwen）/ qed-engine（8900 网关） | 已实现 | QED-037：自身 `.env` + `llm_client.py` 兼容层 + service `--mode` + qed_llm_calls 调用记录。 |
 
 ## 当前主线
 
-- **主链路（QED-026，实现完成待人工闭环验证）**：领域课程梳理 → 教材寻找 → 取书 → 复核
-  （设计 Accepted：[main-line-curriculum.md](../design/main-line-curriculum.md)；架构见
-  [main-line.md](../architecture/main-line.md)）。courses/mainline/books 命令已按 QED-050-D
-  重接（approve/reject 删除，取书经 8901 五阶段链）；待人工闭环验证
-  （配置 API_KEY → mainline new → review → mainline download 五阶段取书 → verify 只读复核，
-  00/01/02 三门基础课）。
-- **QED-036 教程命名规范（已完成，回执待写根仓库 REQ-041）**：`tutorial_name` 命名函数 +
-  采纳路径 `adopt_tutorials` 先查后建幂等（migrate 存量迁移已随旧三表退役）+
-  mainline new `--set-no` + textbook_ref 补 authors；存量 3 行已改规范名（教程1：数学分析原理（Rudin）等，证据
-  docs/history/qed-036-tutorial-naming/）。
-- **QED-037 模型模式与密钥分置（已完成，回执待写根仓库 REQ-043）**：自身 `.env` + config
-  改读 + llm_client 双模式兼容层 + 三 advisor 接入 + service `--mode` + qed_llm_calls 调用
-  记录（设计 Accepted/Implemented：[service-management.md](../design/service-management.md)）。
-- **QED-038 密钥收敛（已完成，回执待写根仓库 ARCH-017）**：逐厂商 key 别名全部取消，
-  `llm_api_key` 只读唯一 `API_KEY`。
-- **课程收集主线（QED-019）**：01 数学分析闭环——catalog 已定稿（01 共 14 目标，54 总），
-  12 册 approved 已移交根仓库；三态评估 → 下载/登记 → 人工验收。
-- **QED-014 全链路联调**：真实 8901 全链路（评估→确认→下载→验收/删除→登记→qed CLI/8903
-  前端展示）待开始；QED-010（CLI 转 HTTP 客户端）与 QED-011（重复下载验证）随其后。
-- **QED-024 套标记字段**：代码层完成（`set_no` 字段 + catalog 解析 + 契约测试）+ 01 数学分析
-  13 目标补齐（套一/套二/套三/en 与 note 一致）；其余 12 门课 41 目标待人工定套；
-  API 已透出 `set_no`，回执根仓库 REQ-028 待完成。
-- **治理对齐（QED-022）**：守护契约范本对齐已完成（8 个守护测试六字段 docstring + 守护面清单五类），回执根仓库 REQ-023 待写入。
-- **文档体系长效机制（QED-039）**：首轮固定化已完成（architecture/ 固定 + api.md + database-schema
-  升级 + project-status 移入 trackers/ + design 三态清理）；已建立
-  [文档治理规范](../standards/doc-governance.md)「版本末期文档整理」节（ADR 0002 登记、
-  ADR 0004 并入），每次版本确认前执行一轮。
+- **本期计划全链路验收通过（2026-09-11）**：主链路（QED-026）+ 教材探索与下载双轨（QED-050
+  全子轮）+ 数据库重构（QED-053）+ CLI 转 HTTP 客户端（QED-010）+ 8901 全链路联调（QED-014）
+  + 重复下载链路验证（QED-011）全部完成并验收关闭；下载状态机/落盘/ID 收口（QED-060/061/062）、
+  探索契约对齐（QED-063/064/065，REQ-076/077/078）、遗留清单（QED-056/057）均已关闭。
+- **服务稳定性优化关闭（2026-09-14，QED-066）**：服务重启后 orphaned running/queued 任务
+  恢复为 failed（dedup 解除）+ `verify_content` 下载后内容校验（首页文本 vs 登记标题，软信号
+  写入 qt_sources.note）；REQ-017② 进度上报评估结论已登记（后端就绪、缺口在前端）。
+  全量 `pytest tests -q` **496 passed + 1 skipped**，ruff clean。见[完成台账](completed.md)。
+- **下一阶段主线（待立项）**：本地 LLM 模型替换 + 论文探索。
+- **长期任务**：prompt 优化模块（QED-043）、来源探索与评估（QED-054，含 REQ-020①② 找得率基线
+  持续采集与回执）；见[待办列表](todo.md)。
 
 ## 维护规则
 

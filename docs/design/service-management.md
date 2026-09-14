@@ -3,7 +3,7 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：暂定
-最后更新：2026-09-07
+最后更新：2026-09-11
 需求方：QED-Engine（根仓库 REQ-017①「仓库内提供正式启动入口」；QED-037/REQ-043「模型模式与密钥分置」扩展 `--mode`；ADR 0008 职责重划合并立项）
 关联代码：`scripts/qed_tracker_service.py`、`src/qed_tracker/config.py`、`src/qed_tracker/llm_client.py`、
 `src/qed_tracker/cli.py`（serve 命令）、`src/qed_tracker/api/main.py`（CORS）、自身 `.env`
@@ -48,7 +48,7 @@ QED-Tracker 以 8901 HTTP 服务运行，启动命令为 `qed-tracker serve`（�
 > （含 `QWEN_API_KEY` / `DASHSCOPE_API_KEY` / `DEEPSEEK_API_KEY` / `GLM_API_KEY`），统一
 > `API_KEY` + `QED_API_PROVIDER`（厂商选择，当前 qwen）为准；**所有「旧变量降级为别名」
 > 「兼容别名」表述均已按此修订，不保留任何别名回退**。契约以根仓库
-> [configuration-and-secrets.md](../../../docs/design/configuration-and-secrets.md) 当前约定为准。
+> [project-configuration.md](../../../docs/design/project-configuration.md) 当前约定为准。
 
 ## 服务生命周期脚本契约
 
@@ -192,7 +192,7 @@ QED-Tracker/
 - local 调用记录由 `llm_client.py` 写 qed 库 `qed_llm_calls` 表
   （`service=qed_tracker` / `mode=api` / `provider=qwen` / `endpoint=text`）；`qed-engine` 模式下
   网关统一写表，本仓不重复写。**表结构契约**以根仓库
-  [llm-gateway-and-model-management.md](../../../docs/design/llm-gateway-and-model-management.md)
+  [llm-gateway.md](../../../docs/design/llm-gateway.md)
   为准，本层用 SQLAlchemy engine（复用 `QED_DB_*`）INSERT，DB 不可达降级记日志不阻塞模型调用。
 - 缺密钥/网关不可达时降级并明确报错，不阻塞启动（沿用现有降级约定）。
 
@@ -203,11 +203,11 @@ QED-Tracker/
 
 | 约定域 | 唯一事实源 | 本仓实现事实指针 |
 | --- | --- | --- |
-| 端口 | 根仓库 [four-service-architecture.md](../../../docs/architecture/four-service-architecture.md)（8903 前端 / 8900 后端 / 8902 Axiom-Flow / 8901 本服务）；端口变量见根仓库 [configuration-and-secrets.md](../../../docs/design/configuration-and-secrets.md) | 本仓速查表复制于 [本地开发环境](../standards/local-dev.md)（端口表）；`QED_TRACKER_PORT`（默认 8901） |
-| CORS | 根仓库 service-contracts.md 裁决：8903 前端只连 8900 网关，浏览器不直连 8901/8902；直连 8901 的 CORS 收窄为**可选后续（未执行）** | 现状 `src/qed_tracker/api/main.py`：`FRONTEND_ORIGINS` 允许 `http://127.0.0.1:8903` / `http://localhost:8903`（CORSMiddleware）——两口径并存的现状如实登记 |
-| dataset 布局 | 根仓库 [dataset-conventions.md](../../../docs/design/dataset-conventions.md)（`raw/<domain>/<course>/` 唯一被外部读取、写入方本仓；tmp 按项目分桶；tmp→raw 原子落盘；`<slug>_<sha256前8>` 命名；raw 不可变）；`QED_DATA_ROOT` 定义见根仓库 configuration-and-secrets.md | `config.py` `state_dir` = `<QED_DATA_ROOT>/qed-tracker/meta`（ARCH-019）；`inventory.py`（`raw/<domain_id>/<course_id>/` 落盘、`tmp/qed-tracker/downloads` 下载临时区）；本仓 `.env` `QED_DATA_ROOT=D:\coding\QED-Engine\dataset` |
+| 端口 | 根仓库 [four-service-architecture.md](../../../docs/architecture/four-service-architecture.md)（8903 前端 / 8900 后端 / 8902 Axiom-Flow / 8901 本服务）；端口变量见根仓库 [project-configuration.md](../../../docs/design/project-configuration.md) | 本仓速查表复制于 [本地开发环境](../standards/local-dev.md)（端口表）；`QED_TRACKER_PORT`（默认 8901） |
+| CORS | 根仓库 cross-project-contracts.md 裁决：8903 前端只连 8900 网关，浏览器不直连 8901/8902；直连 8901 的 CORS 收窄为**可选后续（未执行）** | 现状 `src/qed_tracker/api/main.py`：`FRONTEND_ORIGINS` 允许 `http://127.0.0.1:8903` / `http://localhost:8903`（CORSMiddleware）——两口径并存的现状如实登记 |
+| dataset 布局 | 根仓库 [dataset-conventions.md](../../../docs/design/dataset-conventions.md)（`raw/<domain>/<course>/` 唯一被外部读取、写入方本仓；tmp 按项目分桶；tmp→raw 原子落盘；`<slug>_<sha256前8>` 命名；raw 不可变）；`QED_DATA_ROOT` 定义见根仓库 project-configuration.md | `config.py` `state_dir` = `<QED_DATA_ROOT>/qed-tracker/meta`（ARCH-019）；`inventory.py`（`raw/<domain_id>/<course_id>/` 落盘、`tmp/qed-tracker/downloads` 下载临时区）；本仓 `.env` `QED_DATA_ROOT=D:\coding\QED-Engine\dataset` |
 | 共享表归属 | 本仓 [数据库共享表设计](../architecture/database-shared-tables.md)（`qed_*` 共享 / `qt_*` 本仓私有 / `af_*` Axiom 私有；`qed_domain`/`qed_course` 写主体本仓、`qed_llm_calls` 三项目可写；8900 离线降级直写白名单例外；schema 变更先经根仓库 database-design.md 登记再由写权限方实施） | 私有表清单见 [数据库专用表设计](../architecture/database-private-tables.md)；模型即 schema 自愈 `ensure_schema()`（ADR 0006） |
-| 服务对接 | 根仓库 [service-contracts.md](../../../docs/design/service-contracts.md)（服务职责与消费方向） | 8900 启停接入见上文契约节；Axiom-Flow 消费面见 [架构 API](../architecture/api.md) 外部接口节 |
+| 服务对接 | 根仓库 [cross-project-contracts.md](../../../docs/design/cross-project-contracts.md)（服务职责与消费方向） | 8900 启停接入见上文契约节；Axiom-Flow 消费面见 [架构 API](../architecture/api.md) 外部接口节 |
 
 ## 验证
 

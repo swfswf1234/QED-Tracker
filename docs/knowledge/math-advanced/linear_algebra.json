@@ -1,10 +1,10 @@
 {
   "domain_id": "math-advanced",
-  "course_id": "02_linear_algebra",
+  "course_id": "linear_algebra",
   "course_name": "高等代数",
   "tutorials": [
     {
-      "knowledge_id": "kt-02la-1",
+      "knowledge_id": "kt-linearalgebra-1",
       "kind": "tutorial",
       "set_no": "1",
       "name": "教程1：Strang《线性代数及其应用》+ MIT OCW 18.06",
@@ -12,7 +12,7 @@
       "intro": "Strang 从「列空间」与「四个基本子空间」的几何视角组织全书，极度强调矩阵分解（LU、QR、SVD）的力量与实际应用，把线性代数从「算行列式和逆矩阵」升华为「几何与数据科学的语言」，是入门位没有对手的教材。最佳用法是视频与教材章节一一对照：MIT OCW 18.06（Strang 主讲）的官方 Problem Sets 自带完整解答，考试卷与答案也全部公开，构成「看课—读教材—做题—对答案」的完整闭环。持有中译本为 1990 年老译本，与现行 18.06 课件存在一定代差，概念与记号以视频和 OCW 讲义为准、译本作叙述补充即可。",
       "textbook_ref": [
         {
-          "book_id": "02la-b01",
+          "book_id": "linearalgebra-b01",
           "title": "线性代数及其应用",
           "part": "",
           "authors": [
@@ -28,7 +28,7 @@
       "exercise_ref": null
     },
     {
-      "knowledge_id": "kt-02la-2",
+      "knowledge_id": "kt-linearalgebra-2",
       "kind": "tutorial",
       "set_no": "2",
       "name": "教程2：Axler《线性代数应该这样学》+ 普罗斯库烈柯夫《线性代数习题集》",
@@ -36,7 +36,7 @@
       "intro": "Axler 完全避开行列式，从线性变换（算子）与特征值的角度构建整个理论体系，强调结构、本质与逻辑的纯粹性，被誉为「线性代数的文学经典」——它的算子视角正是泛函分析的预演，数学专业理论进阶首选。Axler 自带习题精炼但偏概念、计算量小，训练量由普罗斯库烈柯夫《线性代数习题集》补足：苏联经典题集，近两千题覆盖行列式、方程组、二次型、线性变换等全部核心题型，附答案与提示，堪称「线性代数界的吉米多维奇」——理论以 Axler 为纲、训练以普氏为量，与数学分析课 Rudin+吉米多维奇的配方同构。持有中译为 2009 年版（对应英文第 2 版），教材自带习题可用社区流传的第 2 版题解校验。",
       "textbook_ref": [
         {
-          "book_id": "02la-b02",
+          "book_id": "linearalgebra-b02",
           "title": "线性代数应该这样学",
           "part": "",
           "authors": [
@@ -51,7 +51,7 @@
       ],
       "exercise_ref": [
         {
-          "book_id": "02la-b06",
+          "book_id": "linearalgebra-b06",
           "title": "线性代数习题集",
           "part": "",
           "authors": [
@@ -67,7 +67,7 @@
       ]
     },
     {
-      "knowledge_id": "kt-02la-3",
+      "knowledge_id": "kt-linearalgebra-3",
       "kind": "tutorial",
       "set_no": "3",
       "name": "教程3：Artin《代数》（高代→抽象代数桥接）",
@@ -75,7 +75,7 @@
       "intro": "Artin 从矩阵群与对称性讲起，一部书打通高等代数与抽象代数：前半（矩阵、群、向量空间、线性变换、对称）即高等代数的深化，后半（环、模、域与伽罗瓦理论）直接衔接抽象代数课程，是三门基础课之间杠杆率最高的一本桥接书，对继续走硕士路线的学习者尤其关键。以线性变换与对称的视角回头重审线性代数，再顺势进入群环域的世界；习题多为精心设计的证明题，无官方题解——硬啃习题本身即是这门书设定的训练方式。学完本套即可无缝进入抽象代数课程。",
       "textbook_ref": [
         {
-          "book_id": "02la-b03",
+          "book_id": "linearalgebra-b03",
           "title": "代数",
           "part": "",
           "authors": [

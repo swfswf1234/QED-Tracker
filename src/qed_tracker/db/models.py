@@ -29,12 +29,18 @@ class KnowledgeStatus(StrEnum):
 
 
 class BookStatus(StrEnum):
-    """qt_books 选用状态：decided（已入选）/ parallel（平行读物）/ candidate（候选）/ retired（退役）。"""
+    """qt_books 选用状态 + 下载生命周期。"""
 
+    # 选用四态（原有）
+    CANDIDATE = "candidate"
     DECIDED = "decided"
     PARALLEL = "parallel"
-    CANDIDATE = "candidate"
     RETIRED = "retired"
+    # 下载生命周期（新增）
+    DOWNLOADING = "downloading"
+    DOWNLOADED = "downloaded"
+    VERIFIED = "verified"
+    FAILED = "failed"
 
 
 class Base(DeclarativeBase):
@@ -85,7 +91,7 @@ class QedCourse(Base):
     aliases: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="别名列表")
     track: Mapped[str] = mapped_column(String(50), nullable=False, default="", comment="课程所属学术方向")
     stage: Mapped[str] = mapped_column(
-        String(32), nullable=False, comment="所属阶段（本科基础/本科进阶/研究生基础/QE冲刺）"
+        String(32), nullable=False, comment="所属阶段（基础/主干/分支/前沿，qed_domain.stages 四档）"
     )
     prerequisites: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="先修课程")
     related_targets: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, comment="已验收关联目标")

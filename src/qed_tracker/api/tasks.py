@@ -36,6 +36,24 @@ class TaskManager:
         self.store = store
         self.handlers = dict(handlers)
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="qed-task")
+        self.recover_stale_tasks()
+
+    def recover_stale_tasks(self) -> int:
+        """Mark orphaned queued/running tasks as failed on startup (REQ-017③, QED-066).
+
+        Returns the number of recovered tasks.
+        """
+        recovered = 0
+        for record in self.list():
+            if record.status == "running":
+                self._update(record, status="failed", message="服务重启，任务中断", error="ORPHANED")
+                recovered += 1
+            elif record.status == "queued":
+                self._update(record, status="failed", message="服务重启，任务取消", error="ORPHANED")
+                recovered += 1
+        if recovered:
+            logger.warning("启动恢复：%d 个未完成任务标记为 failed", recovered)
+        return recovered
 
     def submit(self, task_type: str, params: dict[str, Any], *, dedup: Mapping[str, Any] | None = None) -> TaskRecord:
         """Submit a background task; ``dedup`` gives identity params for active-task dedup.

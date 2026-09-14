@@ -1,11 +1,20 @@
 # 计划索引
 
 状态：Current
-最后更新：2026-09-07
+最后更新：2026-09-14
 
-本目录只保存尚未关闭的跨模块实施计划。任务状态以[待办列表](../trackers/todo.md)为准；计划完成后将关闭证据写入 completed，并删除计划正文，详细差异由 Git 保留。过时计划归档至 [历史基线](../history/index.md)。
+本目录只保存尚未关闭的跨模块实施计划。任务状态以[待办列表](../trackers/todo.md)为准；计划完成后将关闭证据写入 completed，正文默认归档至 [历史基线](../history/index.md)（[ADR 0009](../adr/0009-closed-plan-archival.md)；Delete 仅限内容已完全并入固定文档且无独立查阅价值、或用户明确指示）。
 
-> 探索 / 知识录入 / 下载登记 / 领域探索设计已晋升为设计文档：[探索管线设计](../design/exploration-pipeline.md)、
+> 2026-09-09 验收收口轮：QED-050 / QED-050-E / QED-053 / QED-010 / QED-014 验收关闭，
+> `2026-09-integration-issues.md`（QED-014，归档至
+> [历史基线](../history/baselines/2026-09-09-qed014-integration-issues.md)）、
+> `2026-09-db-schema-rework.md`（QED-053）、`2026-09-data-lifecycle.md`（QED-050-E）
+> 移出本目录（差异由 Git 保留）。
+> 2026-09-09 文档清理轮（QED-056）：`2026-08-download-flow.md`（QED-026 收尾）、
+> `2026-08-main-line-curriculum.md`（QED-026）、`2026-09-download-implementation.md`（QED-050-D）、
+> `2026-08-db-api-docs-completion.md`（QED-044）、`2026-09-fix-import-stage-guard.md`（QED-014 问题 6）
+> 随任务关闭删除（未完事项迁入[遗留问题清单](../history/baselines/2026-09-doc-cleanup-leftovers.md)，差异由 Git 保留）。
+> 更早：探索 / 知识录入 / 下载登记 / 领域探索设计已晋升为设计文档：[探索管线设计](../design/exploration-pipeline.md)、
 > [知识录入设计](../design/knowledge-import.md)、[下载管线设计](../design/download-pipeline.md)
 > （2026-09-04 用户确认晋升）。原 `2026-09-download-registration.md`（旧八态口径）随之删除；
 > 原 `2026-09-exploration-pipeline.md`、`2026-09-exploration-overview.md`、
@@ -13,25 +22,51 @@
 > `2026-09-pipeline-4mode-verification.md`、`2026-08-prompt-optimization.md`、
 > `2026-08-prompt-optimization-progress.md` 已删除；`2026-08-prompt-explore-baseline.md` 与
 > `2026-08-knowledge-dual-flow.md` 已归档至 [历史基线](../history/baselines/)。
+> 2026-09-11 任务关闭轮（QED-058 / QED-059 / L-15/L-16）：
+> `2026-09-11-agent-doc-governance.md`（QED-058）、`2026-09-11-book-import-domain-fix.md`（QED-059）、
+> `2026-09-knowledge-patch-delete.md`（L-15/L-16）、`2026-09-knowledge-patch-delete-implementation.md`（L-15/L-16）
+> 随任务关闭删除（差异由 Git 保留）。
+> 2026-09-11 本期收尾轮（QED-011/042/045/046/056/057/063/064/065）：
+> `2026-09-11-exploration-contract-alignment.md`（QED-063/064/065）、
+> `2026-09-doc-cleanup-leftovers.md`（QED-056/057）按 [ADR 0009](../adr/0009-closed-plan-archival.md)
+> 归档至[历史基线](../history/baselines/)（不再删除）。
+> 2026-09-14 收尾轮（QED-066）：`2026-09-service-hardening.md`（REQ-017②③ + REQ-019）
+> 按 [ADR 0009](../adr/0009-closed-plan-archival.md) 归档至[历史基线](../history/baselines/)。
 
 ## 活跃计划
 
-- [v0.1 数据库重构](2026-09-db-schema-rework.md)（2026-09-06，QED-053）：模型即 schema + 重建式自愈（[ADR 0006](../adr/0006-database-model-as-schema-rebuild.md)）——ensure_schema 缺表补建/不一致重建、qed_llm_calls 增量自愈、db/ 收编（engine/schema/repositories）、Alembic 链退役；阶段二「确认时写 JSON」另行评审。
+- [来源探索与评估](2026-09-source-discovery.md)（2026-09-07，QED-054）：来源评估矩阵、渠道连通性/中文覆盖实测、待探索清单（持续工作）；2026-09-07 自 design/ 移入 plans（ADR 0008），设计契约部分已并入[下载管线设计](../design/download-pipeline.md)；2026-09-09 并入 REQ-020①② 承接口径。
 
-- [下载登记实现计划](2026-09-download-implementation.md)（2026-09-04，QED-050-D）：五阶段下载链的分阶段实现——前置门（迁移 0018 + original_title 列 + 失效引用修复）、验收原语与配置、LLM 顾问与渠道 enrich、五阶段编排与登记服务、API/CLI 重接、文档同步与门禁。设计见[下载管线设计](../design/download-pipeline.md)。**注**：0018 前置随 ADR 0006 由 ensure_schema 重建语义承接。
+- [本地 LLM 模型对接与 LangChain 编排](2026-09-14-local-llm-langchain.md)（2026-09-14，QED-067，v1.0 主线）：经 8900 网关（`qed-engine` 模式）接入本地 qwen3.5 9B + LangChain(LCEL) 编排 prompt/pipeline，预留 MCP/skill。
 
-- [数据生命周期设计](2026-09-data-lifecycle.md)（2026-09-01，QED-050-E）：知识/探索/书籍三态生命周期 + 交叉点 + 清理策略 + 数据根规范 + 退役规则。阶段二优化目标：全状态路径测试 + 交叉点验证。
+- [论文探索与下载链路整合](2026-09-14-paper-pipeline-alignment.md)（2026-09-14，QED-068）：论文链路现状说明 + 参照教程探索链路的整合简要计划（本轮不实现）。
 
-- [来源探索与评估](2026-09-source-discovery.md)（2026-09-07，QED-054）：来源评估矩阵、渠道连通性/中文覆盖实测、待探索清单（持续工作）；2026-09-07 自 design/ 移入 plans（ADR 0008），设计契约部分已并入[下载管线设计](../design/download-pipeline.md)。
+- [下载链路评估](2026-09-14-download-channel-evaluation.md)（2026-09-14，QED-069）：`qt_sources` 渠道表现状说明 + 数据利用简要计划（本轮不实现）。
 
-- [完整数据库设计文档与 API 设计文档](2026-08-db-api-docs-completion.md)（2026-08-26，QED-044 长期任务）：architecture 固定文档升级为完整版（数据库文档按表族拆分两文 [ADR 0007](../adr/0007-database-docs-split-by-table-family.md) + 全部路由六要素成文）；2026-09-07 正式稿已成文（api.md 主线 30 条五组六要素 + 非主线 7 条附录；数据库文档 database-private-tables.md / database-shared-tables.md），转正评审待办；承接 QED-039「API 文档内容完善」。原 `2026-08-api-design.md`（API 设计 Draft）素材并入 architecture/api.md 后已删除。
-- [主链路第一版](2026-08-main-line-curriculum.md)（2026-08-12，QED-026）：课程梳理 → 教材条目（五要素）→ LLM 预填评价 → 人工评审 → 下载 → 验收 → 移交根仓库；CLI 跑通 00/01/02 三门基础课验证。设计见[主链路设计](../design/main-line-curriculum.md)。
-- [下载流程现状分析与优化方向](2026-08-download-flow.md)（2026-08-28，QED-026 收尾）：三条链路（catalog run / mainline CLI / books API）现状 + 状态机事实 + 下载器/清单层事实 + 成功率/准确率优化点分析 + 验收标准提案（含 REQ-020② 找得率口径）+ REQ-032 双轨登记 + 已知缺口（confirm 覆写/course 回写/tmp 契约）。
+- [缺陷修复台账](2026-09-14-bugfix-ledger.md)（2026-09-14，QED-070）：v1.0 滚动缺陷登记与修复跟踪。
 
 ## 已完成计划
+
+- [服务稳定性优化（REQ-017②③ + REQ-019）](../history/baselines/2026-09-service-hardening.md)（2026-09-14，QED-066）：重启后 orphaned running/queued → failed（dedup 解除）+ `verify_content` 下载内容校验（首页文本 vs 登记标题，软信号写入 qt_sources.note）+ 进度上报评估。**已按 ADR 0009 归档至 history/baselines/**。
+
+- [探索契约对齐（REQ-076/077/078）](../history/baselines/2026-09-11-exploration-contract-alignment.md)（2026-09-11，QED-063/064/065）：课程探索 6→5 态 + `explore_pending.kind` 归一、`PATCH /courses` 支持 `exploration_stage`/`explore_pending`（含 5 态校验、8900 直写白名单调整）、dataset JSON 例外口径确认。**已按 ADR 0009 归档至 history/baselines/**。
+
+- [文档清理遗留问题清单](../history/baselines/2026-09-doc-cleanup-leftovers.md)（2026-09-11，QED-056/057 关闭）：全部遗留项处置完成（L-01/L-05/L-06/L-14 修复、L-07/L-08/L-10 维持现状、L-09/L-11 PASS、L-13 保留于 QED-054）。**已按 ADR 0009 归档至 history/baselines/**。
+
+- 书籍状态机与下载链路收口（QED-060）（2026-09-11）：八态闭环 + cancel/retry + 教程级批处理修复 + 下载落盘统一真实 `domain_id`；计划已删除，结果见[完成台账](../trackers/completed.md)。
+
+- 探索产物落盘收口（QED-061）（2026-09-11）：领域 `domains.json` 反写、`courses.json` 删除、课程 `tutorials.json` 定稿、手动/采纳路径落盘一致；计划已删除，结果见[完成台账](../trackers/completed.md)。
+
+- 有意义 ID 生成（QED-062）（2026-09-11）：domain/course 英文语义化 + 中文名 422 + course_abbr 超长缩略 + catalog 重新冻结；计划已删除，结果见[完成台账](../trackers/completed.md)。
+
+- L-15/L-16 知识更新与删除端点（QED-056）（2026-09-11）：`PATCH /api/v1/knowledge/{id}` 和 `DELETE /api/v1/knowledge/{id}` 端点实现——KnowledgeRepository `update_knowledge`/`delete_knowledge` 方法 + API 端点 + 测试覆盖 + API 文档更新。计划已删除（Git 保留）。
+
+- book_import 端点 domain_id 修复（QED-059）（2026-09-11）：修复导入书籍时目标路径使用默认 `domain_id="math"` 而非书籍实际 `domain_id` 的缺陷。计划已删除（Git 保留）。
+
+- Agent 开发文档体系（QED-058）（2026-09-11）：AGENTS.md 统一骨架 + 标准映射落地（guides 六步流程节 + 口径核对 + 文档门禁）。计划已删除（Git 保留）。
 
 - [Exploration Stage Enhancement（REQ-067-B10 + B12）](../history/baselines/2026-08-31-req067-b10-b12-exploration-stage.md)（2026-08-31，REQ-067-B12 已实现）：启动清理脏 exploration_stage + 新增「待确认」状态 + apply-results/re-explore 端点（领域+课程）；数据库新增 explore_pending JSON 字段；状态机 5态→6态。86 passed（17 新测 + 69 回归）。**已归档至 history/baselines/**。
 
 - [QED-039 文档体系范本对齐](../history/baselines/2026-08-docs-restructure-alignment.md)（2026-09-01，15/15 任务完成）：按 ADR 0010 对齐三层结构（architecture/design/trackers）；database-schema.md 移入 architecture/、project-status.md 移入 trackers/、api.md 新建、三态文档归档、7 份索引更新、契约测试同步。**已归档至 history/baselines/**。
 
-- 真实百炼与 arXiv 冒烟（QED-005）属于外部验收阻塞，直接保留在待办列表中。
+- 真实百炼与 arXiv 冒烟（QED-005）2026-08-20 并入 QED-010，随 QED-010 验收关闭（2026-09-09，见[完成台账](../trackers/completed.md)）。

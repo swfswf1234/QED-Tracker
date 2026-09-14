@@ -1,4 +1,4 @@
-"""REQ-067-B12: 探索状态机 6 态 + apply-results / re-explore 端点测试。"""
+"""探索状态机测试（领域 6 态 / 课程 5 态，REQ-067-B12 + REQ-076/077）+ apply-results / re-explore 端点。"""
 
 from __future__ import annotations
 
@@ -291,10 +291,10 @@ def test_six_state_domain_flow(client, repo):
     assert d.explore_pending is None
 
 
-# ===== 6 态流转（课程） =====
+# ===== 5 态流转（课程） =====
 
-def test_six_state_course_flow(client, repo):
-    """课程探索 6 态完整流转：未开始 -> 已生成 -> 探索中 -> 待确认 -> 已完成。"""
+def test_five_state_course_flow(client, repo):
+    """课程探索 5 态完整流转：未开始 -> 探索中 -> 待确认 -> 已完成（无「已生成」）。"""
     from qed_tracker.db.engine import utc_now
 
     # 创建新课程
@@ -308,12 +308,7 @@ def test_six_state_course_flow(client, repo):
     session.commit()
     session.close()
 
-    # 未开始 -> 已生成
-    repo.update_course("flow_c", exploration_stage="已生成")
-    c = repo.get_course("flow_c")
-    assert c.exploration_stage == "已生成"
-
-    # 已生成 -> 探索中
+    # 未开始 -> 探索中（课程无「已生成」）
     repo.update_course("flow_c", exploration_stage="探索中")
     c = repo.get_course("flow_c")
     assert c.exploration_stage == "探索中"
@@ -333,6 +328,28 @@ def test_six_state_course_flow(client, repo):
     c = repo.get_course("flow_c")
     assert c.exploration_stage == "已完成"
     assert c.explore_pending is None
+
+
+def test_course_stage_rejects_generated_and_unknown(repo):
+    """课程 exploration_stage 运行时校验：拒绝「已生成」与未知值（REQ-076/077）。"""
+    from qed_tracker.db.engine import utc_now
+
+    session = repo._session_factory()
+    now = utc_now()
+    session.add(QedCourse(
+        course_id="guard_c", domain_id="math", sort_order=11, name="守卫课程",
+        aliases=[], stage="", prerequisites=[], related_targets=[],
+        exploration_stage="未开始", created_at=now, updated_at=now,
+    ))
+    session.commit()
+    session.close()
+
+    for bad in ("已生成", "未知态"):
+        with pytest.raises(ValueError):
+            repo.update_course("guard_c", exploration_stage=bad)
+    # 合法 5 态（含失败）通过
+    repo.update_course("guard_c", exploration_stage="失败")
+    assert repo.get_course("guard_c").exploration_stage == "失败"
 
 
 # ===== explore_pending 在 domain_view 中透出 =====

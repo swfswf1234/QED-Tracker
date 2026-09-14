@@ -48,8 +48,8 @@ qed-tracker inventory verify
 
 # 主链路：课程梳理与教材条目（课程学习主流程，与 evaluate 平行；需要 qed 库连接）
 qed-tracker courses list
-qed-tracker courses show 01_math_analysis
-qed-tracker mainline new --course 01_math_analysis --title "数学分析原理" --author Rudin
+qed-tracker courses show math_analysis
+qed-tracker mainline new --course math_analysis --title "数学分析原理" --author Rudin
 qed-tracker mainline review <knowledge_id>
 # 教程级取书：经 8901 五阶段链（检索→确认→下载→机器验收→登记 owned）
 qed-tracker mainline download <knowledge_id>
@@ -60,9 +60,9 @@ qed-tracker mainline channels
 
 # 手动知识导入（标准答案 → 系统；需要 8901 服务在线）
 qed-tracker domains import docs/knowledge/math-advanced.json
-qed-tracker knowledge import docs/knowledge/math-advanced/01_math_analysis.json
+qed-tracker knowledge import docs/knowledge/math-advanced/math_analysis.json
 # 手动下载导入（外部 PDF → 校验 → 拷入数据根 raw/ → mark_owned 登记 owned）
-qed-tracker books import <book_id> "C:/downloads/textbook.pdf" --target "raw/math-advanced/01_math_analysis/斯图尔特微积分.pdf"
+qed-tracker books import <book_id> "C:/downloads/textbook.pdf" --target "raw/math-advanced/math_analysis/斯图尔特微积分.pdf"
 
 # 默认只上传；显式 --parse 才创建 Axiom 解析任务
 qed-tracker axiom push sha256:<digest>

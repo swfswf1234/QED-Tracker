@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import time
@@ -12,6 +13,10 @@ from pathlib import Path
 
 import httpx
 from pypdf import PdfReader
+
+from qed_tracker.matching import _similarity
+
+logger = logging.getLogger("qed_tracker.downloader")
 
 
 class DownloadError(RuntimeError):
@@ -94,6 +99,60 @@ def accept_pdf(path: Path, *, min_pages: int = 10, min_size: int = 204800) -> Ac
         size_bytes=size,
         text_chars=text_chars,
         reasons=tuple(reasons),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ContentVerificationResult:
+    """下载后内容校验结果（REQ-019, QED-066）：PDF 首页文本 vs 登记标题。
+
+    passed=True 表示标题匹配（或无法评估时默认放行）；passed=False 时 score < 阈值，
+    调用方可将 message 写入 qt_sources.note 作为软信号留痕。
+    """
+
+    passed: bool
+    score: float  # 相似度（0.0~1.0），无法评估时为 1.0
+    message: str  # 人类可读说明
+
+
+def verify_content(
+    path: Path,
+    expected_titles: list[str],
+    *,
+    threshold: float = 0.5,
+    max_chars: int = 500,
+) -> ContentVerificationResult:
+    """下载后内容校验：提取 PDF 首页文本，与登记标题做相似度比对（REQ-019, QED-066）。
+
+    软信号——只记录不拒绝：扫描版/无文本层/提取失败时默认放行（passed=True）；
+    相似度 < threshold 时 passed=False，调用方可将 message 写入 qt_sources.note。
+    """
+    if not expected_titles:
+        return ContentVerificationResult(passed=True, score=1.0, message="无基准标题，跳过内容校验")
+
+    # 提取首页文本
+    try:
+        reader = PdfReader(str(path), strict=False)
+        if not reader.pages:
+            return ContentVerificationResult(passed=True, score=1.0, message="PDF 无页面，跳过内容校验")
+        first_page_text = reader.pages[0].extract_text() or ""
+    except Exception as exc:
+        logger.debug("内容校验：PDF 首页文本提取失败：%s", exc)
+        return ContentVerificationResult(passed=True, score=1.0, message=f"首页文本提取失败，跳过：{exc}")
+
+    # 清理文本：取前 max_chars 字符，去掉多余空白
+    snippet = re.sub(r"\s+", " ", first_page_text[:max_chars]).strip()
+    if not snippet:
+        return ContentVerificationResult(passed=True, score=1.0, message="首页无文本层（扫描版），跳过内容校验")
+
+    # 与每个期望标题比对，取最高分
+    best_score = max((_similarity(snippet, title) for title in expected_titles if title), default=1.0)
+    if best_score >= threshold:
+        return ContentVerificationResult(passed=True, score=best_score,
+                                         message=f"标题匹配（score={best_score:.2f}）")
+    return ContentVerificationResult(
+        passed=False, score=best_score,
+        message=f"标题不匹配（score={best_score:.2f} < {threshold}），首页片段：{snippet[:80]}...",
     )
 
 

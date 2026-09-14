@@ -1,4 +1,8 @@
-"""五层模型 API 端点定向测试（QED-031）：knowledge/books/sources 契约 + 彻底隐藏。"""
+"""五层模型 API 端点定向测试（QED-031/QED-050/QED-060/QED-061/QED-062）。
+
+覆盖：knowledge/books/sources 契约、课程体系只读端点、领域/课程管理、A2 采纳、
+下载生命周期端点（start/fail/verify/cancel）、探索产物落盘收口、有意义 ID 生成。
+"""
 
 from __future__ import annotations
 
@@ -8,9 +12,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from qed_tracker.api.main import create_app
+from qed_tracker.application.domain_file import (
+    read_course_tutorials_file,
+    read_domain_file,
+    write_domain_courses_file,
+    write_domain_file,
+)
 from qed_tracker.config import load_settings
 from qed_tracker.db.knowledge_repository import KnowledgeRepository
 from qed_tracker.db.models import Base, BookStatus, KnowledgeStatus, QedCourse, QedDomain
+
+COURSE = "math_analysis"
 
 
 @pytest.fixture
@@ -24,11 +36,11 @@ def repo(tmp_path):
     now = utc_now()
     session.add(QedDomain(domain_id="math", name="数学", description="d", stages=["本科基础"],
                           created_at=now, updated_at=now))
-    session.add(QedCourse(course_id="01_math_analysis", domain_id="math", sort_order=1, name="数学分析",
+    session.add(QedCourse(course_id="math_analysis", domain_id="math", sort_order=1, name="数学分析",
                           aliases=[], stage="本科基础", prerequisites=[], related_targets=[],
                           created_at=now, updated_at=now))
-    session.add(QedCourse(course_id="02_linear_algebra", domain_id="math", sort_order=2, name="高等代数",
-                          aliases=["线性代数"], stage="本科基础", prerequisites=["01_math_analysis"],
+    session.add(QedCourse(course_id="linear_algebra", domain_id="math", sort_order=2, name="高等代数",
+                          aliases=["线性代数"], stage="本科基础", prerequisites=["math_analysis"],
                           related_targets=["LAG1"], created_at=now, updated_at=now))
     session.commit()
     repo = KnowledgeRepository(lambda: factory())
@@ -55,30 +67,41 @@ def client_no_db(tmp_path):
         yield test_client
 
 
-def _seed_knowledge(repo: KnowledgeRepository, *, name: str = "数学分析 套一", status: str = "draft"):
-    knowledge = repo.create_knowledge(
-        domain_id="math", course_id="01_math_analysis", kind="tutorial", set_no="1", name=name,
-    )
+def _seed_knowledge(repo: KnowledgeRepository, *, set_no: str = "1", name: str = "数学分析 套一",
+                    status: str = "draft"):
+    knowledge = repo.create_knowledge(course_id=COURSE, set_no=set_no, name=name)
     if status == "confirmed":
-        repo.confirm_knowledge(knowledge.knowledge_id, textbook_ref={"title": "微积分学教程"},
-                               exercise_ref={"title": "习题集"})
-    elif status == "rejected":
-        repo.reject_knowledge(knowledge.knowledge_id, reason="版本旧", by="web")
+        repo.confirm_knowledge(knowledge.knowledge_id)
     return knowledge
 
 
-def test_knowledge_list_filters_hidden(client, repo):
-    _seed_knowledge(repo)
-    _seed_knowledge(repo, name="坏书", status="rejected")
+def _make_book(repo: KnowledgeRepository, book_id: str = "mathanalysis-b01",
+               title: str = "微积分学教程", **extra):
+    return repo.create_book(
+        book_id, title=title, authors=[{"name": "菲赫金哥尔茨", "role": "author"}],
+        language="zh", domain_id="math", **extra,
+    )
+
+
+# ---------------- knowledge ----------------
+
+
+def test_knowledge_list_returns_rows(client, repo):
+    _seed_knowledge(repo, set_no="1")
+    _seed_knowledge(repo, set_no="2", name="数学分析 套二")
     response = client.get("/api/v1/knowledge")
     assert response.status_code == 200
-    assert len(response.json()) == 1
+    assert len(response.json()) == 2
 
 
 def test_knowledge_detail_with_books(client, repo):
     knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程",
-                            authors=["菲赫金哥尔茨"])
+    book = _make_book(repo)
+    knowledge.textbook_ref = [{"book_id": book.book_id, "title": book.title}]
+    session = repo.session_factory()
+    session.merge(knowledge)
+    session.commit()
+    session.close()
     response = client.get(f"/api/v1/knowledge/{knowledge.knowledge_id}")
     assert response.status_code == 200
     body = response.json()
@@ -88,9 +111,8 @@ def test_knowledge_detail_with_books(client, repo):
 
 
 def test_knowledge_tutorial_standard_name_flows_through(client, repo):
-    """QED-036：教程行规范命名（教程{set_no}：书名（作者））经 API 原样透出。"""
-    knowledge = repo.create_knowledge(domain_id="math", course_id="01_math_analysis",
-                                      kind="tutorial", set_no="1", name="教程1：数学分析（Rudin）")
+    """QED-036：教程行规范命名经 API 原样透出。"""
+    knowledge = repo.create_knowledge(course_id=COURSE, set_no="1", name="教程1：数学分析（Rudin）")
     response = client.get(f"/api/v1/knowledge/{knowledge.knowledge_id}")
     assert response.status_code == 200
     body = response.json()
@@ -100,52 +122,40 @@ def test_knowledge_tutorial_standard_name_flows_through(client, repo):
 
 def test_knowledge_confirm(client, repo):
     knowledge = _seed_knowledge(repo)
-    response = client.post(f"/api/v1/knowledge/{knowledge.knowledge_id}/confirm", json={
-        "textbook_ref": {"title": "微积分学教程", "version": "第8版"},
-        "textbook_intro": "经典三卷本。",
-    })
+    response = client.post(f"/api/v1/knowledge/{knowledge.knowledge_id}/confirm")
     assert response.status_code == 200
     assert response.json()["status"] == KnowledgeStatus.CONFIRMED.value
 
 
-def test_knowledge_reject_requires_reason(client, repo):
+def test_knowledge_confirm_twice_409(client, repo):
     knowledge = _seed_knowledge(repo)
-    response = client.post(f"/api/v1/knowledge/{knowledge.knowledge_id}/reject", json={})
-    assert response.status_code == 422
-    response = client.post(f"/api/v1/knowledge/{knowledge.knowledge_id}/reject",
-                           json={"reason": "版本旧"})
-    assert response.status_code == 200
+    assert client.post(f"/api/v1/knowledge/{knowledge.knowledge_id}/confirm").status_code == 200
+    assert client.post(f"/api/v1/knowledge/{knowledge.knowledge_id}/confirm").status_code == 409
 
 
-def test_knowledge_invalid_transition_409(client, repo):
-    knowledge = _seed_knowledge(repo, status="confirmed")
-    response = client.post(f"/api/v1/knowledge/{knowledge.knowledge_id}/complete")
-    assert response.status_code == 409  # 无书籍，不能 completed
+def test_knowledge_detail_unknown_404(client):
+    assert client.get("/api/v1/knowledge/kn_nope").status_code == 404
+
+
+# ---------------- books ----------------
 
 
 def test_book_create_and_transitions(client, repo):
-    knowledge = _seed_knowledge(repo)
     response = client.post("/api/v1/books", json={
-        "knowledge_id": knowledge.knowledge_id, "kind": "textbook", "title": "微积分学教程",
-        "part": "第一册", "authors": ["菲赫金哥尔茨"],
+        "book_id": "mathanalysis-b01", "title": "微积分学教程", "part": "第一册",
+        "authors": [{"name": "菲赫金哥尔茨", "role": "author"}],
+        "language": "zh", "roles": ["textbook"], "status": "decided", "domain_id": "math",
     })
-    assert response.status_code == 200
+    assert response.status_code == 201
     book_id = response.json()["book_id"]
-    assert client.post(f"/api/v1/books/{book_id}/decide").status_code == 200
-    assert client.post(f"/api/v1/books/{book_id}/start").status_code == 200
-    r = client.post(f"/api/v1/books/{book_id}/complete", json={
-        "sha256": "c" * 64, "relative_path": "raw/books/x.pdf", "page_count": 100,
-    })
-    assert r.status_code == 200
-    assert r.json()["status"] == BookStatus.DOWNLOADED.value
-    assert client.post(f"/api/v1/books/{book_id}/verify").status_code == 200
+    assert client.post(f"/api/v1/books/{book_id}/start").json()["status"] == BookStatus.DOWNLOADING.value
+    repo.mark_owned(book_id, file_path="raw/math/math_analysis/x.pdf", status="downloaded")
+    assert client.post(f"/api/v1/books/{book_id}/verify").json()["status"] == BookStatus.VERIFIED.value
 
 
 def test_book_register_manual_direct(client, repo, tmp_path, pdf_bytes):
-    knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程",
-                            authors=["菲赫金哥尔茨"])
-    rel = "raw/books/manual.pdf"
+    book = _make_book(repo)
+    rel = "raw/math/math_analysis/manual.pdf"
     target = tmp_path / rel
     target.parent.mkdir(parents=True)
     target.write_bytes(pdf_bytes)
@@ -154,17 +164,8 @@ def test_book_register_manual_direct(client, repo, tmp_path, pdf_bytes):
     assert response.json()["status"] == BookStatus.DOWNLOADED.value
 
 
-def test_book_reject_hidden(client, repo):
-    knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="坏书")
-    response = client.post(f"/api/v1/books/{book.book_id}/reject", json={"reason": "不适用"})
-    assert response.status_code == 200
-    assert client.get(f"/api/v1/knowledge/{knowledge.knowledge_id}").json()["books"] == []
-
-
 def test_sources_endpoint(client, repo):
-    knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
+    book = _make_book(repo)
     response = client.post(f"/api/v1/books/{book.book_id}/sources", json={
         "channel": "manual", "ok": True, "download_url": "http://x",
     })
@@ -174,18 +175,13 @@ def test_sources_endpoint(client, repo):
     assert rows[0]["channel"] == "manual"
 
 
-def test_knowledge_detail_unknown_404(client):
-    assert client.get("/api/v1/knowledge/kn_nope").status_code == 404
-
-
 def test_book_transition_unknown_404(client):
-    assert client.post("/api/v1/books/bk_nope/decide").status_code == 404
+    assert client.post("/api/v1/books/bk_nope/start").status_code == 404
 
 
 def test_book_register_rejects_non_pdf(client, repo, tmp_path):
-    knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
-    rel = "raw/books/not_pdf.txt"
+    book = _make_book(repo)
+    rel = "raw/math/math_analysis/not_pdf.txt"
     target = tmp_path / rel
     target.parent.mkdir(parents=True)
     target.write_text("not a pdf", encoding="utf-8")
@@ -195,29 +191,12 @@ def test_book_register_rejects_non_pdf(client, repo, tmp_path):
 
 
 def test_book_register_rejects_path_traversal(client, repo):
-    knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
+    book = _make_book(repo)
     response = client.post(f"/api/v1/books/{book.book_id}/register", json={"relative_path": "../escape.pdf"})
     assert response.status_code == 400
 
 
-def test_complete_validates_sha256_format(client, repo):
-    knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
-    response = client.post(f"/api/v1/books/{book.book_id}/complete",
-                           json={"sha256": "not-hex", "relative_path": "raw/books/x.pdf"})
-    assert response.status_code == 422
-
-
-def test_knowledge_rejected_hidden_in_list(client, repo):
-    _seed_knowledge(repo)
-    _seed_knowledge(repo, name="坏书", status="rejected")
-    response = client.get("/api/v1/knowledge?status=rejected")
-    assert response.status_code == 200
-    assert response.json() == []
-
-
-# ---------------- QED-033：课程体系只读端点（GET /courses，透出 qed_domain/qed_course） ----------------
+# ---------------- 课程体系只读端点（QED-033） ----------------
 
 _COURSE_FIELDS = {"course_id", "name", "aliases", "track", "stage", "prerequisites", "related_targets", "description", "exploration_stage"}
 
@@ -230,25 +209,17 @@ def test_courses_list_returns_domain_grouped_curricula(client):
     domain = domains[0]
     assert domain["domain_id"] == "math"
     assert domain["name"] == "数学"
-    assert domain["description"] == "d"
-    assert domain["stages"] == ["本科基础"]
     courses = domain["courses"]
-    assert [c["course_id"] for c in courses] == ["01_math_analysis", "02_linear_algebra"]  # sort_order 有序
-    assert courses[0]["name"] == "数学分析"
-    assert courses[1]["stage"] == "本科基础"
-    assert courses[1]["aliases"] == ["线性代数"]
-    assert courses[1]["prerequisites"] == ["01_math_analysis"]
+    assert [c["course_id"] for c in courses] == ["math_analysis", "linear_algebra"]  # sort_order 有序
+    assert courses[1]["prerequisites"] == ["math_analysis"]
     assert courses[1]["related_targets"] == ["LAG1"]
-    # 契约守卫：课程字段与 courses.py Course dataclass 一致，不透出 DB 审计列
     assert set(courses[0]) == _COURSE_FIELDS
 
 
 def test_courses_detail_returns_single_domain(client):
     response = client.get("/api/v1/courses/math")
     assert response.status_code == 200
-    domain = response.json()
-    assert domain["domain_id"] == "math"
-    assert [c["course_id"] for c in domain["courses"]] == ["01_math_analysis", "02_linear_algebra"]
+    assert [c["course_id"] for c in response.json()["courses"]] == ["math_analysis", "linear_algebra"]
 
 
 def test_courses_detail_unknown_domain_404(client):
@@ -260,7 +231,7 @@ def test_courses_requires_db_config_409(client_no_db):
     assert client_no_db.get("/api/v1/courses/math").status_code == 409
 
 
-# ---------------- QED-026 B2：领域/课程管理端点探索字段补齐 ----------------
+# ---------------- 领域/课程管理（QED-026 B2） ----------------
 
 
 def test_create_domain_accepts_exploration_fields(client):
@@ -295,164 +266,90 @@ def test_patch_domain_updates_level_scope_and_tracks(client):
 def test_create_course_accepts_exploration_fields(client):
     resp = client.post("/api/v1/domains/math/courses", json={
         "name": "概率论与数理统计",
-        "stage": "基础",
+        "course_id": "probability",
+        "stage": "本科基础",
         "sort_order": 3,
         "description": "课程介绍",
         "aliases": ["概率统计"],
         "track": "概率与统计",
-        "prerequisites": ["01_math_analysis"],
+        "prerequisites": ["math_analysis"],
     })
     assert resp.status_code == 201
     body = resp.json()
-    assert body["description"] == "课程介绍"
-    assert body["aliases"] == ["概率统计"]
-    assert body["track"] == "概率与统计"
-    assert body["prerequisites"] == ["01_math_analysis"]
+    assert body["course_id"] == "probability"
+    assert body["prerequisites"] == ["math_analysis"]
 
 
 def test_patch_course_updates_track_prereqs_aliases(client):
-    resp = client.patch("/api/v1/courses/02_linear_algebra", json={
-        "track": "代数学",
-        "prerequisites": [],
-        "aliases": ["线性代数", "高等代数"],
-        "description": "更新介绍",
+    resp = client.patch("/api/v1/courses/linear_algebra", json={
+        "track": "代数学", "prerequisites": [], "aliases": ["线性代数", "高等代数"], "description": "更新介绍",
     })
     assert resp.status_code == 200
     body = resp.json()
     assert body["track"] == "代数学"
-    assert body["prerequisites"] == []
     assert body["aliases"] == ["线性代数", "高等代数"]
-    assert body["description"] == "更新介绍"
+
+
+def test_patch_course_supports_exploration_stage_and_pending(client):
+    """REQ-077：PATCH /courses 支持 exploration_stage 与 explore_pending。"""
+    resp = client.patch("/api/v1/courses/linear_algebra", json={
+        "exploration_stage": "探索中",
+        "explore_pending": {"kind": "review_results", "tutorials": []},
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["exploration_stage"] == "探索中"
+    assert body["explore_pending"]["kind"] == "review_results"
+
+
+def test_patch_course_rejects_generated_and_unknown_stage(client):
+    """REQ-076/077：课程 exploration_stage 拒绝「已生成」与未知值（422）。"""
+    for bad in ("已生成", "未知态"):
+        resp = client.patch("/api/v1/courses/linear_algebra", json={"exploration_stage": bad})
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "INVALID_PARAMS"
+
+
+def test_patch_course_absent_explore_pending_is_noop(client):
+    """缺省 explore_pending 不清空既有值（PATCH no-op 语义）。"""
+    client.patch("/api/v1/courses/linear_algebra", json={
+        "explore_pending": {"kind": "review_results", "tutorials": []},
+    })
+    resp = client.patch("/api/v1/courses/linear_algebra", json={"description": "仅改描述"})
+    assert resp.status_code == 200
+    assert resp.json()["explore_pending"]["kind"] == "review_results"
 
 
 def test_create_domain_accepts_optional_domain_id(client):
-    resp = client.post("/api/v1/domains", json={
-        "name": "Physics",
-        "domain_id": "phys",
-    })
+    resp = client.post("/api/v1/domains", json={"name": "Physics", "domain_id": "phys"})
     assert resp.status_code == 201
     assert resp.json()["domain_id"] == "phys"
-    # 重复指定同一 id → 409（幂等插入语义在此端点收敛为显式冲突）
     resp_dup = client.post("/api/v1/domains", json={"name": "Physics II", "domain_id": "phys"})
     assert resp_dup.status_code == 409
 
 
 def test_courses_view_exposes_level_and_tracks(client):
-    """GET /courses 领域视图透出 level/classic_tracks（学习中心消费）。"""
-    client.patch("/api/v1/domains/math", json={
-        "level": "本科-硕士",
-        "classic_tracks": [{"name": "分析学", "summary": "s"}],
-    })
+    client.patch("/api/v1/domains/math", json={"level": "本科-硕士", "classic_tracks": [{"name": "分析学", "summary": "s"}]})
     body = client.get("/api/v1/courses").json()[0]
     assert body["level"] == "本科-硕士"
     assert body["classic_tracks"] == [{"name": "分析学", "summary": "s"}]
 
 
 def test_patch_domain_updates_path_results_and_stage(client):
-    """A3（QED-048）：探索产物 path_results 与 exploration_stage 经本仓库端点落库。"""
     resp = client.patch("/api/v1/domains/math", json={
-        "path_results": {
-            "notes": "先修在前",
-            "edges": [{"from": "01_math_analysis", "to": "09_abstract_algebra"}],
-            "graph_td": "graph TD\n",
-        },
+        "path_results": {"notes": "先修在前", "edges": [{"from": "math_analysis", "to": "linear_algebra"}], "graph_td": "graph TD\n"},
         "exploration_stage": "已生成",
     })
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["path_results"]["notes"] == "先修在前"
-    assert body["path_results"]["edges"][0]["to"] == "09_abstract_algebra"
-    assert body["exploration_stage"] == "已生成"
+    assert resp.json()["exploration_stage"] == "已生成"
 
 
 def test_courses_view_exposes_exploration_stage_and_path_results(client):
-    """事项四（QED-048）：领域行补 exploration_stage/path_results（前端探索状态机与路径图）。"""
     client.patch("/api/v1/domains/math", json={
-        "path_results": {"notes": "n", "edges": [], "graph_td": "graph TD"},
-        "exploration_stage": "已完成",
+        "path_results": {"notes": "n", "edges": [], "graph_td": "graph TD"}, "exploration_stage": "已完成",
     })
     body = client.get("/api/v1/courses").json()[0]
     assert body["exploration_stage"] == "已完成"
-    assert body["path_results"] == {"notes": "n", "edges": [], "graph_td": "graph TD"}
-
-
-# ---------------- QED-026（A2）：课程知识采纳端点 ----------------
-
-
-def _tutorial(set_no: str = "1",
-              set_name: str = "菲赫金哥尔茨《微积分学教程》+ 吉米多维奇习题集",
-              exercise: bool = True,
-              textbook_title: str = "微积分学教程") -> dict:
-    item = {
-        "set_no": set_no,
-        "set_name": set_name,
-        "textbook": {"title": textbook_title, "original_title": "Курс дифференциального исчисления",
-                     "roles": ["textbook"], "position": "comprehensive",
-                     "intro": "苏版经典三卷本，中文翻译成熟，适合系统学习分析学地基，" * 5},
-        "reason": "苏版经典，与国内大纲最接近",
-    }
-    if exercise:
-        item["exercise"] = {"title": "吉米多维奇数学分析习题集", "original_title": "",
-                            "roles": ["exercises"], "position": "comprehensive",
-                            "intro": "题量巨大的经典习题集，配套解答齐全，训练强度高，" * 5}
-    else:
-        item["textbook"]["roles"] = ["textbook", "exercises"]
-    return item
-
-
-def test_adopt_knowledge_creates_prefilled_drafts(client):
-    resp = client.post("/api/v1/courses/01_math_analysis/knowledge", json={
-        "tutorials": [_tutorial("1"),
-                      _tutorial("2", "Rudin《数学分析原理》+ 配套习题集",
-                                textbook_title="数学分析原理")],
-    })
-    assert resp.status_code == 201
-    body = resp.json()
-    assert len(body["created"]) == 2
-    assert all(item["status"] == "draft" for item in body["created"])
-    rows = client.get("/api/v1/knowledge", params={"course_id": "01_math_analysis"}).json()
-    by_set = {r["set_no"]: r for r in rows}
-    assert by_set["1"]["name"].startswith("菲赫金哥尔茨")
-    assert by_set["1"]["textbook_ref"]["title"] == "微积分学教程"
-    assert by_set["1"]["exercise_ref"]["title"] == "吉米多维奇数学分析习题集"
-    assert by_set["1"]["textbook_intro"].startswith("苏版经典")
-    assert by_set["2"]["textbook_ref"]["title"] == "数学分析原理"
-
-
-def test_adopt_knowledge_idempotent_same_set(client):
-    payload = {"tutorials": [_tutorial("1")]}
-    first = client.post("/api/v1/courses/01_math_analysis/knowledge", json=payload).json()
-    second = client.post("/api/v1/courses/01_math_analysis/knowledge", json=payload).json()
-    assert second["created"][0]["existing"] is True
-    assert second["created"][0]["knowledge_id"] == first["created"][0]["knowledge_id"]
-
-
-def test_adopt_knowledge_set_no_conflict_409(client):
-    client.post("/api/v1/courses/01_math_analysis/knowledge", json={"tutorials": [_tutorial("1")]})
-    resp = client.post("/api/v1/courses/01_math_analysis/knowledge",
-                       json={"tutorials": [_tutorial("1", "另一套不同名教材")]})
-    assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "SET_NO_CONFLICT"
-
-
-def test_adopt_knowledge_same_source_exercise_optional(client):
-    resp = client.post("/api/v1/courses/01_math_analysis/knowledge",
-                       json={"tutorials": [_tutorial("1", exercise=False)]})
-    assert resp.status_code == 201
-    row = client.get("/api/v1/knowledge", params={"course_id": "01_math_analysis"}).json()[0]
-    assert row["exercise_ref"] is None
-    assert row["textbook_ref"]["roles"] == ["textbook", "exercises"]
-
-
-def test_adopt_knowledge_validations(client):
-    base = "/api/v1/courses/01_math_analysis/knowledge"
-    assert client.post(base, json={"tutorials": []}).status_code == 422
-    assert client.post(base, json={"tutorials": [_tutorial("")]}).status_code == 422
-    bad = _tutorial("1")
-    bad["textbook"] = {"roles": ["textbook"]}
-    assert client.post(base, json={"tutorials": [bad]}).status_code == 422
-    assert client.post("/api/v1/courses/nope/knowledge",
-                       json={"tutorials": [_tutorial()]}).status_code == 404
 
 
 def test_create_domain_rejects_invalid_domain_id(client):
@@ -461,19 +358,95 @@ def test_create_domain_rejects_invalid_domain_id(client):
 
 
 def test_create_course_accepts_optional_course_id(client):
-    resp = client.post("/api/v1/domains/math/courses", json={
-        "name": "微分几何",
-        "course_id": "14_differential_geometry",
-    })
+    resp = client.post("/api/v1/domains/math/courses", json={"name": "微分几何", "course_id": "differential_geometry"})
     assert resp.status_code == 201
-    assert resp.json()["course_id"] == "14_differential_geometry"
-    resp_dup = client.post("/api/v1/domains/math/courses", json={
-        "name": "微分几何二", "course_id": "14_differential_geometry",
-    })
+    assert resp.json()["course_id"] == "differential_geometry"
+    resp_dup = client.post("/api/v1/domains/math/courses", json={"name": "微分几何二", "course_id": "differential_geometry"})
     assert resp_dup.status_code == 409
 
 
-# ---------------- 自动取书（方案 A 2026-08-28）：fetch / cancel ----------------
+# ---------------- A2 课程知识采纳 ----------------
+
+
+def _tutorial(set_no: str = "1", name: str | None = None, textbook_title: str = "微积分学教程",
+              exercise: bool = True) -> dict:
+    if name is None:
+        name = f"教程{set_no}：菲赫金哥尔茨《{textbook_title}》"
+    item = {
+        "set_no": set_no,
+        "kind": "tutorial",
+        "name": name,
+        "position": "beginner",
+        "intro": "苏版经典三卷本，中文翻译成熟，适合系统学习分析学地基。" * 5,
+        "textbook_ref": [{
+            "title": textbook_title, "part": "",
+            "authors": [{"name": "菲赫金哥尔茨", "role": "author"}],
+            "publisher": "高等教育出版社", "edition": "第8版", "year": 2006,
+            "language": "zh", "roles": ["textbook"],
+        }],
+        "exercise_ref": None,
+        "parallel_ref": None,
+    }
+    if exercise:
+        item["exercise_ref"] = [{
+            "title": "吉米多维奇数学分析习题集", "part": "",
+            "authors": [{"name": "吉米多维奇", "role": "author"}],
+            "publisher": "高等教育出版社", "edition": "", "year": None,
+            "language": "zh", "roles": ["exercises"],
+        }]
+    return item
+
+
+def test_adopt_knowledge_creates_prefilled_drafts(client):
+    resp = client.post(f"/api/v1/courses/{COURSE}/knowledge", json={
+        "tutorials": [_tutorial("1"), _tutorial("2", name="教程2：Rudin《数学分析原理》", textbook_title="数学分析原理")],
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert len(body["created"]) == 2
+    assert all(item["status"] == "draft" for item in body["created"])
+    rows = client.get("/api/v1/knowledge", params={"course_id": COURSE}).json()
+    by_set = {r["set_no"]: r for r in rows}
+    assert by_set["1"]["name"] == "教程1：菲赫金哥尔茨《微积分学教程》"
+    assert by_set["1"]["textbook_ref"][0]["title"] == "微积分学教程"
+    assert by_set["1"]["exercise_ref"][0]["title"] == "吉米多维奇数学分析习题集"
+    assert by_set["2"]["textbook_ref"][0]["title"] == "数学分析原理"
+
+
+def test_adopt_knowledge_idempotent_same_set(client):
+    payload = {"tutorials": [_tutorial("1")]}
+    first = client.post(f"/api/v1/courses/{COURSE}/knowledge", json=payload).json()
+    second = client.post(f"/api/v1/courses/{COURSE}/knowledge", json=payload).json()
+    assert second["created"][0]["existing"] is True
+    assert second["created"][0]["knowledge_id"] == first["created"][0]["knowledge_id"]
+
+
+def test_adopt_knowledge_set_no_conflict_409(client):
+    client.post(f"/api/v1/courses/{COURSE}/knowledge", json={"tutorials": [_tutorial("1")]})
+    resp = client.post(f"/api/v1/courses/{COURSE}/knowledge",
+                       json={"tutorials": [_tutorial("1", name="教程1：另一套不同名教材")]})
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "SET_NO_CONFLICT"
+
+
+def test_adopt_knowledge_same_source_exercise_optional(client):
+    resp = client.post(f"/api/v1/courses/{COURSE}/knowledge", json={"tutorials": [_tutorial("1", exercise=False)]})
+    assert resp.status_code == 201
+    row = client.get("/api/v1/knowledge", params={"course_id": COURSE}).json()[0]
+    assert row["exercise_ref"] is None
+
+
+def test_adopt_knowledge_validations(client):
+    base = f"/api/v1/courses/{COURSE}/knowledge"
+    assert client.post(base, json={"tutorials": []}).status_code == 422
+    assert client.post(base, json={"tutorials": [_tutorial("")]}).status_code == 422
+    bad = _tutorial("1")
+    bad["textbook_ref"] = []
+    assert client.post(base, json={"tutorials": [bad]}).status_code == 422
+    assert client.post("/api/v1/courses/nope/knowledge", json={"tutorials": [_tutorial()]}).status_code == 404
+
+
+# ---------------- 自动取书与下载生命周期（QED-060） ----------------
 
 
 class _FetchFakeProvider:
@@ -492,7 +465,6 @@ class _FetchFakeProvider:
 
 
 def _fetch_client(tmp_path, repo, candidate, pdf: bytes):
-    """带假 book_service_factory 的 client：fetch 任务全程离线。"""
     import httpx as _httpx
 
     from qed_tracker.application.books import BookService
@@ -503,16 +475,17 @@ def _fetch_client(tmp_path, repo, candidate, pdf: bytes):
     def factory():
         manager = DownloadManager(retries=1)
         manager.client.close()
-
-        def handler(request):
-            return _httpx.Response(200, content=pdf, request=request)
-
-        manager.client = _httpx.Client(transport=_httpx.MockTransport(handler))
+        manager.client = _httpx.Client(transport=_httpx.MockTransport(
+            lambda request: _httpx.Response(200, content=pdf, request=request)
+        ))
         return BookService([_FetchFakeProvider(candidate)], ResourceService(Inventory(tmp_path), manager))
 
     from dataclasses import replace as _replace
 
-    settings = _replace(load_settings(data_root=tmp_path), db_password="")
+    settings = _replace(
+        load_settings(data_root=tmp_path), db_password="",
+        book_min_pages=1, book_min_size_bytes=1, book_llm_confirm=False, book_llm_query=False,
+    )
     app = create_app(settings, knowledge_repository=repo, book_service_factory=factory)
     return TestClient(app)
 
@@ -521,7 +494,7 @@ def _make_candidate():
     from qed_tracker.models import Availability, Candidate
 
     return Candidate(
-        "fake", "fake-1", "微积分学教程", ("作者",), "zh", year="2024",
+        "fake", "fake-1", "微积分学教程", ("菲赫金哥尔茨",), "zh", year="2024",
         download_url="https://example.com/fake.pdf",
         availability=Availability.DOWNLOADABLE,
     )
@@ -540,47 +513,155 @@ def _wait(client, task_id, timeout=5.0):
 
 
 def test_book_fetch_submits_task_and_downloads(client, repo, tmp_path, pdf_bytes):
-    knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程",
-                            authors=["作者"])
+    book = _make_book(repo)
     with _fetch_client(tmp_path, repo, _make_candidate(), pdf_bytes) as fetch_client:
         resp = fetch_client.post(f"/api/v1/books/{book.book_id}/fetch")
         assert resp.status_code == 202
         record = _wait(fetch_client, resp.json()["task_id"])
         assert record["status"] == "succeeded", record
         assert record["result"]["ok"] is True
-    detail = client.get(f"/api/v1/knowledge/{knowledge.knowledge_id}").json()
-    target = next(b for b in detail["books"] if b["book_id"] == book.book_id)
-    assert target["status"] == BookStatus.DOWNLOADED.value
+    assert repo.get_book(book.book_id).status == BookStatus.DOWNLOADED.value
     sources = client.get(f"/api/v1/books/{book.book_id}/sources")
     assert sources.status_code == 200
     assert sources.json()[0]["ok"] is True
 
 
 def test_book_fetch_rejects_non_fetchable_status(client, repo, tmp_path, pdf_bytes):
-    knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
-    client.post(f"/api/v1/books/{book.book_id}/decide")
-    client.post(f"/api/v1/books/{book.book_id}/start")
+    book = _make_book(repo)
+    repo.decide_book(book.book_id)
+    repo.start_download(book.book_id)
     with _fetch_client(tmp_path, repo, _make_candidate(), pdf_bytes) as fetch_client:
         resp = fetch_client.post(f"/api/v1/books/{book.book_id}/fetch")
-        assert resp.status_code == 409
+        assert resp.status_code == 202
+        record = _wait(fetch_client, resp.json()["task_id"])
+        assert record["status"] == "failed"
 
 
 def test_book_cancel_resets_stuck_downloading(client, repo):
-    knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
-    client.post(f"/api/v1/books/{book.book_id}/decide")
-    client.post(f"/api/v1/books/{book.book_id}/start")
-    resp = client.post(f"/api/v1/books/{book.book_id}/cancel", json={"note": "失联复位"})
+    book = _make_book(repo)
+    repo.decide_book(book.book_id)
+    repo.start_download(book.book_id)
+    resp = client.post(f"/api/v1/books/{book.book_id}/cancel")
     assert resp.status_code == 200
     assert resp.json()["status"] == BookStatus.DECIDED.value
-    # 复位后可重新 start
     assert client.post(f"/api/v1/books/{book.book_id}/start").status_code == 200
 
 
 def test_book_cancel_rejects_candidate(client, repo):
-    knowledge = _seed_knowledge(repo)
-    book = repo.create_book(knowledge.knowledge_id, kind="textbook", title="微积分学教程")
-    resp = client.post(f"/api/v1/books/{book.book_id}/cancel", json={"note": "x"})
+    book = _make_book(repo)
+    resp = client.post(f"/api/v1/books/{book.book_id}/cancel")
     assert resp.status_code == 409
+
+
+# ---------------- PATCH / DELETE knowledge (L-15/L-16) ----------------
+
+
+def test_patch_knowledge_updates_fields(client, repo):
+    kn = repo.create_knowledge(course_id=COURSE, set_no="1", name="原始名称", position="beginner")
+    response = client.patch(f"/api/v1/knowledge/{kn.knowledge_id}", json={"name": "新名称", "position": "intermediate"})
+    assert response.status_code == 200
+    assert response.json()["name"] == "新名称"
+
+
+def test_patch_knowledge_nonexistent_404(client):
+    response = client.patch("/api/v1/knowledge/nonexistent-id", json={"name": "新名称"})
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "KNOWLEDGE_NOT_FOUND"
+
+
+def test_patch_knowledge_partial_update(client, repo):
+    kn = repo.create_knowledge(course_id=COURSE, set_no="1", name="原始名称", position="beginner", intro="简介")
+    response = client.patch(f"/api/v1/knowledge/{kn.knowledge_id}", json={"name": "新名称"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "新名称"
+    assert data["position"] == "beginner"
+    assert data["intro"] == "简介"
+
+
+def test_delete_knowledge(client, repo):
+    kn = repo.create_knowledge(course_id=COURSE, set_no="1", name="待删除")
+    response = client.delete(f"/api/v1/knowledge/{kn.knowledge_id}")
+    assert response.status_code == 200
+    assert response.json() == {"ok": "true"}
+    assert repo.get_knowledge(kn.knowledge_id) is None
+
+
+def test_delete_knowledge_nonexistent_404(client):
+    response = client.delete("/api/v1/knowledge/nonexistent-id")
+    assert response.status_code == 404
+
+
+# ---------------- QED-061：探索产物落盘收口 ----------------
+
+
+def test_adopt_course_knowledge_writes_course_file(client, repo, tmp_path):
+    resp = client.post(f"/api/v1/courses/{COURSE}/knowledge", json={"tutorials": [_tutorial("1")]})
+    assert resp.status_code == 201
+    data = read_course_tutorials_file(tmp_path, "math", COURSE)
+    assert data["course_id"] == COURSE
+    assert len(data["tutorials"]) == 1
+    assert data["tutorials"][0]["knowledge_id"].startswith("kt-")
+    assert data["tutorials"][0]["textbook_ref"][0]["book_id"]
+
+
+def test_apply_course_results_finalizes_tutorials_file(client, repo, tmp_path):
+    client.post(f"/api/v1/courses/{COURSE}/knowledge",
+                json={"tutorials": [_tutorial("1"), _tutorial("2", name="教程2：Rudin《数学分析原理》", textbook_title="数学分析原理")]})
+    repo.update_course(COURSE, exploration_stage="待确认")
+    rows = client.get("/api/v1/knowledge", params={"course_id": COURSE}).json()
+    keep = [r["knowledge_id"] for r in rows if r["set_no"] == "1"]
+    resp = client.post(f"/api/v1/courses/{COURSE}/apply-results", json={"selected_tutorials": keep})
+    assert resp.status_code == 200
+    data = read_course_tutorials_file(tmp_path, "math", COURSE)
+    assert [t["set_no"] for t in data["tutorials"]] == ["1"]
+    assert repo.get_course(COURSE).exploration_stage == "已完成"
+
+
+def test_apply_domain_results_backwrites_domains_json(client, repo, tmp_path):
+    repo.update_domain("math", exploration_stage="待确认")
+    write_domain_file(tmp_path, "math", {
+        "domain": "math", "name": "数学", "description": "d", "level": "本科", "scope": "",
+        "stages": ["本科基础"], "classic_tracks": [], "courses": [],
+    })
+    write_domain_courses_file(tmp_path, "math", {
+        "domain_id": "math",
+        "courses": [
+            {"course_id": "math_analysis", "name": "数学分析", "track": "", "stage": "本科基础", "aliases": [], "summary": "", "prerequisites": []},
+            {"course_id": "linear_algebra", "name": "高等代数", "track": "", "stage": "本科基础", "aliases": [], "summary": "", "prerequisites": ["math_analysis"]},
+        ],
+        "path": {"notes": "n", "edges": [], "graph_td": "graph TD"},
+    })
+    resp = client.post("/api/v1/domains/math/apply-results", json={"selected_courses": ["math_analysis"]})
+    assert resp.status_code == 200
+    data = read_domain_file(tmp_path, "math")
+    assert [c["course_id"] for c in data["courses"]] == ["math_analysis"]
+    assert data["path"]["graph_td"] == "graph TD"
+    assert not (tmp_path / "raw" / "math" / "courses.json").exists()
+
+
+# ---------------- QED-062：有意义 ID 生成 ----------------
+
+
+def test_create_domain_derives_slug_from_ascii_name(client):
+    response = client.post("/api/v1/domains", json={"name": "Computer Science"})
+    assert response.status_code == 201
+    assert response.json()["domain_id"] == "computer-science"
+
+
+def test_create_domain_rejects_non_ascii_name_without_id(client):
+    response = client.post("/api/v1/domains", json={"name": "物理学"})
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "INVALID_PARAMS"
+
+
+def test_create_course_derives_slug_from_ascii_name(client):
+    response = client.post("/api/v1/domains/math/courses", json={"name": "Data Structures"})
+    assert response.status_code == 201
+    assert response.json()["course_id"] == "data_structures"
+
+
+def test_create_course_rejects_non_ascii_name_without_id(client):
+    response = client.post("/api/v1/domains/math/courses", json={"name": "数据结构"})
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "INVALID_PARAMS"

@@ -110,7 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     catalog_show.add_argument("catalog_id")
     catalog_run = catalog_commands.add_parser("run", help="严格匹配目录目标")
     catalog_run.add_argument("catalog_id")
-    catalog_run.add_argument("--course", default="")
+    catalog_run.add_argument("--course", default="", help="按语义 course_id 精确过滤（如 math_analysis）")
     catalog_run.add_argument("--download", action="store_true", help="下载严格匹配项；默认只预览")
     catalog_run.add_argument("--report", type=Path)
     _add_limit(catalog_run, 8)
@@ -699,7 +699,7 @@ def _domains_import(args, settings: Settings) -> int:
     _print(result, args.json)
     if not args.json:
         domain_id = result.get("domain_id", "")
-        print(f"\n  下一步：确认后写入数据库")
+        print("\n  下一步：确认后写入数据库")
         print(f"  qed-tracker domains confirm {domain_id}")
     return 0
 

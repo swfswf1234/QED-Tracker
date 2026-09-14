@@ -97,3 +97,50 @@ def read_course_tutorials_file(data_root: Path, domain_id: str, course_id: str) 
 
 def course_tutorials_file_exists(data_root: Path, domain_id: str, course_id: str) -> bool:
     return _course_file_path(data_root, domain_id, course_id).exists()
+
+
+def finalize_domain_file(
+    data_root: Path, domain_id: str, selected_courses: list[str] | None = None
+) -> Path | None:
+    """已完成收口（QED-061）：最终课程反写 `domains.json`，删除中间态 `courses.json`。
+
+    - `selected_courses` 非空时按 course_id 过滤（apply-results 的最终保留集合）；
+    - 反写后的 `domains.json` 通过 `validate_domain`（courses 非空），可重新导入；
+    - `courses.json` 为中间态，收口后删除；文件缺失时返回 None（不阻塞主流程）。
+    """
+    try:
+        domain_data = read_domain_file(data_root, domain_id)
+    except FileNotFoundError:
+        return None
+    try:
+        courses_data = read_domain_courses_file(data_root, domain_id)
+    except FileNotFoundError:
+        courses_data = {}
+    courses = courses_data.get("courses") or domain_data.get("courses") or []
+    if selected_courses:
+        keep = set(selected_courses)
+        courses = [course for course in courses if str(course.get("course_id")) in keep]
+    domain_data["courses"] = courses
+    if courses_data.get("path"):
+        domain_data["path"] = courses_data["path"]
+    path = write_domain_file(data_root, domain_id, domain_data)
+    (data_root / "raw" / domain_id / "courses.json").unlink(missing_ok=True)
+    return path
+
+
+def finalize_course_tutorials_file(
+    data_root: Path,
+    domain_id: str,
+    course_id: str,
+    *,
+    course_name: str,
+    tutorials: list[dict[str, Any]],
+) -> Path:
+    """已完成/采纳收口（QED-061）：写课程定稿知识 JSON（含 knowledge_id/book_id）。"""
+    data = {
+        "domain_id": domain_id,
+        "course_id": course_id,
+        "course_name": course_name,
+        "tutorials": tutorials,
+    }
+    return write_course_tutorials_file(data_root, domain_id, course_id, data)
