@@ -14,9 +14,13 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from qed_tracker.api.main import create_app
 from qed_tracker.config import load_settings
+from qed_tracker.db.knowledge_repository import KnowledgeRepository
+from qed_tracker.db.models import Base
 
 # ------------------------------ Mock 数据 ------------------------------
 
@@ -138,8 +142,18 @@ class FakeExploreAdvisor:
 # ------------------------------ Fixtures ------------------------------
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    """创建带 mock LLM 的测试客户端。"""
+def repo(tmp_path):
+    """创建隔离的 SQLite 数据库（测试不触碰真实 MySQL）。"""
+    engine = create_engine(f"sqlite:///{tmp_path / 'cs_5stage.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    yield KnowledgeRepository(lambda: factory())
+    engine.dispose()
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch, repo):
+    """创建带 mock LLM 的测试客户端（隔离数据库）。"""
     # Mock LLM API key
     monkeypatch.setattr("qed_tracker.api.main.llm_api_key", lambda: "test-key")
     
@@ -161,7 +175,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr("qed_tracker.api.main.DomainPipeline", MockPipeline)
     
     settings = load_settings(data_root=tmp_path)
-    app = create_app(settings)
+    app = create_app(settings, knowledge_repository=repo)
     
     with TestClient(app) as test_client:
         yield test_client

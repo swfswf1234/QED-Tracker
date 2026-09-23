@@ -3,14 +3,14 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-11
+最后更新：2026-09-21
 需求方：QED-Engine（根仓库 REQ-026/REQ-029/REQ-030；2026-08-16 用户裁决知识层次重构）
 关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/db/schema.py`、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/db/selection_repository.py`、`src/qed_tracker/db/tasks_repository.py`
 关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、`tests/test_schema.py`、`tests/test_schema_mysql_smoke.py`（实现轮同步更新）
 关联架构：[数据库共享表设计](database-shared-tables.md)（`qed_*` 共享表族唯一事实源：DDL/列语义/写权限/Schema 变更流程）
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、
 [ADR 0006](../adr/0006-database-model-as-schema-rebuild.md)（模型即 schema + 重建式自愈，Alembic 退役）、
-[ADR 0007](../adr/0007-database-docs-split-by-table-family.md)（按表族拆分与 DDL 展示统一）；
+[ADR 0007](../history/adr/0007-database-docs-split-by-table-family.md)（按表族拆分与 DDL 展示统一）；
 根仓库 [ADR 0003](../../../docs/history/adr/v0.1/0003-shared-qed-database-independence.md)（命名空间隔离）与
 [ADR 0009](../../../docs/history/adr/v0.1/0009-shared-qed-tables.md)（2026-08-16：新增 qed_* 共享表族）
 

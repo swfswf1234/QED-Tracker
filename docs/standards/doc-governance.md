@@ -2,9 +2,9 @@
 
 状态：Current
 确认状态：已确认
-最后更新：2026-09-11
+最后更新：2026-09-21
 治理对象：文档分类与事实边界、确认状态、文档生命周期、代码与文档追溯、写作命名索引元数据、版本末期整理、归档与删除
-依据：QED-Engine 根仓库 `docs/standards/doc-governance.md` 治理模式，适配单仓库规模（[ADR 0004](../adr/0004-standards-governance-alignment.md)）
+依据：QED-Engine 根仓库 `docs/standards/doc-governance.md` 治理模式，适配单仓库规模（[ADR 0004](../history/adr/0004-standards-governance-alignment.md)）
 关联测试：`tests/test_documentation.py`
 
 ## 目的与边界
@@ -32,11 +32,11 @@
 | 根 `CLAUDE.md` | Claude Code 加载入口：薄指针指向 `AGENTS.md`，不保存任何正文事实。 |
 | `docs/index.md` 与各目录 `index.md` | 只导航当前文件，不保存正文事实。 |
 | `docs/architecture/` | 当前系统边界、模块拓扑和数据不变量（含 code-map、API 文档、数据库文档）。 |
-| `docs/design/` | 当前能力与服务运行设计：能力设计（主链路/探索管线/知识录入/下载管线/论文发现）、服务与运行（服务管理中心）、数据设计（数据库两文链接条目）。每篇唯一职责，登记处为 [设计索引](../design/index.md)（[ADR 0008](../adr/0008-design-doc-scope-reshuffle.md)）；**仅收已评审确定的设计**：未定稿/待评审设计一律随计划在 `docs/plans/` 承载，用户确定后以稳定名称迁入本目录（[ADR 0003](../adr/0003-pending-design-location.md)）。 |
+| `docs/design/` | 当前能力与服务运行设计：能力设计（主链路/探索管线/知识录入/下载管线/论文发现）、服务与运行（服务管理中心）、数据设计（数据库两文链接条目）。每篇唯一职责，登记处为 [设计索引](../design/index.md)（[ADR 0008](../history/adr/0008-design-doc-scope-reshuffle.md)）；**仅收已评审确定的设计**：未定稿/待评审设计一律随计划在 `docs/plans/` 承载，用户确定后以稳定名称迁入本目录（[ADR 0003](../history/adr/0003-pending-design-location.md)）。 |
 | `docs/standards/` | 工程治理规则唯一事实源，入口 [规范索引](index.md)。 |
 | `docs/adr/` | 影响长期约束的决定、理由、后果和取代关系。 |
 | `docs/guides/` | 可重复执行的用户操作与开发门禁；为人类设计，由人类判断何时整理，agent 开发时不主动涉及。 |
-| `docs/plans/` | 已批准且尚未关闭的实施计划；**待评审设计内容随计划承载**，确定后按 [ADR 0003](../adr/0003-pending-design-location.md) 迁入 `design/`。 |
+| `docs/plans/` | 已批准且尚未关闭的实施计划；**待评审设计内容随计划承载**，确定后按 [ADR 0003](../history/adr/0003-pending-design-location.md) 迁入 `design/`。 |
 | `docs/trackers/` | 全部未关闭任务、关闭台账、实时状态快照与无状态能力路线图。 |
 | `docs/knowledge/` | 知识体系标准答案目录（QED-050）：领域与课程 JSON（含 target_path），作为探索产出的对照基准数据，不参与文档导航治理。 |
 | `docs/history/` | 选择性保留的历史基线（旧系统、Math-QE）与归档 ADR。 |
@@ -145,7 +145,7 @@ code-map 的「设计关联」列只用于阅读时反查，不是第二份映�
 ### 版本末期文档整理
 
 本节固化每次版本确认前的文档整理轮，长期执行由 QED-039 承载
-（机制源自 [ADR 0002](../adr/0002-version-cleanup-governance.md)，原独立标准
+（机制源自 [ADR 0002](../history/adr/0002-version-cleanup-governance.md)，原独立标准
 version-cleanup.md 并入本节）。
 
 子项目版本纪元与根仓库一致：当前为 v0.1；`docs/adr/index.md` 声明当前版本。
@@ -198,8 +198,10 @@ version-cleanup.md 并入本节）。
 
 ### 归档与删除
 
-- Rejected/Superseded ADR 永久进入 `docs/history/adr/`。
-- **关闭计划两态判定**（todo 任务结束时对 `docs/plans/` 文档的处理，2026-09-11 用户裁决 + [ADR 0009](../adr/0009-closed-plan-archival.md)）：
+- Rejected/Superseded ADR 永久进入 `docs/history/adr/`；决策内容已被稳定文档完整承接的
+  Accepted ADR 经用户确认后转 `Absorbed` 并同路径归档（判定、登记与链接义务见
+  [ADR 0010](../adr/0010-absorbed-adr-archival.md)）。
+- **关闭计划两态判定**（todo 任务结束时对 `docs/plans/` 文档的处理，2026-09-11 用户裁决 + [ADR 0009](../history/adr/0009-closed-plan-archival.md)）：
   - **Retain（默认，归档 `history/baselines/` 等历史目录）**：关闭计划正文默认移入历史目录，
     保留原文件名，不删除；
   - **Delete（例外）**：仅当计划内容已完全并入固定文档且无独立查阅价值、或用户明确指示删除时，

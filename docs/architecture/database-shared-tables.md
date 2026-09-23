@@ -3,14 +3,14 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-11
+最后更新：2026-09-21
 需求方：QED-Engine
 关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/db/schema.py`（ensure_schema 自愈）、`src/qed_tracker/courses.py`
 关联测试：`tests/test_db_models.py`、`tests/test_schema.py`、`tests/test_courses.py`
 关联架构：[数据库专用表设计](database-private-tables.md)（`qt_*` 专用表族唯一事实源，含全库表清单与五层模型）
-关联 ADR：[ADR 0005](../adr/0005-shared-tables-doc-location.md)（迁入 architecture/ 与归属裁决）、
+关联 ADR：[ADR 0005](../history/adr/0005-shared-tables-doc-location.md)（迁入 architecture/ 与归属裁决）、
 [ADR 0006](../adr/0006-database-model-as-schema-rebuild.md)（模型即 schema + 重建式自愈）、
-[ADR 0007](../adr/0007-database-docs-split-by-table-family.md)（按表族拆分与 DDL 展示统一）
+[ADR 0007](../history/adr/0007-database-docs-split-by-table-family.md)（按表族拆分与 DDL 展示统一）
 文档归属与维护：QED-Tracker；登记同步点：QED-Engine 根仓库 `docs/design/database-design.md`
 （共享表 schema 变更先经根仓库登记，见「Schema 变更流程」；QED-Engine 及其他子项目从本文档同步）
 

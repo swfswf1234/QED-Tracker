@@ -1,12 +1,13 @@
 # ADR 0007：数据库设计文档按表族拆分（共享/专用两文 + DDL 展示统一）
 
-状态：Accepted
+状态：Absorbed（2026-09-21 用户确认转承接归档，[ADR 0010](../../adr/0010-absorbed-adr-archival.md)）
 日期：2026-09-07
-最后更新：2026-09-07
+最后更新：2026-09-21
 领域：工程治理
 决策阶段：v0.1
 取代：[ADR 0005](0005-shared-tables-doc-location.md)（部分——仅其决定③「全库 DDL 单文档两区」条款）
 被取代：—
+承接落点：[数据库共享表设计](../../architecture/database-shared-tables.md) 与 [数据库专用表设计](../../architecture/database-private-tables.md)（拆分结果与 DDL 展示规范两文自承载）；「一个事实一个维护位置」见 [文档治理规范](../../standards/doc-governance.md)
 
 ## 背景
 
@@ -19,7 +20,7 @@ QED-044 文档收敛轮发现数据库设计文档的三个问题：
 2. **DDL 展示风格不一致**：qt_knowledge / qt_books 的 DDL 用代码块内 `-- ====` 头注释与
    多行悬挂的 `COMMENT '...'` 子句，与 `qed_*` 表的紧凑风格（行尾 `--` 注释）不一致，可读性差。
 3. **迁移史口径过时**：shared-tables.md 的「迁移史」节仍按 Alembic 链表述，与
-   [ADR 0006](0006-database-model-as-schema-rebuild.md)（Alembic 链退役、模型即 schema +
+   [ADR 0006](../../adr/0006-database-model-as-schema-rebuild.md)（Alembic 链退役、模型即 schema +
    `ensure_schema` 重建自愈）冲突。
 
 2026-09-07 用户裁决按表族拆分为两份架构文档（QED-044 承载实施）。
@@ -54,11 +55,11 @@ QED-044 文档收敛轮发现数据库设计文档的三个问题：
 
 ## 关联
 
-- 关联标准：[文档治理规范](../standards/doc-governance.md)（一个事实一个维护位置、
+- 关联标准：[文档治理规范](../../standards/doc-governance.md)（一个事实一个维护位置、
   版本末期文档整理清单）
-- 关联文档：[数据库共享表设计](../architecture/database-shared-tables.md)、
-  [数据库专用表设计](../architecture/database-private-tables.md)、
-  [QED-Tracker API 设计文档（8901）](../architecture/api.md)
+- 关联文档：[数据库共享表设计](../../architecture/database-shared-tables.md)、
+  [数据库专用表设计](../../architecture/database-private-tables.md)、
+  [QED-Tracker API 设计文档（8901）](../../architecture/api.md)
 - 关联 ADR：[ADR 0005](0005-shared-tables-doc-location.md)（部分取代）、
-  [ADR 0006](0006-database-model-as-schema-rebuild.md)（模型即 schema 口径）
+  [ADR 0006](../../adr/0006-database-model-as-schema-rebuild.md)（模型即 schema 口径）
 - 承载任务：QED-044（完整数据库设计文档与 API 设计文档，todo 登记）

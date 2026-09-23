@@ -1,12 +1,13 @@
 # ADR 0004：规范体系对齐根仓库治理模式
 
-状态：Accepted
+状态：Absorbed（2026-09-21 用户确认转承接归档，[ADR 0010](../../adr/0010-absorbed-adr-archival.md)）
 日期：2026-08-31
-最后更新：2026-08-31
+最后更新：2026-09-21
 领域：工程治理
 决策阶段：v0.1
 取代：—
 被取代：—
+承接落点：产物即落点——[文档治理规范](../../standards/doc-governance.md)、[ADR 治理](../../standards/adr-governance.md)、[测试架构与门禁](../../standards/testing.md)、[跨项目协作规范](../../standards/cross-project-collaboration.md)、[本地开发环境](../../standards/local-dev.md) 与根 `CLAUDE.md`
 
 ## 背景
 
@@ -51,13 +52,13 @@ version-cleanup.md、local-dev.md、index.md），与根仓库 QED-Engine 已演
 
 ## 关联
 
-- 关联标准：[文档治理规范](../standards/doc-governance.md)、[ADR 治理](../standards/adr-governance.md)、
-  [测试架构与门禁](../standards/testing.md)、[跨项目协作](../standards/cross-project-collaboration.md)、
-  [本地开发环境](../standards/local-dev.md)
+- 关联标准：[文档治理规范](../../standards/doc-governance.md)、[ADR 治理](../../standards/adr-governance.md)、
+  [测试架构与门禁](../../standards/testing.md)、[跨项目协作](../../standards/cross-project-collaboration.md)、
+  [本地开发环境](../../standards/local-dev.md)
 - 关联 ADR：[ADR 0002](0002-version-cleanup-governance.md)（版本末期整理机制并入文档治理规范）、
   [ADR 0003](0003-pending-design-location.md)（设计流转规则并入 doc-governance 生命周期）
 - 关联测试：`tests/test_documentation.py`
 - 固定文档落点（2026-08-31 落地审核补记）：决定①-⑥的落点即本批产物自身——
-  [文档治理规范](../standards/doc-governance.md)、[测试架构与门禁](../standards/testing.md)、
-  [跨项目协作规范](../standards/cross-project-collaboration.md)、根 `CLAUDE.md`，
+  [文档治理规范](../../standards/doc-governance.md)、[测试架构与门禁](../../standards/testing.md)、
+  [跨项目协作规范](../../standards/cross-project-collaboration.md)、根 `CLAUDE.md`，
   产物即落点，无额外合并项。

@@ -1,9 +1,9 @@
 # 计划索引
 
 状态：Current
-最后更新：2026-09-14
+最后更新：2026-09-24
 
-本目录只保存尚未关闭的跨模块实施计划。任务状态以[待办列表](../trackers/todo.md)为准；计划完成后将关闭证据写入 completed，正文默认归档至 [历史基线](../history/index.md)（[ADR 0009](../adr/0009-closed-plan-archival.md)；Delete 仅限内容已完全并入固定文档且无独立查阅价值、或用户明确指示）。
+本目录只保存尚未关闭的跨模块实施计划。任务状态以[待办列表](../trackers/todo.md)为准；计划完成后将关闭证据写入 completed，正文默认归档至 [历史基线](../history/index.md)（[ADR 0009](../history/adr/0009-closed-plan-archival.md)；Delete 仅限内容已完全并入固定文档且无独立查阅价值、或用户明确指示）。
 
 > 2026-09-09 验收收口轮：QED-050 / QED-050-E / QED-053 / QED-010 / QED-014 验收关闭，
 > `2026-09-integration-issues.md`（QED-014，归档至
@@ -28,20 +28,24 @@
 > 随任务关闭删除（差异由 Git 保留）。
 > 2026-09-11 本期收尾轮（QED-011/042/045/046/056/057/063/064/065）：
 > `2026-09-11-exploration-contract-alignment.md`（QED-063/064/065）、
-> `2026-09-doc-cleanup-leftovers.md`（QED-056/057）按 [ADR 0009](../adr/0009-closed-plan-archival.md)
+> `2026-09-doc-cleanup-leftovers.md`（QED-056/057）按 [ADR 0009](../history/adr/0009-closed-plan-archival.md)
 > 归档至[历史基线](../history/baselines/)（不再删除）。
 > 2026-09-14 收尾轮（QED-066）：`2026-09-service-hardening.md`（REQ-017②③ + REQ-019）
-> 按 [ADR 0009](../adr/0009-closed-plan-archival.md) 归档至[历史基线](../history/baselines/)。
+> 按 [ADR 0009](../history/adr/0009-closed-plan-archival.md) 归档至[历史基线](../history/baselines/)。
 
 ## 活跃计划
 
 - [来源探索与评估](2026-09-source-discovery.md)（2026-09-07，QED-054）：来源评估矩阵、渠道连通性/中文覆盖实测、待探索清单（持续工作）；2026-09-07 自 design/ 移入 plans（ADR 0008），设计契约部分已并入[下载管线设计](../design/download-pipeline.md)；2026-09-09 并入 REQ-020①② 承接口径。
 
-- [本地 LLM 模型对接与 LangChain 编排](2026-09-14-local-llm-langchain.md)（2026-09-14，QED-067，v1.0 主线）：经 8900 网关（`qed-engine` 模式）接入本地 qwen3.5 9B + LangChain(LCEL) 编排 prompt/pipeline，预留 MCP/skill。
+- [本地 LLM 模型对接与 LangChain 编排](2026-09-14-local-llm-langchain.md)（2026-09-14 立项，2026-09-21 设计细化，QED-067，v1.0 主线）：经 8900 网关（`qed-engine` 模式）接入本地 qwen3.5 9B + LangChain(LCEL) 编排 prompt/pipeline，声明式 pipeline YAML/skill/MCP 只读工具白名单；示例链=领域探索三步（维基百科→MIT/Stanford/清华→综合报告）；子任务 067-1~5 承载于该计划，待用户评审。
 
-- [论文探索与下载链路整合](2026-09-14-paper-pipeline-alignment.md)（2026-09-14，QED-068）：论文链路现状说明 + 参照教程探索链路的整合简要计划（本轮不实现）。
+- [DeepTutor 机制调研（审阅稿）](2026-09-21-deeptutor-survey.md)（2026-09-21，QED-067 附属调研）：I 检索与下载（arXiv 工具/查询派生 fallback/提示纪律、SSRF 逐跳复检、staging+manifest-last 原子入库）+ II 知识路线与编排（双模式校验/coverage 报告、draft→critique→revise+图校验兜底、字符串注册表、skill frontmatter、MCP 白名单与 deferred）；20 条借鉴点落点对照 + 9 条不照搬清单，待用户裁决（QED-067/068/069 归属）。
+
+- [论文探索与下载链路整合](2026-09-14-paper-pipeline-alignment.md)（2026-09-14 立项，2026-09-21 详细化，QED-068）：参照 DeepTutor 调研稿的贴合本仓详细方案——068-1 arXiv 检索参数（相关度/过量抓取/年份窗口）、068-2 查询纪律与 fallback（plan@v2）、068-3 报告溯源与 coverage（schema v2）、068-5 8901 任务化、068-4 总体性优化收口（downloader 安全件/重复双报/文档收口）；本轮不实现，待评审排期。
 
 - [下载链路评估](2026-09-14-download-channel-evaluation.md)（2026-09-14，QED-069）：`qt_sources` 渠道表现状说明 + 数据利用简要计划（本轮不实现）。
+
+- [v1.0 后续任务链条梳理](2026-09-24-v1-task-chain.md)（2026-09-24 初稿 + 同日口径裁决，对照根仓库 ARCH-024 三线）：**v1.0 = 三主线全部交付 + ARCH-024 三线优化收口**；三主线交付口径与风险表、批次顺序（0 裁决轮 → A~D → E 收口轮 → 滚动项）、跨项目接口（网关 task/step REQ、8901 任务化衔接、根壳登记表回填、REQ-020② 回执）与集中待裁决项（调研稿 #4/#7、#11~#18）；只梳理登记，不实现。
 
 - [缺陷修复台账](2026-09-14-bugfix-ledger.md)（2026-09-14，QED-070）：v1.0 滚动缺陷登记与修复跟踪。
 

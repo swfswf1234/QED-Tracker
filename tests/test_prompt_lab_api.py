@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -62,7 +63,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(api_main, "llm_api_key", lambda: "k")
     monkeypatch.setattr(api_main, "DomainPipeline", FakePipeline)
     FakePipeline.last_instance = None
-    app = api_main.create_app(load_settings(data_root=tmp_path))
+    settings = replace(load_settings(data_root=tmp_path), db_password="")
+    app = api_main.create_app(settings)
     with TestClient(app) as test_client:
         yield test_client
 
@@ -99,7 +101,8 @@ def test_dry_run_returns_confirmation_marker_when_name_needs_review(tmp_path, mo
 
     monkeypatch.setattr(api_main, "llm_api_key", lambda: "k")
     monkeypatch.setattr(api_main, "DomainPipeline", ConfirmPipeline)
-    app = api_main.create_app(load_settings(data_root=tmp_path))
+    settings = replace(load_settings(data_root=tmp_path), db_password="")
+    app = api_main.create_app(settings)
     with TestClient(app) as test_client:
         response = test_client.post("/api/v1/prompt-explores/dry-run", json={"domain_name": "高凳数学"})
     assert response.status_code == 200
@@ -159,7 +162,8 @@ def test_dry_run_llm_failure_maps_502(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(api_main, "llm_api_key", lambda: "k")
     monkeypatch.setattr(api_main, "DomainPipeline", BoomPipeline)
-    app = api_main.create_app(load_settings(data_root=tmp_path))
+    settings = replace(load_settings(data_root=tmp_path), db_password="")
+    app = api_main.create_app(settings)
     with TestClient(app) as test_client:
         response = test_client.post(
             "/api/v1/prompt-explores/dry-run", json={"domain_name": "高等数学"}
@@ -171,7 +175,8 @@ def test_dry_run_llm_failure_maps_502(tmp_path, monkeypatch) -> None:
 def test_dry_run_unconfigured_key_maps_409(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(api_main, "llm_api_key", lambda: "")
     # 强制 local 模式：本机 .env 可能设 qed-engine，避免绕过无密钥检查
-    app = api_main.create_app(load_settings(data_root=tmp_path, api_select="local"))
+    settings = replace(load_settings(data_root=tmp_path, api_select="local"), db_password="")
+    app = api_main.create_app(settings)
     with TestClient(app) as test_client:
         response = test_client.post(
             "/api/v1/prompt-explores/dry-run", json={"domain_name": "高等数学"}
@@ -303,7 +308,8 @@ def test_course_dry_run_doc_mode_missing_file_maps_invalid_params(course_client,
 def test_course_dry_run_unconfigured_key_maps_409(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(api_main, "llm_api_key", lambda: "")
     # 强制 local 模式：本机 .env 可能设 qed-engine，避免绕过无密钥检查
-    app = api_main.create_app(load_settings(data_root=tmp_path, api_select="local"))
+    settings = replace(load_settings(data_root=tmp_path, api_select="local"), db_password="")
+    app = api_main.create_app(settings)
     with TestClient(app) as test_client:
         response = test_client.post(
             "/api/v1/courses/01_math_analysis/prompt-explores/dry-run", json={}

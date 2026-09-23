@@ -3,10 +3,10 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-11
+最后更新：2026-09-21
 关联代码：`src/qed_tracker/application/knowledge_import.py`、`src/qed_tracker/application/domain_file.py`（domains.json/courses.json/tutorials.json 读写层）、`src/qed_tracker/db/knowledge_repository.py`（含 `tutorial_name` 命名函数与 `adopt_tutorials` 先查后建幂等）、`src/qed_tracker/api/main.py`（domains/import、domains/{id}/confirm 双分支、domains/{id}/courses/import、courses/knowledge、knowledge/{id}/confirm）、`src/qed_tracker/cli.py`（domains/knowledge import、mainline new/review 命名路径）
 关联测试：`tests/test_knowledge_import.py`、`tests/test_cli_knowledge_import.py`、`tests/test_prompt_lab_api.py`（A2）、`tests/test_main_line_cli.py`（mainline 命名）、`tests/test_knowledge_repository.py` 与 `tests/test_knowledge_api.py`（教程命名规范）
-关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0008](../adr/0008-design-doc-scope-reshuffle.md)
+关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0008](../history/adr/0008-design-doc-scope-reshuffle.md)
 
 > 本文档承接原 plans `2026-09-knowledge-import.md`、`2026-08-knowledge-dual-flow.md` 与
 > `2026-09-qt-schema-restructure.md` 的已确认裁决，作为**手动知识入口 + docs/knowledge

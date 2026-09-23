@@ -2,9 +2,9 @@
 
 状态：Current
 确认状态：已确认
-最后更新：2026-08-31
+最后更新：2026-09-21
 治理对象：与 QED-Engine 根仓库（及 Axiom-Flow）的需求承接、评审、执行、验收回执与跨项目诊断纪律
-依据：QED-Engine 根仓库 `docs/standards/cross-project-collaboration.md` 上游约定，适配需求接收方视角（[ADR 0004](../adr/0004-standards-governance-alignment.md)）
+依据：QED-Engine 根仓库 `docs/standards/cross-project-collaboration.md` 上游约定，适配需求接收方视角（[ADR 0004](../history/adr/0004-standards-governance-alignment.md)）
 关联测试：无（流程治理，事实以双方 todo 与 Git 历史为准）
 
 ## 目的与边界
@@ -25,7 +25,7 @@ Axiom-Flow 消费面或根仓库前端联调的改动。纯本仓库内改动不
    任务列标注 `[跨项目]` 并写明需求方（REQ 编号）与设计/计划文档位置。
 2. **设计评审**：变更涉及接口、端口、数据布局或契约时，在本仓库 `docs/plans/` 建设计讨论
    文档（至少声明：需求方、目标项目、接口面、评审方、执行方、验收标准），经用户评审后实施；
-   确定的设计按 [ADR 0003](../adr/0003-pending-design-location.md) 迁入 `design/`。
+   确定的设计按 [ADR 0003](../history/adr/0003-pending-design-location.md) 迁入 `design/`。
 3. **执行**：在本仓库内按自身 AGENTS.md 与门禁执行（谁收任务谁执行）。
 4. **验收回执**：本仓库任务完成并关闭后，向根仓库 todo 回执证据：本仓库提交号 + 测试输出
    + 联调验收结果；根仓库侧登记由根仓库 agent 或用户完成。
@@ -77,7 +77,7 @@ todo 与计划直接派发写码。
 - 涉及共享表（`qed_*`）写权限、端口或根 `.env` 变量的改动，先核对根仓库
   `docs/design/` 契约文档与[数据库共享表设计](../architecture/database-shared-tables.md)写权限表
   （文档归属与维护方为本仓库，根仓库经 `database-design.md` 登记同步，
-  见 [ADR 0005](../adr/0005-shared-tables-doc-location.md) 与 [ADR 0007](../adr/0007-database-docs-split-by-table-family.md)），
+  见 [ADR 0005](../history/adr/0005-shared-tables-doc-location.md) 与 [ADR 0007](../history/adr/0007-database-docs-split-by-table-family.md)），
   不得单方面变更跨项目契约；
   契约变化由需求方发起并经用户裁决。
 - 请求被拒或改期时，本仓库 todo 条目标注原因并保持与根仓库登记一致。
