@@ -1,9 +1,9 @@
 # ADR 治理规范
 
 状态：Current
-最后更新：2026-08-04
+最后更新：2026-09-21
 治理对象：ADR 准入、编号、元数据、状态、取代关系与归档路径
-依据：QED-Engine 根仓库 `docs/standards/adr-governance.md` 治理模式
+依据：QED-Engine 根仓库 `docs/standards/adr-governance.md` 治理模式；Absorbed 承接归档机制见 [ADR 0010](../adr/0010-absorbed-adr-archival.md)
 关联测试：`tests/test_documentation.py`（链接与元数据守护）
 
 ## 目的与边界
@@ -22,14 +22,18 @@
 ### 编号与路径
 
 - 文件名固定为 `NNNN-lowercase-slug.md`，编号单调递增且进入主分支后永不复用。
-- Proposed 和 Accepted 位于 `docs/adr/`；Rejected 和 Superseded 位于 `docs/history/adr/`。
+- Proposed 和 Accepted 位于 `docs/adr/`；Rejected、Superseded 和 Absorbed 位于
+  `docs/history/adr/`（[ADR 0010](../adr/0010-absorbed-adr-archival.md)）。
 - 新 ADR 使用当前最大编号加一，并在同一变更登记 `docs/adr/index.md`。
 
 ### 元数据与状态
 
-每份 ADR 在标题后依次声明 `状态`、`日期`、`领域`、`决策阶段`、`取代`、`被取代`。
+每份 ADR 在标题后依次声明 `状态`、`日期`、`领域`、`决策阶段`、`取代`、`被取代`；
+`Absorbed` 的 ADR 另补 `承接落点`（稳定文档链接）与承接日期。
 
-- 状态只允许 `Proposed`、`Accepted`、`Rejected`、`Superseded`。
+- 状态只允许 `Proposed`、`Accepted`、`Rejected`、`Superseded`、`Absorbed`。
+  `Absorbed` = 决策未推翻但约束内容已由稳定文档完整承接（判定与登记条件见 ADR 0010）；
+  仍具活约束且承接不完整、或理由需常反查的 ADR 不得以 Absorbed 归档。
 - 领域只允许 `工程治理`、`API 与任务`、`数据与持久化`、`架构与边界`、`质量与评测`。
 - 决策阶段使用 `v<主版本>.<次版本>`。
 - 没有取代关系时写 `—`；存在关系时使用指向实际文件的 `ADR NNNN` Markdown 链接。

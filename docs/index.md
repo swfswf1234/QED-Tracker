@@ -1,7 +1,7 @@
 # QED-Tracker 文档索引
 
 状态：Current
-最后更新：2026-09-09
+最后更新：2026-09-21
 
 本文件只负责导航。项目定位和快速使用见[根 README](../README.md)，Agent 工作入口见 [AGENTS.md](../AGENTS.md)。
 
@@ -15,6 +15,6 @@
 | `plans/` | 尚未关闭的跨模块实施计划 | [计划索引](plans/index.md) |
 | `trackers/` | 有状态待办、完成台账、项目状态快照与无状态路线图 | [Tracker 索引](trackers/index.md) |
 | `knowledge/` | 知识体系标准答案数据（领域/课程 JSON，QED-050） | 数据目录，不设文档导航 |
-| `history/` | 旧系统与 Math-QE 的选择性历史基线 | [历史索引](history/index.md) |
+| `history/` | 旧系统与 Math-QE 的选择性历史基线，以及已承接归档 ADR（`history/adr/`） | [历史索引](history/index.md) |
 
 跨项目契约（端口、环境变量、dataset 布局）以 QED-Engine 根仓库 `docs/` 为准。当前运行事实最终以代码和测试为准。历史文档只解释背景，不提供当前命令或实现依据。

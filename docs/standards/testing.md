@@ -2,9 +2,9 @@
 
 状态：Current
 确认状态：已确认
-最后更新：2026-08-31
+最后更新：2026-09-21
 治理对象：测试职责与隔离边界、门禁组成、治理契约测试的守护面清单、契约头、编写约定与新增流程
-依据：QED-Engine 根仓库 `docs/standards/testing.md`「三项目复用（范本）」适配（[ADR 0004](../adr/0004-standards-governance-alignment.md)）
+依据：QED-Engine 根仓库 `docs/standards/testing.md`「三项目复用（范本）」适配（[ADR 0004](../history/adr/0004-standards-governance-alignment.md)）
 关联测试：`tests/test_documentation.py`
 
 ## 目的与边界

@@ -1,20 +1,21 @@
 # ADR 0003：待评审设计的目录流转（Draft 设计先入 plans/，确定后落 design/）
 
-状态：Accepted
+状态：Absorbed（2026-09-21 用户确认转承接归档，[ADR 0010](../../adr/0010-absorbed-adr-archival.md)）
 日期：2026-08-23
-最后更新：2026-08-31
+最后更新：2026-09-21
 领域：工程治理
 决策阶段：v0.1
 取代：—
 被取代：—
+承接落点：[文档治理规范](../../standards/doc-governance.md)「文档分类与事实边界」（`design/`、`plans/` 行）与「文档生命周期」（决定①②）、「归档与删除」（决定③）；决定④存量豁免已无对象（条款完成使命，见本文关联节）
 
 ## 背景
 
-QED-Engine 根仓库经 [ADR 0011](../../../docs/history/adr/v0.1/0011-pending-design-location.md) 裁决：待评审
+QED-Engine 根仓库经 [ADR 0011](../../../../docs/history/adr/v0.1/0011-pending-design-location.md) 裁决：待评审
 的设计内容（界面设计、接口契约草案、流程方案等）不再直接进入 `design/`，一律随计划在
 `plans/` 承载，经用户评审完全确定后以稳定名称迁入 `design/` 或合并固定文档；`design/` 目录
 本身即「已确定」可信度标签。该裁决属文档分类边界变更（本仓库
-[文档治理规范](../standards/doc-governance.md)「变更与取代」要求先立 ADR），用户指令同步至本仓库，
+[文档治理规范](../../standards/doc-governance.md)「变更与取代」要求先立 ADR），用户指令同步至本仓库，
 故登记本决定。
 
 ## 决定
@@ -35,10 +36,10 @@ QED-Engine 根仓库经 [ADR 0011](../../../docs/history/adr/v0.1/0011-pending-d
 
 ## 关联
 
-- 关联规范：[文档治理规范](../standards/doc-governance.md)（本轮同步修订）
+- 关联规范：[文档治理规范](../../standards/doc-governance.md)（本轮同步修订）
 - 关联 ADR：[ADR 0002](0002-version-cleanup-governance.md)（版本末期整理承接存量三态梳理）
-- 来源范本：QED-Engine 根仓库 [ADR 0011](../../../docs/history/adr/v0.1/0011-pending-design-location.md)
+- 来源范本：QED-Engine 根仓库 [ADR 0011](../../../../docs/history/adr/v0.1/0011-pending-design-location.md)
 - 固定文档落点（2026-08-31 落地审核补记）：决定①② →
-  [文档治理规范](../standards/doc-governance.md)「文档分类与事实边界」（`design/` 与
+  [文档治理规范](../../standards/doc-governance.md)「文档分类与事实边界」（`design/` 与
   `plans/` 行）及「文档生命周期」；决定③ → 「归档与删除」关闭计划两态判定；决定④存量
   豁免已无对象——`docs/design/` 现存 12 份设计文档均为 Accepted（存量清零），条款完成使命。

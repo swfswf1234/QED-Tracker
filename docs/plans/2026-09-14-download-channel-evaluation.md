@@ -2,14 +2,14 @@
 
 状态：Draft
 任务类型：Plan
-最后更新：2026-09-14
+最后更新：2026-09-24
 需求方：用户（承接根仓库 REQ-020②「找得率榜单」）
 目标项目：QED-Tracker
 评审方：用户
 关联设计：[下载管线设计](../design/download-pipeline.md)
 关联计划：[来源探索与评估](2026-09-source-discovery.md)（QED-054）
 关联 Tracker：QED-069
-归档判定：待关闭时按 [ADR 0009](../adr/0009-closed-plan-archival.md) 做 Retain/Delete 两态判定
+归档判定：待关闭时按 [ADR 0009](../history/adr/0009-closed-plan-archival.md) 做 Retain/Delete 两态判定
 
 ## 目标与成功标准
 
@@ -17,6 +17,12 @@
 **本轮只做现状说明与简要计划，不实现。**
 
 成功标准：现状说明完整（表结构/写入点/读取点/缺口）、后续利用计划经用户评审通过。
+
+**v1.0 交付口径裁决（2026-09-24，链条评审轮）**：本任务在 v1.0 期内须完成
+「细化轮通过评审 → 找得率/成功率统计口径落地 → 基线采集首批结果回填来源评估矩阵 →
+回执根仓库 REQ-020②」（v1.0 三主线中主线③的交付定义，落 [v1.0 任务链条梳理](2026-09-24-v1-task-chain.md)
+批次 D）。细化前置 = 调研稿落点 #4/#7 裁决 + QED-068-4 收口完成（SSRF 逐跳/流式硬顶是
+评估结论可信的前置）。
 
 ## 现状
 
@@ -45,4 +51,4 @@
 
 ## 关闭与归档
 
-关闭时按 [ADR 0009](../adr/0009-closed-plan-archival.md) 做 Retain/Delete 两态判定。
+关闭时按 [ADR 0009](../history/adr/0009-closed-plan-archival.md) 做 Retain/Delete 两态判定。

@@ -1,7 +1,7 @@
 # 设计索引
 
 状态：Current
-最后更新：2026-09-09
+最后更新：2026-09-21
 
 本文档是**设计文档职责登记处**（ADR 0008）：每篇设计文档唯一负责一块能力或运行面，
 类别固定为下列三组；后续 plans/ 文档归档晋升或新增设计文档，**先查本登记处确定唯一
@@ -38,12 +38,12 @@
 
 ## 数据设计
 
-- [数据库专用表设计](../architecture/database-private-tables.md)（Accepted，[ADR 0007](../adr/0007-database-docs-split-by-table-family.md)
+- [数据库专用表设计](../architecture/database-private-tables.md)（Accepted，[ADR 0007](../history/adr/0007-database-docs-split-by-table-family.md)
   拆分）：**管**qed 库 `qt_*`（QED-Tracker 私有）表族 DDL 与状态机、五层模型链路图、文件
   命名与用户裁决记录。
 - [数据库共享表设计](../architecture/database-shared-tables.md)：**管**共享表 `qed_*`
   （qed_domain/qed_course/qed_llm_calls）DDL 与跨项目契约唯一事实源（写权限、状态机写主体、
-  Schema 自愈与变更流程；[ADR 0005](../adr/0005-shared-tables-doc-location.md) 迁入
+  Schema 自愈与变更流程；[ADR 0005](../history/adr/0005-shared-tables-doc-location.md) 迁入
   architecture/，归属 QED-Tracker，其他项目同步）。
   - 被取代文档已移入 [历史留档](../history/)：`database-schema-ownership.md`（QED-023，Retired）
     与 `three-table-schema.md`（QED-028，Superseded）。

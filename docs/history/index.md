@@ -1,7 +1,7 @@
 # 历史索引
 
 状态：Historical
-最后更新：2026-09-14
+最后更新：2026-09-21
 
 本目录只保存无法由当前代码和文档替代的历史基线。内容中的路径、命令、库存和状态可能已经失效，不得作为当前操作或实现依据。
 
@@ -24,5 +24,18 @@
 - [探索契约对齐计划归档](baselines/2026-09-11-exploration-contract-alignment.md)：REQ-076/077/078（2026-09-11 归档，ADR 0009）：课程探索 5 态 + `PATCH /courses` 支持 `exploration_stage`/`explore_pending` + dataset JSON 例外口径确认，482 passed。
 - [文档清理遗留问题清单归档](baselines/2026-09-doc-cleanup-leftovers.md)：QED-056/QED-057 遗留项处置（2026-09-11 归档，ADR 0009）：L-01/L-05/L-06/L-14 修复、L-07/L-08/L-10 维持现状关闭、L-09/L-11 PASS、L-13 保留于 QED-054。
 - [服务稳定性优化计划归档](baselines/2026-09-service-hardening.md)：QED-066（REQ-017②③ + REQ-019）服务重启后 orphaned 任务恢复 + 下载后内容校验（2026-09-14 归档，ADR 0009）：`verify_content` 首页文本 vs 登记标题（软信号写入 qt_sources.note）+ 进度上报评估。
+
+## 已承接归档 ADR（adr/，2026-09-21，[ADR 0010](../adr/0010-absorbed-adr-archival.md)）
+
+决策内容已由稳定文档完整承接的 ADR 保留于此（各文头部「承接落点」行为准，登记表见
+[ADR 索引](../adr/index.md)）：
+
+- [ADR 0002](adr/0002-version-cleanup-governance.md)：版本末期文档整理长效机制 → doc-governance「版本末期文档整理」节。
+- [ADR 0003](adr/0003-pending-design-location.md)：待评审设计的目录流转 → doc-governance 分类表与生命周期。
+- [ADR 0004](adr/0004-standards-governance-alignment.md)：规范体系对齐根仓库治理模式 → standards/ 五文（产物即落点）。
+- [ADR 0005](adr/0005-shared-tables-doc-location.md)：共享表文档迁入 architecture/ → database-shared-tables.md + 跨项目协作规范。
+- [ADR 0007](adr/0007-database-docs-split-by-table-family.md)：数据库设计文档按表族拆分 → 两数据库设计文档自承载。
+- [ADR 0008](adr/0008-design-doc-scope-reshuffle.md)：设计文档域职责重划 → design/index.md 职责登记处。
+- [ADR 0009](adr/0009-closed-plan-archival.md)：关闭计划默认归档 → doc-governance「归档与删除」两态判定。
 
 逐日工作记录、旧 tracker 和被当前设计完整承接的文档不再复制归档，可从 Git 历史恢复。当前事实入口是[文档索引](../index.md)。

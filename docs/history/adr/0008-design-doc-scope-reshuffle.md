@@ -1,10 +1,11 @@
 # ADR 0008：设计文档域职责重划
 
-状态：Accepted
+状态：Absorbed（2026-09-21 用户确认转承接归档，[ADR 0010](../../adr/0010-absorbed-adr-archival.md)）
 日期：2026-09-07
-最后更新：2026-09-07
+最后更新：2026-09-21
 需求方：用户（QED-Tracker 文档治理轮，Task C）
 关联任务：QED-Tracker todo 本轮文档重整；承接 ADR 0003（目录流转）与 ADR 0007（按域拆分）先例
+承接落点：[设计索引](../../design/index.md)（职责登记处与各类别行）；类别与流转规则见 [文档治理规范](../../standards/doc-governance.md)「文档分类与事实边界」
 
 ## 背景
 

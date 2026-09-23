@@ -1,14 +1,15 @@
 # ADR 0009：关闭计划默认归档 docs/history/
 
-状态：Accepted
+状态：Absorbed（2026-09-21 用户确认转承接归档，[ADR 0010](../../adr/0010-absorbed-adr-archival.md)）
 日期：2026-09-11
-最后更新：2026-09-11
+最后更新：2026-09-21
 需求方：用户（QED-Tracker 本期收尾轮，2026-09-11）
 关联任务：QED-063/064/065、QED-011、QED-056/QED-057 收尾；承接 ADR 0003（目录流转）、ADR 0008（设计文档域重划）
+承接落点：[文档治理规范](../../standards/doc-governance.md)「归档与删除」关闭计划两态判定（规则正文唯一事实源，决定①②④已完整并入；决定③白名单同步为一次性执行记录）
 
 ## 背景
 
-[文档治理规范](../standards/doc-governance.md)「归档与删除」的「关闭计划两态判定」现行默认规则为：
+[文档治理规范](../../standards/doc-governance.md)「归档与删除」的「关闭计划两态判定」现行默认规则为：
 仅当记录已执行数据操作、迁移/发布里程碑、事故复盘或不可替代外部证据时 **Retain**（归档
 `history/`），其余 **Delete**（删除，不保留计划壳）。
 
@@ -27,7 +28,7 @@
 
 ## 后果
 
-- [文档治理规范](../standards/doc-governance.md)「归档与删除」节更新：关闭计划默认由 Delete
+- [文档治理规范](../../standards/doc-governance.md)「归档与删除」节更新：关闭计划默认由 Delete
   改为 Retain（归档 `history/baselines/`），Delete 收窄为上述两情形。
 - 本期关闭的 `2026-09-11-exploration-contract-alignment.md`（QED-063/064/065）与
   `2026-09-doc-cleanup-leftovers.md`（QED-056/057）按本 ADR 归档 `history/baselines/`。

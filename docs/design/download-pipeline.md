@@ -3,10 +3,10 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-11
+最后更新：2026-09-21
 关联代码：`src/qed_tracker/application/book_fetch.py`（编排母本）、`src/qed_tracker/downloader.py`、`src/qed_tracker/application/resources.py`、`src/qed_tracker/inventory.py`、`src/qed_tracker/catalog.py`（catalog run 与冻结目录）、`src/qed_tracker/matching.py`（严格匹配）、`src/qed_tracker/catalogs/math-qe.json`（math-qe 冻结书单）、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/providers/books.py`、`src/qed_tracker/providers/book_advisor.py`、`src/qed_tracker/api/main.py`（书籍组端点）、`src/qed_tracker/cli.py`（mainline/books/catalog 命令）
 关联测试：`tests/test_book_providers.py`、`tests/test_book_fetch.py`、`tests/test_book_llm_advisor.py`、`tests/test_book_acceptance.py`、`tests/test_book_api.py`、`tests/test_download_inventory.py`、`tests/test_services.py`、`tests/test_config_catalog_matching.py`
-关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0003](../adr/0003-pending-design-location.md)、[ADR 0008](../adr/0008-design-doc-scope-reshuffle.md)
+关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0003](../history/adr/0003-pending-design-location.md)、[ADR 0008](../history/adr/0008-design-doc-scope-reshuffle.md)
 
 > 本文档是**下载全链的唯一设计事实源**：来源协议、math-qe 冻结书单与 catalog 冻结目录链、
 > 书级/教程级自动取书五阶段、人工导入、通用下载器与资源登记原语（整合 2026-09-04 用户

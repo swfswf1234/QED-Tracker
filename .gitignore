@@ -18,6 +18,8 @@ build/
 .agents/
 *.swp
 *.swo
+.claude/
+.qoder/
 
 # Environment
 .env
