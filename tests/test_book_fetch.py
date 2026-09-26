@@ -20,7 +20,6 @@ from qed_tracker.application.resources import ResourceService
 from qed_tracker.db.knowledge_repository import KnowledgeRepository
 from qed_tracker.db.models import Base, QedCourse, QedDomain
 from qed_tracker.downloader import DownloadManager
-from qed_tracker.inventory import Inventory
 from qed_tracker.models import Availability, Candidate, DownloadLink
 
 # ---------------- 假提供者与下载器 ----------------
@@ -70,7 +69,8 @@ def make_candidate(provider: str, title: str, *, downloadable: bool = True) -> C
 def build_service(repo, providers, handler, *, candidate_budget: float = 5.0, data_root):
     def factory():
         downloader = mock_downloader(handler)
-        return BookService(list(providers), ResourceService(Inventory(data_root), downloader))
+        # QED-071 B 轮：教材登记只走 qt_books 内容身份列（岛已退役）
+        return BookService(list(providers), ResourceService(data_root, downloader, books=repo))
 
     return BookFetchService(
         repo, factory, data_root=data_root, candidate_budget=candidate_budget,

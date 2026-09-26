@@ -18,7 +18,7 @@
 
 | ID | 发现日期 | 严重度 | 现象 | 根因 | 修复 | 验证 | 状态 | 关联 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| （暂无） | — | — | — | — | — | — | — | — |
+| BUG-003 | 2026-09-26 | 低 | Windows GBK 控制台下 `qed-tracker --json catalog show math-qe` 取不到目录：CLI 返回 `{"error": "'gbk' codec can't encode character '\u0151' ..."}` | `cli.py` 输出未做编码兜底（随控制台 code page），而冻结目录标题含 Latin 扩展字符（macron）；`PYTHONIOENCODING=utf-8` 下同一命令正常，说明是输出编码声明缺失而非数据损坏 | 未修复：发现于 QED-071 B 轮 CLI 冒烟，与拆岛无关；修复口径待裁（stdout 走 `errors="replace"` 还是显式强制 UTF-8） | 复现：GBK 控制台运行该命令 → error JSON；加 `PYTHONIOENCODING=utf-8` → 正常输出 | 待分析 | QED-071（B 轮冒烟证据）、`src/qed_tracker/cli.py` |
 
 ## 规则
 

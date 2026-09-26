@@ -11,9 +11,11 @@
 
 QED-Tracker 是本地优先的 PDF 获取组件：发现、下载、校验和登记原始 PDF，并通过 8901 HTTP 服务
 （`/api/v1`）向统一 CLI 与 8903 前端暴露能力。长操作（下载、评估、推荐）由后台任务执行并以
-任务状态轮询暴露，不阻塞请求。资源事实存放于 `meta/resources/` 单资源 JSON（**B 轮退役对象**：
-QED-071 A/B 拆分，DB 内容身份列就位后改读 `qt_books` 列，见[专用表设计](database-private-tables.md)「B 轮内容身份列契约」），MySQL `qed` 库
-五层模型（`qed_domain`/`qed_course`（共享）→ `qt_knowledge`/`qt_books`/`qt_sources`（私有））作为册级明细登记索引（无密码时降级）。
+任务状态轮询暴露，不阻塞请求。资源事实（含内容身份 sha256/size_bytes/page_count）唯一
+存放于 MySQL `qed` 库五层模型（`qed_domain`/`qed_course`（共享）→
+`qt_knowledge`/`qt_books`/`qt_sources`（私有）），磁盘只保留 `raw/` 成品 PDF；
+`meta/resources/` 单资源 JSON 岛与 `Inventory` 类已于 QED-071 B 轮退役删除（无 DB 时服务降级
+启动，但清单/校验/交付类命令显式报错，不静默回退读岛，见[专用表设计](database-private-tables.md)「B 轮内容身份列契约」）。
 
 Axiom-Flow 从 HTTP 导入边界之后负责不可变文档存储、OCR/解析、质量审阅和知识发布。两个项目
 不互相导入 Python 包，不共享数据库表或数据目录（共享 `qed` 库实例，`qt_*`/`af_*` 表命名空间
@@ -67,7 +69,7 @@ flowchart TB
     end
     subgraph APP["应用层"]
         EXP["探索线 prompt_lab/：DomainPipeline / CoursePipeline<br/>+ templates.py（domain@v4/courses@v8/tutorials@v2）<br/>+ priors.py + providers/explore_advisor.py"]
-        DWN["下载线：application/books.py、papers.py、resources.py、<br/>book_fetch.py（自动取书任务）+ providers/（books 四来源/<br/>arxiv/bailian/book_advisor）+ downloader.py + inventory.py"]
+        DWN["下载线：application/books.py、papers.py、resources.py、<br/>book_fetch.py（自动取书任务）+ providers/（books 四来源/<br/>arxiv/bailian/book_advisor）+ downloader.py + inventory.py（数据根布局/staging 清扫）"]
         MLN["主链路：courses.py（qed_course 课程体系）<br/>+ main_line/advisor.py（LLM 预填）<br/>+ cli.py mainline/books（条目落 qt_knowledge/qt_books）"]
         IMP["导入：application/knowledge_import.py（manual@v1 领域 + 数据文件版课程校验）"]
     end
@@ -92,8 +94,8 @@ flowchart TB
 | 主链路 | CLI `mainline` 评审闭环（new/review，定稿 confirm）+ `mainline verify` 只读复核 | `main_line/advisor.py` LLM 预填（可审阅，不写资源事实）；取书经 8901 五阶段任务 |
 
 三条线共用基础设施：模型调用一律经 `llm_client.py`（写 `qed_llm_calls` 审计），落库一律经
-`db/knowledge_repository.py`（状态机 + 彻底隐藏过滤），文件一律落数据根并经 `inventory.py`
-以 SHA-256 登记。
+`db/knowledge_repository.py`（状态机 + 彻底隐藏过滤 + 内容身份三列），文件一律落数据根
+`raw/`，路径与 staging 清理由 `inventory.py` 布局访问器提供。
 
 ## 运行模式
 
@@ -124,14 +126,15 @@ QED-Tracker 可**独立运行**，也可作为 QED-Engine 体系的**组件运�
 
 | 能力 | CLI 出口 | 依赖 MySQL |
 | --- | --- | --- |
-| 下载与清单 | 有：`books`（get/fetch-url/import）、`papers`（search/get/recommend、selections、profiles）、`catalog`（list/show/run）、`inventory`（scan/list/verify）、`axiom push` | 否（文件系统 + 外部 HTTP） |
+| 下载与清单 | 有：`books`（get/fetch-url/import）、`papers`（search/get/recommend、selections、profiles）、`catalog`（list/show；`run` 批处理链已退役 D11）、`inventory`（list/verify/reconcile；`scan` 已删除 D16）、`axiom push <book_id>`（仅 book_id，D15） | 部分：下载/检索不依赖；`inventory list/verify/reconcile` 与 `axiom push` 读 `qt_books`，未配置 DB 退出码 2 显式报错（M4） |
 | 主链路与课程 | 有：`courses`（list/show）、`mainline`（list/new/review/download/verify/channels，approve/reject 已删）、`books`（fetch/import/get/fetch-url）、`domains`（import/confirm）、`knowledge import` | 是（课程体系读 `qed_course` 共享表，教程/书行落 `qt_*`） |
 | 服务启动与配置 | 有：`serve`、`config show` | 可选（未配置时按上表「MySQL 登记」行降级） |
 | 探索管线 dry-run（领域/课程） | 有：`domains explore`（经 8901 dry-run 同步执行）；课程 dry-run 仅 8901 API | — |
 | prompt 优化评估 | 无（仅 8901 API） | — |
 
-- 未配置 `QED_DB_*` 时服务与 CLI 仍可启动；依赖 MySQL 的命令与登记/查询端点按契约返回 409，
-  登记暂缓，文件系统能力（下载/校验/清单）不受影响。
+- 未配置 `QED_DB_*` 时服务与 CLI 仍可启动；依赖 MySQL 的命令与登记/查询端点按契约返回 409
+  （CLI 退出码 2），登记暂缓，纯文件系统能力（检索、下载落 staging）不受影响。
+  **B 轮后清单与校验不再算无 DB 能力**：`qt_books` 是内容身份唯一事实源，岛回退已删除（M4）。
 - CLI→HTTP 客户端化（QED-010）已完成并经真实 8901 全链路冒烟验收（2026-09-09，见[完成台账](../trackers/completed.md)）。
 
 ## 模块职责
@@ -151,7 +154,8 @@ QED-Tracker 可**独立运行**，也可作为 QED-Engine 体系的**组件运�
 | `providers/book_advisor.py` | 百炼书籍顾问：检索词变体（book-query/variants@v1）与候选确认评估（book-confirm/assess@v1，可审阅，不写资源事实）。 |
 | `matching.py` | 对冻结目录执行保守的标题、作者、语言和版本匹配。 |
 | `downloader.py` | 处理从头重试、PDF 校验、SHA-256 和原子落盘；`accept_pdf` 机器验收门（页数/大小硬门槛 + 文本层软信号）。 |
-| `inventory.py` | 保存单资源 JSON、完整性结果（`manifest.jsonl` 已停用；Axiom 传输记录 QED-071 判废；含 staging 年龄清扫 `sweep_downloads`）。 |
+| `inventory.py` | 数据根布局访问器（`raw_course_dir`/`raw_general_dir`/`downloads_tmp_dir`）+ staging 年龄清扫（`sweep_downloads`）。`Inventory` 类、单资源 JSON 与 `manifest.jsonl` 均已退役（QED-071 B 轮 / A 轮 D3 传输留痕判废）。 |
+| `application/reconcile.py` | `inventory reconcile` 回填对账：磁盘重算内容身份 → filled/mismatch/conflict 三分类报告，与 `qt_sources.note` sha8 只读对账（QED-071 B-W2）。 |
 | `catalog.py` | 读取包内只读目录数据。 |
 | `db/engine.py` | 连接管理：按 `QED_DB_*` 构造 SQLAlchemy 引擎（QueuePool 参数化）、会话工厂、`utc_now`、`dispose`。 |
 | `db/schema.py` | `ensure_schema` 快照自愈：七表缺表补建/列不一致重建（含共享表）、`qed_llm_calls` 缺列增量补齐（绝不 DROP）、幂等；取代 Alembic 迁移链（ADR 0006）。 |
@@ -168,13 +172,17 @@ QED-Tracker 可**独立运行**，也可作为 QED-Engine 体系的**组件运�
 ## 数据布局
 
 ```text
-dataset/qed-tracker/
-├── raw/books/{inbox,math-qe/<course-id>}/        # 教材（kind=book）
-├── raw/exercises/inbox/                          # 习题集（kind=exercise 独立）
-├── raw/papers/<year>/                            # 论文
-├── meta/{resources}/                            # JSON 状态事实（资源；Axiom 传输留痕 QED-071 判废）
-└── tmp/downloads/<task-id>.part                  # 下载临时区（原子落盘后清理）
+dataset/                                        # QED_DATA_ROOT（根仓 ADR 0018 顶层白名单 raw/ parsed/ tmp/ backups/）
+├── raw/<domain-id>/<course-id>/                # 教材/习题成品（唯一被 Axiom 读取区）
+│   └── _general/                               # 领域通用桶：手动下载与论文 PDF
+├── parsed/  backups/                           # Axiom 解析产物 / 人工备份（本仓库不写）
+└── tmp/qed-tracker/downloads/                  # 下载中间态 *.download[.part]（终态不保留 + 超龄清扫）
 ```
+
+> 本仓库**不拥有数据根顶层**，也不写任何 `meta/**` JSON：单资源岛（`meta/resources/`）、
+> 选择报告（`meta/selections/`）、任务（`meta/tasks/`）与 Axiom 传输留痕全部退役，事实源在
+> MySQL 五层表（QED-071 A/B 轮）；`qed-tracker/` 顶层目录随之消失，守护见
+> `tests/test_data_layout.py`。
 
 探索与手动导入 JSON（`application/domain_file.py`）：`raw/<domain_id>/domains.json`（领域知识）、
 `raw/<domain_id>/courses.json`（领域课程探索/手动导入**中间态**，`已完成` 时反写 domains.json 并删除）、
@@ -185,8 +193,10 @@ dataset/qed-tracker/
 `raw/<domain_id>/<course_id>/`（机器验收通过才 os.replace 进 raw/），`mark_owned` 登记后
 `raw/` 即成品区（本仓库数据根为临时中转，可删可重建；无「复制移交根仓库」步骤）。
 
-PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resources/` 中的单资源 JSON 是本地
-资源事实源（**B 轮退役对象**，当前仍是去重/校验唯一载体——先迁列、后拆岛，勿提前停写）；MySQL 五层模型是册级明细登记索引（书籍登记经 `mark_owned` 唯一入口）；
+PDF 路径可以变化，内容身份固定为 `sha256:<digest>`，落在 `qt_books.sha256/size_bytes/page_count`
+三列（QED-071 B 轮唯一事实源；`meta/resources/` 单资源 JSON 岛已退役停写，`Inventory` 类删除，
+反岛守护见 `tests/test_data_layout.py`）；`ResourceRecord` 只作内存 DTO（D12）。书籍登记经
+`mark_owned` 唯一入口，同内容多书 N:1 共用（`ix_qt_books_sha256` 普通索引，D17）；
 论文选择与任务记录已迁 `qt_selections`/`qt_tasks` 表（`meta/selections/`、`meta/tasks/` 已退役），
 分别保存，不能混入资源事实。任务经 `GET /api/v1/tasks/{task_id}` 轮询与「任务 → 文件」跳转。
 
@@ -194,10 +204,13 @@ PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resourc
 
 1. 来源适配器只搜索和解析下载地址，不得直接写正式 PDF；libgen_li 恒 `metadata_only`，永不自动写文件。
 2. `.part` 只有通过 PDF 结构校验后才能原子替换目标文件。
-3. 相同 SHA-256 只保留一条资源记录；新下载产生的重复文件由资源服务移除。
-4. `inventory scan` 只接受数据根内部路径，不移动或删除已有 PDF。
+3. 相同 SHA-256 的成品 PDF 只保留一份文件；命中已有 owned 行时复用其记录并移除本次重复文件
+   （同内容多书 N:1 共用同一 sha256，D17）。
+4. 不隐式扫描数据根（`inventory scan` 已删除，D16）；登记/导入只接受显式路径且必须解析到数据根
+   内部，不移动或删除用户已有 PDF。
 5. 包内目录是可选输入，不是下载核心依赖；`math-qe` 永久标记为 `frozen`。
-6. 外部来源、网络和 Axiom 失败不能破坏已经登记的本地资源事实；登记顺序为落盘 → 资源 JSON → MySQL，任一步失败任务失败且可重放。
+6. 外部来源、网络和 Axiom 失败不能破坏已经登记的本地资源事实；登记顺序为落盘 → `qt_books`
+   （holding/file_path + 内容身份三列）→ `qt_sources` 留痕，任一步失败任务失败且可重放。
 7. LLM 只能生成检索计划和评分；下载必须引用固定报告、经人工确认（`confirm`）后由任务触发，模型不写入资源事实。
 8. 长操作（下载、评估等）全部经后台任务执行（并发上限 2，同类型任务 dedup 查重），任务状态落盘并支持轮询；轻量状态迁移（`confirm`/`register`）同步执行；非法状态迁移返回 409。
 
@@ -209,10 +222,10 @@ PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resourc
 | --- | --- | --- |
 | 1. 来源适配器只搜索和解析下载地址，不直接写正式 PDF；libgen_li 恒 `metadata_only` | 符合 | `src/qed_tracker/providers/`、`application/books.py`（resolve 后才下载）；`tests/test_book_providers.py`（libgen resolve 无 download_url） |
 | 2. `.part` 只有通过 PDF 结构校验后才能原子替换目标文件 | 符合 | `downloader.py`（临时区 + `os.replace`）；`tests/test_download_inventory.py` |
-| 3. 相同 SHA-256 只保留一条资源记录，重复文件由资源服务移除 | 符合 | `inventory.py` 幂等复用（书库化后无 DB 级 sha256 唯一约束，明细去重经 `mark_owned`/`add_source` 幂等）；`tests/test_download_inventory.py`、`tests/test_knowledge_repository.py` |
-| 4. `inventory scan` 只接受数据根内部路径，不移动或删除已有 PDF | 符合 | `inventory.py`（relative_to 校验 + scan 只登记）；`tests/test_download_inventory.py` |
+| 3. 相同 SHA-256 只保留一份成品文件，重复文件由资源服务移除 | 符合 | `application/resources.py`（`find_owned_by_sha256` 命中即复用 + 移除 staging）；`tests/test_services.py`、`tests/test_knowledge_repository.py` |
+| 4. 不隐式扫描数据根，导入只接受数据根内显式路径、不移动不删除原件 | 符合 | `application/resources.py`/`book_fetch.py`（`relative_to` 校验）、`cli.py`（无 scan 入口）；`tests/test_data_layout.py`、`tests/test_book_api.py` |
 | 5. 包内目录是可选输入；`math-qe` 永久标记 `frozen` | 符合 | `catalog.py` + `catalogs/math-qe.json`（status=frozen）；`tests/test_config_catalog_matching.py` |
-| 6. 登记顺序落盘 → 资源 JSON → 五层登记，任一步失败可重放 | 符合 | `db/knowledge_repository.py`（add_source/mark_owned 幂等）；`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py` |
+| 6. 登记顺序落盘 → `qt_books`（含内容身份三列）→ `qt_sources`，任一步失败可重放 | 符合 | `db/knowledge_repository.py`（add_source/mark_owned/set_content_identity 幂等）；`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、`tests/test_reconcile.py` |
 | 7. LLM 只生成检索计划与可审阅评分，不写资源事实、不自动下载 | 符合 | `providers/bailian.py`/`book_advisor.py` 只产出评估；`tests/test_bailian_advisor.py`、`tests/test_paper_application.py` |
 | 8. 长操作经后台任务（并发上限 2）轮询；轻量状态迁移同步；非法迁移 409 | 符合 | `api/main.py` + `api/tasks.py`；`tests/test_api.py`、`tests/test_knowledge_api.py` |
 | 8901 服务端口与 `/api/v1` 前缀（根仓库 ADR 0002） | 符合 | `api/main.py`（FastAPI 8901）；`tests/test_api.py` |

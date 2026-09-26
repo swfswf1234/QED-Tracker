@@ -70,7 +70,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | `DELETE /api/v1/knowledge/{id}` | 双轨[手动] | 同步 | - | 删除教程 |
 | `POST /api/v1/books` | 双轨[手动] | 同步 | - | 书库化创建 |
 | `POST /api/v1/books/{id}/sources` | 双轨[手动] | 同步 | - | 添加渠道记录 |
-| `POST /api/v1/books/{id}/register` | 双轨[手动] | 同步 | - | 原地登记已有 PDF |
+| `POST /api/v1/books/{id}/register` | 双轨[手动] | 同步 | - | 原地登记已有 PDF（含内容身份三列） |
 | `POST /api/v1/books/{id}/import` | 双轨[手动] | 同步 | - | 人工导入 PDF |
 | `POST /api/v1/domains/{id}/apply-results` | 双轨[手动] | 同步 | - | 确认领域探索结果 |
 | `POST /api/v1/courses/{id}/apply-results` | 双轨[手动] | 同步 | - | 确认课程探索结果 |
@@ -822,9 +822,10 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 
 - **描述：** 原地登记（双轨[手动]）：数据根内已有文件直接登记为持有。
 - **输入：** 路径参数 `book_id`；请求体 `{"relative_path": "..."}`（数据根相对路径）。
-- **输出：** 200 登记结果（`mark_owned` 落 holding=owned + file_path 回填 + 渠道留痕
-  `channel=local_import`）；400 路径不在数据根内/PDF 校验失败；404 `FILE_NOT_FOUND` /
-  `BOOK_NOT_FOUND`；422 缺 relative_path。
+- **输出：** 200 登记结果（`mark_owned` 落 holding=owned + file_path 回填 + 内容身份三列
+  （sha256/size_bytes/page_count，QED-071 B 轮）+ 渠道留痕 `channel=local_import`）；
+  400 路径不在数据根内/PDF 校验失败；404 `FILE_NOT_FOUND` / `BOOK_NOT_FOUND`；
+  422 缺 relative_path；409 `CONTENT_IDENTITY_CONFLICT`（三列写入被磁盘库约束拒绝）。
 - **范例：**
   ```json
   // 请求
@@ -835,6 +836,9 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   ```
 - **解释：** 完整性校验（魔数 + pypdf + sha256；**跳过初筛门槛**）→ `mark_owned` 唯一写
   入口；文件不移动（与 import 的 tmp 暂存落盘相对）。
+  `mark_owned` 与内容身份三列是两步写：409 `CONTENT_IDENTITY_CONFLICT` 时书行**已是
+  owned 但三列未填**（不静默降级、也不回滚登记），人工按 D17 放宽索引后跑
+  `inventory reconcile` 补填；该状态在 `inventory verify` 中报 `unfilled`。
 
 ### `POST /api/v1/books/{book_id}/import`
 
@@ -846,10 +850,11 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   | file_path | string | 是 | 本机源文件路径 |
   | target_path | string | 否 | 期望落盘相对路径（D9：期望路径不含 sha，落盘自动补 `_<sha8>`）；缺省经 refs 反查默认桶 `raw/<domain>/<course_id>/<safe_title>_<sha8>.pdf` |
 
-- **输出：** 200 登记结果（`mark_owned` + 渠道留痕 `channel=local_import`）；
+- **输出：** 200 登记结果（`mark_owned` + 内容身份三列 + 渠道留痕 `channel=local_import`）；
   400 target_path 越界/非 PDF/拷贝失败；404 `FILE_NOT_FOUND` / `BOOK_NOT_FOUND`；
   422 缺 file_path / `NO_COURSE_REF`（反查不到课程，要求显式 target_path）；
-  409 `TARGET_CONFLICT`（目标已存在且不同内容，不覆盖用户文件）。
+  409 `TARGET_CONFLICT`（目标已存在且不同内容，不覆盖用户文件）；
+  409 `CONTENT_IDENTITY_CONFLICT`（同 register：owned 但三列未填，reconcile 补）。
 - **范例：**
   ```json
   // 请求
@@ -928,7 +933,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | 202 | 任务已接受（后台执行） |
 | 400 | 请求格式错误（INVALID_PARAMS：校验失败/文件不可读/JSON 解析失败/PDF 校验失败/路径越界） |
 | 404 | 资源不存在（DOMAIN_NOT_FOUND / COURSE_NOT_FOUND，及教程/书籍/文件/目录/任务的 plain-detail 404） |
-| 409 | 冲突与守卫：DOMAIN_NAME_CONFLICT / COURSE_ALREADY_EXISTS / COURSE_HAS_KNOWLEDGE / DOMAIN_NOT_EMPTY / SET_NO_CONFLICT / BOOK_ALREADY_EXISTS / BOOK_RETIRED / NO_COURSE_REF / TASK_ALREADY_RUNNING / TARGET_CONFLICT / LLM_UNAVAILABLE / INVALID_TRANSITION（非法状态迁移）/ 数据库未配置 |
+| 409 | 冲突与守卫：DOMAIN_NAME_CONFLICT / COURSE_ALREADY_EXISTS / COURSE_HAS_KNOWLEDGE / DOMAIN_NOT_EMPTY / SET_NO_CONFLICT / BOOK_ALREADY_EXISTS / BOOK_RETIRED / NO_COURSE_REF / TASK_ALREADY_RUNNING / TARGET_CONFLICT / CONTENT_IDENTITY_CONFLICT / LLM_UNAVAILABLE / INVALID_TRANSITION（非法状态迁移）/ 数据库未配置 |
 | 422 | 参数校验失败（缺必填字段、格式错误、值域错误） |
 | 502 | 上游模型调用失败（管线错误码透传：LLM_UNAVAILABLE / BUDGET_EXHAUSTED 等） |
 
@@ -983,8 +988,8 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 ### 实现状态
 
 - **CLI 已实现**：`src/qed_tracker/axiom.py`（`AxiomClient`）、`src/qed_tracker/cli.py`
-  `axiom push` 命令（提交与执行）、`src/qed_tracker/inventory.py`（传输记录落点）、
-  `QED_AXIOM_URL` 默认 `http://127.0.0.1:8902`（`config.py`）。
+  `axiom push` 命令（提交与执行）、`QED_AXIOM_URL` 默认 `http://127.0.0.1:8902`
+  （`config.py`）。**无传输记录落点**（QED-071 D3 判废，见下「传输记录」节）。
 - **8901 API 未暴露**：`src/qed_tracker/api/main.py` 无任何 axiom 路由。原 QED-010 规划项
   `POST /tasks/axiom/push` 未在 QED-010（已按主链路范围验收关闭，2026-09-09）中实现；
   如需 axiom 端点服务化另行立项。
@@ -1012,7 +1017,7 @@ QED-Tracker 客户端（`src/qed_tracker/axiom.py`）只消费以下 3 个端点
 | 响应 201 | `DocumentResponse`：`{id, filename, content_hash, page_count, status, created_at}` |
 | 错误 | 400（非 PDF / 无法导入）、413（超过大小限制，默认 `max_upload_bytes`）、422（校验失败） |
 | 幂等 | Axiom-Flow 按 PDF 内容哈希处理重复导入（返回既有文档，不重复入库） |
-| 调用处 | `AxiomClient.push()`；上传前必须已找到登记资源与实际 PDF |
+| 调用处 | `AxiomClient.push()`；上传前必须已从 `qt_books` 取到 owned 行与实际 PDF |
 
 **3. POST /api/v1/documents/{document_id}/parse-jobs — 创建解析任务**
 
@@ -1043,6 +1048,11 @@ QED-Tracker 客户端（`src/qed_tracker/axiom.py`）只消费以下 3 个端点
 | 前端入口 | 8903 前端只连 8900 网关（ADR 0007），浏览器不直连 8902 |
 
 ### 传输记录（客户端行为事实）
+
+**入口契约（QED-071 D15，2026-09-26）**：`axiom push` **只接受 `book_id`**——裸文件路径与
+按 `sha256:` 查岛两条旧入口已删除。取书侧读 `qt_books`（须 `holding=owned` 且 `file_path`
+在位），并用 `inspect_pdf` 重算磁盘内容；磁盘 sha 与记录不一致（`changed`）时拒绝上传。
+DB 未配置 → 退出码 2 显式报错（M4，不回退读资源岛）。
 
 **2026-09-24（QED-071 D3）起传输留痕判废**：成功上传后不再向数据根写传输 JSON，
 `push()` 结果只经返回值（CLI/调用方输出）透出，包含：`schema_version`、QED `resource_id`

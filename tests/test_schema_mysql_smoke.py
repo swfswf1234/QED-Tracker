@@ -68,6 +68,7 @@ BOOK_COLUMNS = {
     "book_id", "title", "original_title", "part", "authors", "publisher", "edition",
     "year", "language", "roles", "status", "retire_reason", "holding", "file_path",
     "priority", "notes", "domain_id", "created_at", "updated_at",
+    "sha256", "size_bytes", "page_count",
 }
 SOURCE_COLUMNS = {
     "source_id", "book_id", "channel", "provider_id", "page_url", "download_url",

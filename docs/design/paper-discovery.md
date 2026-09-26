@@ -10,7 +10,8 @@
 
 ## 事实边界
 
-arXiv 提供标题、作者、分类、时间和摘要等候选事实。百炼只根据研究目标生成有限检索计划并评估候选，不提供客观质量或引用影响力结论。下载器负责 PDF 校验和落盘，Inventory 继续保存资源事实；模型判断单独进入选择报告。
+arXiv 提供标题、作者、分类、时间和摘要等候选事实。百炼只根据研究目标生成有限检索计划并评估候选，不提供客观质量或引用影响力结论。下载器负责 PDF 校验和落盘（`raw/<domain_id>/_general/papers/<year>/<arxiv_id>_<sha8>.pdf`）；论文不进 `qt_books`（QED-071 D2/D14），内容身份只体现在落盘文件名的 sha8 与内存
+`ResourceRecord` DTO（D12），`meta/resources/` 资源岛与 `Inventory` 类均已退役；模型判断单独进入选择报告。
 
 模型不能直接写 PDF、修改资源记录或选择任意 URL。推荐命令只生成报告，下载必须由用户引用固定选择报告和一基序号显式执行。
 
@@ -24,7 +25,7 @@ arXiv 提供标题、作者、分类、时间和摘要等候选事实。百炼�
 
 1. 模型返回最多 4 个 `searches`；每项包含最多 4 个普通关键词、一个允许分类和简短理由。
 2. arXiv 对关键词使用 OR，对分类使用 AND；每项默认最多返回 10 条。
-3. 应用层按 arXiv ID 去重，并排除 Inventory 中已有的论文，最多向模型提交 40 条候选。
+3. 应用层按 arXiv ID 去重，并排除已下载论文（`qt_selections.downloads` 派生，QED-071 B-W3；原资源岛 `kind=paper` 读取路径已退役），最多向模型提交 40 条候选。
 4. 模型必须为每条候选返回 `goal_fit`、`foundational_value`、`readability` 三项 0–5 整数、理由和风险。
 5. 应用层按 50%/30%/20% 计算 0–100 分；70 分及以上进入推荐列表，排序键为分数降序、发布日期降序、arXiv ID 升序。
 
@@ -38,7 +39,7 @@ arXiv 提供标题、作者、分类、时间和摘要等候选事实。百炼�
 
 ## 选择报告 schema v1
 
-报告写入 `meta/selections/<selection-id>.json`，包含 `selection_id`、`schema_version`、`status`、时间、目标档案快照、临时目标、模型与契约版本、检索计划、候选、评分、推荐序号、调用用量、响应哈希和下载尝试。
+报告写入 `qt_selections` 表（REQ-032 Phase 2，`meta/selections/` JSON 已退役），包含 `selection_id`、`schema_version`、`status`、时间、目标档案快照、临时目标、模型与契约版本、检索计划、候选、评分、推荐序号、调用用量、响应哈希和下载尝试。
 
 报告先以 `ranked` 原子写入。后续显式下载只读取该快照并追加成功或失败尝试，再原子替换；成功项记录 `resource_id`。报告不保存密钥、完整提示词或完整原始模型响应。
 

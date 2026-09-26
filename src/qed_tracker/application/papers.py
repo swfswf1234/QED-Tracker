@@ -95,7 +95,7 @@ class PaperService:
     def download(self, candidate: Candidate) -> ResourceRecord:
         # ARCH-019 共享布局：论文落领域通用桶 papers/<year>/（raw/math/_general/papers/）。
         destination = (
-            raw_general_dir(self.resources.inventory.data_root) / "papers" / (candidate.year or "unknown")
+            raw_general_dir(self.resources.data_root) / "papers" / (candidate.year or "unknown")
         )
         return self.resources.download_candidate(candidate, kind=ResourceKind.PAPER, destination_dir=destination)
 
@@ -251,11 +251,9 @@ class PaperService:
         return candidates
 
     def _existing_arxiv_ids(self) -> set[str]:
-        return {
-            record.identifiers["arxiv"]
-            for record in self.resources.inventory.list(ResourceKind.PAPER.value)
-            if record.identifiers.get("arxiv")
-        }
+        # QED-071 B-W3（D2/D14）：去重索引由 qt_selections.downloads 派生；
+        # 资源岛 kind=paper 读取路径退役（岛内 paper 存量已随 A 轮清理丢失，派生严格优于现状）。
+        return self.selections.downloaded_arxiv_ids()
 
     @staticmethod
     def _validate_searches(searches: list[PaperSearch], allowed: tuple[str, ...]) -> None:

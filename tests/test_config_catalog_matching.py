@@ -294,7 +294,6 @@ def test_resource_record_roles_roundtrip():
         identifiers={},
         source={},
         file={"relative_path": "raw/x.pdf", "sha256": "abc", "size_bytes": 1, "mime_type": "application/pdf", "page_count": 1},
-        catalog_ref={"catalog_id": "math-qe", "course_id": "01_math_analysis", "target_id": "01-chenjixiu-v1"},
         roles=["textbook"],
     )
     payload = record.to_dict()

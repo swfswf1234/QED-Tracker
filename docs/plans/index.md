@@ -1,7 +1,7 @@
 # 计划索引
 
 状态：Current
-最后更新：2026-09-24
+最后更新：2026-09-26
 
 本目录只保存尚未关闭的跨模块实施计划。任务状态以[待办列表](../trackers/todo.md)为准；计划完成后将关闭证据写入 completed，正文默认归档至 [历史基线](../history/index.md)（[ADR 0009](../history/adr/0009-closed-plan-archival.md)；Delete 仅限内容已完全并入固定文档且无独立查阅价值、或用户明确指示）。
 
@@ -47,14 +47,17 @@
 
 - [v1.0 后续任务链条梳理](2026-09-24-v1-task-chain.md)（2026-09-24 初稿 + 同日口径裁决，对照根仓库 ARCH-024 三线）：**v1.0 = 三主线全部交付 + ARCH-024 三线优化收口**；三主线交付口径与风险表、批次顺序（0 裁决轮 → A~D → E 收口轮 → 滚动项）、跨项目接口（网关 task/step REQ、8901 任务化衔接、根壳登记表回填、REQ-020② 回执）与集中待裁决项（调研稿 #4/#7、#11~#18）；只梳理登记，不实现。
 
-- [存储链路治理请求包（根仓库 ARCH-032 / ADR 0018）](2026-09-24-storage-json-island-retirement-request.md)（2026-09-24，QED-071 承接讨论稿）：R1 meta JSON 岛代码退役（含「先迁列、后拆岛」时序约束）、R2 staging 残留、R3 `qt_books` 下载错误列；本仓评审登记勘误 C1~C4（无 Alembic、`qt_books` 加列即整表重建、双源回填实为单源、论文去重索引已随存量删除失效）与遗漏 M3/M4（M1、M2 原文未落盘，见执行计划收口记录），见下行执行计划。
 
-- [存储链路治理实施计划（QED-071 拆岛 + staging 生命周期）](2026-09-24-storage-json-island-retirement.md)（2026-09-24 立项 + 同日 A 轮收口，Current）：用户裁决 D1~D9（A/B 轮拆分评审通过、A 轮 = 数据根侧开工并**当日完成**、存量清理授权本机执行并执行完毕、清扫阈值与不加 CLI 定案、直接在 develop 做）；A 轮不触碰 `meta/resources` 岛写入（它是去重与校验的唯一载体，停写须等 B 轮 DB 列就位）；按裁决 D5 拆 **A 轮 = 数据根侧（已完成，门禁 505 passed + `rg` 零命中，证据见计划「A 轮收口记录」）/ B 轮 = 数据库侧（已交付设计契约，Q1~Q5 已于 2026-09-26 裁决 D10~D14，执行待排期与 D 类授权）**；
-A-W0~A-W7 与 B-W1~B-W5 工作项与严格顺序（**先 ALTER 磁盘表、后改 ORM 模型**，否则 `ensure_schema` 会 DROP+CREATE 清空 `qt_books`）、回滚机制；待裁 Q1~Q5 **已于 2026-09-26 裁决（D10~D14：换 `book_id` / legacy catalog 退役 / `ResourceRecord` 保留 DTO / 不做加法列自愈 / 论文承载面不提前）**，B 轮无待裁项，进度与复核见计划「进度与复核记录」。
+
+
 
 - [缺陷修复台账](2026-09-14-bugfix-ledger.md)（2026-09-14，QED-070）：v1.0 滚动缺陷登记与修复跟踪。
 
 ## 已完成计划
+
+- [存储链路治理实施计划（QED-071 拆岛 + staging 生命周期）](../history/baselines/2026-09-24-storage-json-island-retirement.md)（2026-09-24 立项 + 同日 A 轮收口，2026-09-26 B 轮执行完毕并关闭）：`qt_books` 内容身份三列手工迁移落 `qed_test`（D17 放宽为普通索引）+ 读路径全切 DB（M4 无岛回退）+ 资源岛停写退役、`Inventory` 类删除 + 全局反岛守护 + CLI 契约变更（D10/D11/D15/D16）；裁决 D1~D17、红线顺序与两轮举证全部留在正文。**已按 ADR 0009 Retain 归档至 history/baselines/**。
+
+- [存储链路治理请求包（根仓库 ARCH-032 / ADR 0018）](../history/baselines/2026-09-24-storage-json-island-retirement-request.md)（2026-09-24 承接讨论稿，2026-09-26 随 QED-071 关闭）：R1/R2/R3 承接结论与勘误 C1~C4、遗漏 M3/M4 留档（M1/M2 原文从未落盘）。**已按 ADR 0009 Retain 归档至 history/baselines/**。
 
 - [服务稳定性优化（REQ-017②③ + REQ-019）](../history/baselines/2026-09-service-hardening.md)（2026-09-14，QED-066）：重启后 orphaned running/queued → failed（dedup 解除）+ `verify_content` 下载内容校验（首页文本 vs 登记标题，软信号写入 qt_sources.note）+ 进度上报评估。**已按 ADR 0009 归档至 history/baselines/**。
 

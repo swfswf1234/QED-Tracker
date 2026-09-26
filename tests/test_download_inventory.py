@@ -2,9 +2,8 @@
 import httpx
 import pytest
 
-from qed_tracker.downloader import DownloadError, DownloadManager, inspect_pdf
-from qed_tracker.inventory import Inventory, staging_max_age_seconds, sweep_downloads
-from qed_tracker.models import ResourceKind
+from qed_tracker.downloader import DownloadError, DownloadManager
+from qed_tracker.inventory import staging_max_age_seconds, sweep_downloads
 
 
 def manager_with(handler, *, retries=1) -> DownloadManager:
@@ -61,33 +60,8 @@ def test_invalid_content_never_becomes_final_file(tmp_path):
     assert not destination.with_suffix(".pdf.part").exists()
 
 
-def test_inventory_register_verify_and_scan(tmp_path, pdf_bytes):
-    first = tmp_path / "books" / "first.pdf"
-    second = tmp_path / "legacy" / "second.pdf"
-    first.parent.mkdir(parents=True)
-    second.parent.mkdir(parents=True)
-    first.write_bytes(pdf_bytes)
-    second.write_bytes(pdf_bytes)
-    inventory = Inventory(tmp_path)
-
-    record = inventory.register(first, kind=ResourceKind.BOOK, title="First")
-    assert inventory.get(record.resource_id).file["relative_path"] == "books/first.pdf"
-    assert inventory.verify()[0][1] == "ok"
-    records, errors = inventory.scan([tmp_path / "legacy"])
-    assert not errors
-    assert records[0].sha256 == inspect_pdf(second)[0]
-    assert len(inventory.list()) == 1
-    assert inventory.list()[0].file["relative_path"] == "books/first.pdf"
-
-
-def test_inventory_rejects_paths_outside_data_root(tmp_path, pdf_bytes):
-    outside = tmp_path.parent / "outside.pdf"
-    outside.write_bytes(pdf_bytes)
-    try:
-        with pytest.raises(ValueError, match="数据根目录"):
-            Inventory(tmp_path).register(outside, kind=ResourceKind.BOOK, title="Outside")
-    finally:
-        outside.unlink(missing_ok=True)
+# QED-071 B 轮：Inventory 类（资源 JSON 岛）已退役——register/verify/scan 岛测试随之删除；
+# 内容身份读路径切 qt_books（见 test_data_layout.py 反岛守护与 test_reconcile.py）。
 
 
 # ---- QED-071 R2：staging 年龄清扫（四项边界 + 阈值计算） ----

@@ -6,8 +6,7 @@ import pytest
 from qed_tracker.application.papers import PaperService
 from qed_tracker.application.resources import ResourceService
 from qed_tracker.downloader import DownloadManager
-from qed_tracker.inventory import Inventory
-from qed_tracker.models import Candidate, PaperAssessment, PaperProfile, PaperSearch, ResourceKind
+from qed_tracker.models import Candidate, PaperAssessment, PaperProfile, PaperSearch
 
 
 class FakeArxiv:
@@ -66,16 +65,18 @@ def test_recommendation_is_audited_and_download_requires_saved_pick(tmp_path, pd
     first = _candidate("2601.00001", "2026-01-03T00:00:00+00:00", "Strong RAG")
     second = _candidate("2601.00002", "2026-01-02T00:00:00+00:00", "Weak RAG")
     existing = _candidate("2601.00003", "2026-01-01T00:00:00+00:00", "Existing")
-    existing_pdf = tmp_path / "existing.pdf"
-    existing_pdf.write_bytes(pdf_bytes + b"\n% existing variant\n")
-    inventory = Inventory(tmp_path)
-    inventory.register(existing_pdf, kind=ResourceKind.PAPER, title=existing.title, identifiers=existing.identifiers)
     manager = DownloadManager(retries=1)
     manager.client.close()
     manager.client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=pdf_bytes)))
     advisor = FakeAdvisor({first.provider_id: (5, 5, 5), second.provider_id: (2, 2, 2)})
     provider = FakeArxiv([first, second, existing, first])
-    service = PaperService(provider, ResourceService(inventory, manager), advisor=advisor)
+    service = PaperService(provider, ResourceService(tmp_path, manager), advisor=advisor)
+    # QED-071 B-W3：论文去重改由 qt_selections.downloads 派生（岛 kind=paper 读取路径退役）
+    service.selections.save({
+        "selection_id": type(service.selections).new_id(),
+        "status": "downloaded",
+        "downloads": [{"arxiv_id": "2601.00003", "status": "downloaded", "rank": 1, "resource_id": "sha256:abc"}],
+    })
 
     report = service.recommend(_profile(), goal="reliable RAG", top=5)
 
@@ -90,7 +91,8 @@ def test_recommendation_is_audited_and_download_requires_saved_pick(tmp_path, pd
     assert failures == 0
     assert downloaded["status"] == "downloaded"
     assert downloaded["downloads"][0]["resource_id"].startswith("sha256:")
-    assert inventory.list(ResourceKind.PAPER.value)
+    assert list((tmp_path / "raw" / "math" / "_general" / "papers" / "2026").glob("*.pdf"))
+    assert service.selections.downloaded_arxiv_ids() >= {"2601.00003", "2601.00001"}
     with pytest.raises(ValueError, match="推荐序号"):
         service.download_selection(report["selection_id"], [2])
     service.close()
@@ -101,7 +103,7 @@ def test_recommendation_without_eligible_candidate_returns_report(tmp_path):
     manager = DownloadManager(retries=1)
     service = PaperService(
         FakeArxiv([candidate]),
-        ResourceService(Inventory(tmp_path), manager),
+        ResourceService(tmp_path, manager),
         advisor=FakeAdvisor({candidate.provider_id: (1, 1, 1)}),
     )
     report = service.recommend(_profile())
@@ -121,7 +123,7 @@ def test_ranking_uses_score_then_known_date_then_arxiv_id(tmp_path):
     scores = {item.provider_id: (5, 4, 3) for item in (older, newer, undated)}
     service = PaperService(
         FakeArxiv([older, undated, newer]),
-        ResourceService(Inventory(tmp_path), manager),
+        ResourceService(tmp_path, manager),
         advisor=FakeAdvisor(scores),
     )
 
@@ -140,7 +142,7 @@ def test_failed_recommendation_is_saved_for_audit(tmp_path):
     manager = DownloadManager(retries=1)
     service = PaperService(
         FakeArxiv([]),
-        ResourceService(Inventory(tmp_path), manager),
+        ResourceService(tmp_path, manager),
         advisor=FailingAdvisor({}),
     )
 

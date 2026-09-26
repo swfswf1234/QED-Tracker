@@ -1,14 +1,16 @@
 # QED-071 存储链路治理实施计划（meta JSON 岛退役 + staging 生命周期）
 
-状态：Current（2026-09-24 A 轮完成、B 轮待排期——执行与门禁证据见「A 轮收口记录」；**Q1~Q5 已于 2026-09-26 裁决 D10~D14**，见「进度与复核记录」）
+状态：Historical（2026-09-26 QED-071 关闭；A 轮证据见「A 轮收口记录」，Q1~Q5 裁决见「进度与复核记录」，B 轮执行与举证见「B 轮收口记录」；关闭后遗留见[完成台账](../../trackers/completed.md)）
 任务类型：Plan（承接根仓库 ARCH-032 / ADR 0018 请求包 QED-071）
 最后更新：2026-09-26
-本轮范围：**A 轮 = 数据根（`QED_DATA_ROOT`）侧**；B 轮（数据库侧）本轮**只交付设计文档，不执行 DDL、不改 ORM 模型、不回填真实库**
-关联 ADR：根仓库 [ADR 0018](../../../docs/adr/0018-data-root-whitelist-and-meta-json-ban.md)（顶层白名单 + JSON 岛禁止）；本仓 [ADR 0006](../adr/0006-database-model-as-schema-rebuild.md)（模型即 schema，重建式自愈）
-关联设计：[下载管线设计](../design/download-pipeline.md)、[专用表设计](../architecture/database-private-tables.md)、[系统总览](../architecture/system-overview.md)、[主链路](../architecture/main-line.md)
-关联 Tracker：QED-071；根仓库 todo REQ-093（回执）/ REQ-094（存量清理，仅提清单）
+轮次范围（历史）：**A 轮 = 数据根（`QED_DATA_ROOT`）侧**（2026-09-24 完成）；**B 轮 = 元数据库侧**（2026-09-26 执行完毕，见「B 轮收口记录」）——立项时 B 轮只登记设计契约，DDL/模型改动随 B 轮实施落地
+关联 ADR：根仓库 [ADR 0018](../../../../docs/adr/0018-data-root-whitelist-and-meta-json-ban.md)（顶层白名单 + JSON 岛禁止）；本仓 [ADR 0006](../../adr/0006-database-model-as-schema-rebuild.md)（模型即 schema，重建式自愈）
+关联设计：[下载管线设计](../../design/download-pipeline.md)、[专用表设计](../../architecture/database-private-tables.md)、[系统总览](../../architecture/system-overview.md)、[主链路](../../architecture/main-line.md)
+关联 Tracker：QED-071（**已关闭**，见[完成台账](../../trackers/completed.md)）；根仓库 todo REQ-093（回执待用户提交）/ REQ-094（存量清理，已执行）
 承接请求包：[存储链路治理请求包](2026-09-24-storage-json-island-retirement-request.md)
-归档判定：待关闭时按 [ADR 0009](../history/adr/0009-closed-plan-archival.md) 两态判定
+归档判定：**Retain（用户 2026-09-26 指定）**——按 [ADR 0009](../../history/adr/0009-closed-plan-archival.md) 移入 `history/baselines/`，保留原文件名
+
+> **关闭归档（2026-09-26，QED-071）**：R1 拆岛 A/B 两轮 + R2 staging 生命周期已交付，本计划按 ADR 0009 Retain 归档至此。生产 `qed` 库迁移、REQ-093 根仓回执等人工遗留登记在[完成台账](../../trackers/completed.md) QED-071 行「遗留」段；现行事实源为[专用表设计](../../architecture/database-private-tables.md) 与[下载管线设计](../../design/download-pipeline.md)。
 
 ## 目标与成功标准
 
@@ -56,7 +58,7 @@
 - 不改 `raw/`、`parsed/` 布局与既有 sha256 幂等落盘命名（请求包确认为正面资产）。
 - 数据根存量删除、`tmp/参考书籍/` 迁移等 D 类操作只出清单，等用户执行或授权。
 
-## 用户裁决记录（A 轮 2026-09-24：D1~D9；B 轮开工 2026-09-26：D10~D14）
+## 用户裁决记录（A 轮 2026-09-24：D1~D9；B 轮开工 2026-09-26：D10~D17）
 
 | 编号 | 裁决 | 对本计划的影响 |
 | --- | --- | --- |
@@ -74,6 +76,9 @@
 | D12（原 Q3） | `ResourceRecord` **保留为内存 DTO** | 落点口径改「DB 列的读视图」，下游调用点最小改动；资源 schema v1 不删 |
 | D13（原 Q4） | **不引入**「磁盘仅缺列时拒绝重建」加法列自愈 | 不改 ADR 0006、无需新 ADR；只登记纪律「私有表加列 = 手工迁移 + 备份」 |
 | D14（原 Q5） | 论文承载面**不提前**到 B 轮，保持 D2 | B-W3 论文去重只做 `qt_selections.downloads` 派生最小替换；B 轮不被 D2 阻塞 |
+| D15（B 轮开工 2026-09-26） | `axiom push <resource>` **仅接受 book_id**：需 `qt_books` 有行、`holding=owned` 且文件在位；裸路径与 sha 直查入口删除 | 公开 CLI breaking 变更：`api.md`/`download-pipeline.md`/帮助文本/`test_axiom.py`/CLI 测试同轮同步；DTO 由 DB 三列 + `inspect_pdf` 现场拼装（D12 内存 DTO，不再写岛） |
+| D16（B 轮开工 2026-09-26） | `inventory list` 改**DB 书目视图**（读 `qt_books`：book_id/title/holding/file_path/sha8），`--kind` 参数删除；`inventory scan` 删除 | 论文无 `qt_books` 承载（D2/D14），list 数据源只剩书目；scan 的"原地登记"职能由 `books import` + `inventory reconcile` 承接 |
+| D17（B-W3 实施发现，2026-09-26） | `uk_qt_books_sha256` **唯一键放宽为普通索引 `ix_qt_books_sha256`** | 岛旧语义是「多书共用一内容」的 N:1（register 按 sha 命中即返回既有记录，多行 `qt_books` 可指向同一资源 JSON）；唯一键会让第二本同内容书登记时被拒（批量 fetch 直接 failed，`test_knowledge_fetch_processes_all_decided_books` 实证）。去重命中改 `ORDER BY created_at, book_id` 取首行，行为等价。生产 `qed` 侧按红线**先 ALTER 后改模型**：`ALTER TABLE qt_books DROP INDEX uk_qt_books_sha256, ADD INDEX ix_qt_books_sha256 (sha256);`（`qed_test` 已先行执行） |
 
 ## 前置条件
 
@@ -95,7 +100,7 @@ B 轮（开工前置，本轮只登记）：
 
 `ensure_schema` 对 `Base.metadata` 声明表的规则是：磁盘列名集合 ≠ 模型列名集合即 **DROP + CREATE 全表重建**
 （`src/qed_tracker/db/schema.py:91-94` 判漂移，`:150-166` 执行；本仓无 Alembic，
-[ADR 0006](../adr/0006-database-model-as-schema-rebuild.md) 决定 1/2）。`qt_books` 承载人工梳理的书目决策链
+[ADR 0006](../../adr/0006-database-model-as-schema-rebuild.md) 决定 1/2）。`qt_books` 承载人工梳理的书目决策链
 （`status`/`roles`/`priority`/`notes`），被 `qt_sources.book_id` 外键引用，并与
 `parsed/<domain>/<course>/<book_id>/` 关联——**一旦被重建即不可从任何事实源重放**。
 
@@ -205,7 +210,7 @@ B 轮（开工前置，本轮只登记）：
   已定稿；R1 资源半岛与 `qed-tracker/` 顶层区随 B 轮退役；附勘误 C1~C4 与遗漏 M3/M4（M1、M2 原文未落盘，见收口记录「勘误引用缺漏登记」）。
 - REQ-094 存量清理：只交 A-W6 清单。
 
-## B 轮工作项（本轮不执行，登记链条）
+## B 轮工作项（2026-09-26 全部执行完成，证据见「B 轮收口记录」）
 
 - **B-W1 内容身份列（手工迁移，D1）**：备份 `mysqldump --single-transaction qed qt_books` →
   `<data_root>/backups/YYYY-MM-DD-qed071-storage-island/qt_books.sql`（ADR 0018 例外区命名规则）→
@@ -213,6 +218,9 @@ B 轮（开工前置，本轮只登记）：
   ADD COLUMN page_count INT NULL, ADD UNIQUE KEY uk_qt_books_sha256 (sha256);`（MySQL 唯一索引允许多 NULL，
   未下载书目不受影响）→ 才改 `db/models.py:174-207` → 立刻验证 `rebuilt == 0`。
   `page_count` **必须一并迁**：`inventory.py:194` 的校验是三项比较，缺一项即静默降级。
+  **实施勘正（D17，2026-09-26）**：唯一键与岛 N:1 共用语义冲突，`qed_test` 已补执行
+  `DROP INDEX uk_qt_books_sha256, ADD INDEX ix_qt_books_sha256 (sha256)`；生产 `qed` 迁移口径以
+  「三列 + 普通索引」为准。
 - **B-W2 回填与对账**：复用 `inspect_pdf`（`downloader.py:159-175`）对 `holding=owned` 且 `file_path` 非空的
   书目逐本重算写三列；对账报告三分类（回填成功 / 文件缺失 / 与 `qt_sources.note` 记录的 sha8 不符，后者人工裁）；
   落点为 CLI `qed-tracker inventory reconcile`（`--json` + 非 0 退出码沿用 `cli.py:520,528` 约定，属公开 CLI 变更）；
@@ -240,8 +248,17 @@ A 轮：
 | 不越界 | 零 DDL、零 `db/models.py` 改动、零真实数据根读写（`git status` 与 diff 佐证） |
 | 收口 | `docs/guides/development.md` 完整门禁 + 通过数对账 + REQ-093 部分完成回执 |
 
-B 轮（登记，届时补全）：岛退役 `rg` 零命中 + `ensure_schema` `rebuilt == 0` 证据 + 对账报告三分类计数 +
-读路径三条定向测试 + 完整 `test_schema.py`/`test_db_models.py`/CLI 契约测试。
+B 轮（2026-09-26 实测，证据详见「B 轮收口记录」）：
+
+| 验收条目 | 验证方式与结果 |
+| --- | --- |
+| 岛退役（成功标准 R1） | `src/` 全仓无岛写盘/岛读（余 2 处命中均为 `inventory.py`/`resources.py` 模块 docstring 的退役注记，非路径字面量）；全局反岛守护三测试落地（`test_data_layout.py`）✅ |
+| 不触发自愈重建（红线） | 只读列集对账：`qed_test` 七表 `drift=NONE`（等同 `_table_drifted` 判据）→ `ensure_schema` 为 no-op ✅ |
+| 内容身份回填 | `owned_total=17 / owned_fully_filled=17`，三列各 17 行非空，`duplicate_sha_groups=0` ✅ |
+| 索引口径（D17） | `information_schema`：`ix_qt_books_sha256` `NON_UNIQUE=1`，无 `uk_qt_books_sha256`；`test_db_models.py` 断言模型侧同步 ✅ |
+| 读路径三条 | 去重（`test_services.py`）、`inventory verify/reconcile`（`test_reconcile.py`）、`axiom push <book_id>`（`test_axiom.py`）定向全绿 ✅ |
+| CLI 契约 | `test_cli_architecture.py`：`catalog run`/`inventory scan`/`inventory list --kind` 进「已删命令」断言，`axiom push` 只接受 `book_id` ✅ |
+| 收口 | 定向 191 passed + 全量 532 passed（1 例红为 QED-067 在途 `test_orchestration.py`，与本任务无关）+ `ruff check src tests scripts` clean + 文档门禁 8 passed |
 
 ## 回滚
 
@@ -256,8 +273,9 @@ B 轮（登记，届时补全）：岛退役 `rg` 零命中 + `ensure_schema` `r
 ## 关闭与归档
 
 A 轮收口只把 QED-071 标为「A 轮完成，B 轮待排期」，**不关闭任务**——R1 资源半岛未退役即不满足请求包验收。
-本计划按 [ADR 0009](../history/adr/0009-closed-plan-archival.md) 判 **Retain**（含 B 轮设计契约，B 轮开工时直接
-引用）。B 轮关闭时同轮做 REQ-093 终态回执与 todo 迁移 `completed.md`。
+本计划按 [ADR 0009](../../history/adr/0009-closed-plan-archival.md) 判 **Retain**（含 B 轮设计契约与两轮收口记录，
+生产 `qed` 迁移与候补 R3 仍要引用）。B 轮实现已于 2026-09-26 完成（见「B 轮收口记录」）。
+**2026-09-26 收口轮（用户指示「收尾该任务」+ 归档两态选 Retain + 人工遗留登记 completed.md「遗留」段）已执行关闭**：QED-071 从 `todo.md` 移入[完成台账](../../trackers/completed.md)（关闭结果 + 门禁证据 + 六项人工/治理面遗留）；本计划与根仓请求包讨论稿一并移入 `docs/history/baselines/`（保留原文件名），`plans/index.md`、`history/index.md` 与文档门禁白名单同步；生产 `qed` 库迁移、REQ-093 根仓回执、M1/M2 补录、AGENTS.md 措辞、候补 R3 排期、git 分组提交六项**不因关闭而消解**，以台账「遗留」段为准。
 
 ## 待裁问题
 
@@ -338,3 +356,119 @@ A-W5 读路径切换表、B 轮前置条件与「待裁问题」表。**B 轮自
 4. `docs/architecture/database-private-tables.md:300`「待裁 Q4」字样与 D13 不一致——属 A-W5 交付物的状态
    注记，按分级不动 `architecture/` 正文，登记为**待 B 轮文档轮同轮更新**（`plans/index.md` 本条同步已完成）。
 
+## B 轮收口记录（2026-09-26）
+
+**一、红线顺序执行证据（防整表重建）**
+
+1. 用户裁决：`qed_test` 是测试库，**免备份**（D 类授权范围内），故跳过 B-W1 步骤 ①。
+2. ② 先 ALTER 磁盘表：`qt_books` 加三列（sha256/size_bytes/page_count）→ 实施中按 **D17** 补执行
+   `DROP INDEX uk_qt_books_sha256, ADD INDEX ix_qt_books_sha256 (sha256)`。
+3. ③ 后改 `src/qed_tracker/db/models.py`（同提交内完成，未跨提交反向落地）。
+4. ④ 立刻取证：只读列集对账七表 `drift=NONE` → `ensure_schema` 判据不成立，即 `(created, rebuilt) == (0, 0)`；
+   `QED_DB_SMOKE=1 QED_DB_NAME=qed_test pytest tests/test_schema_mysql_smoke.py` = **1 passed**。
+   **生产 `qed` 库全程未连接、未改动。**
+
+**二、B-W1~B-W4 交付**
+
+- **B-W1**：三列 + `ix_qt_books_sha256` 普通索引（D17 勘正后口径）；`test_db_models.py` 断言
+  `uk_qt_books_sha256` 不在模型上、`ix_qt_books_sha256` 在。
+- **B-W2**：`application/reconcile.py` + CLI `qed-tracker inventory reconcile`——磁盘重算（`inspect_pdf`）
+  回填三列，三分类报告（`filled`/`mismatch`/`conflict`）+ `qt_sources.note` sha8 **只读**对账
+  （不符只报人工裁，绝不覆盖）；无归属 PDF 只统计（D2）。实测 `qed_test`：owned 17 本 → 17/17 回填，
+  `duplicate_sha_groups=0`。回归见 `tests/test_reconcile.py`。
+- **B-W3**：读路径切 DB——书侧去重改 `find_owned_by_sha256`（`holding=owned` + 文件在位，按
+  `created_at, book_id` 取首行）；`inventory verify`/`list` 读 `qt_books`；论文去重索引改由
+  `qt_selections.downloads` 派生；legacy catalog 读路径按 **D11 退役**（`run_catalog`、`CatalogAttempt`、
+  `catalog_target` 路由、`find_by_catalog_target`、`catalog_ref` 字段全删，`catalog.py`/`matching.py`/
+  `math-qe.json` 留作只读数据与 strict 规则）。**M4 落地**：`kind=book` 无 repo → `ValueError`，
+  CLI 无 DB → 退出码 2，无任何岛回退。
+- **B-W4**：`meta/resources/` 岛停写 + `Inventory` 类删除（`inventory.py` 只留布局访问器与
+  `sweep_downloads`）；`ResourceRecord` 降为内存 DTO（D12）；`axiom push` 改 **只接受 `book_id`（D15）**
+  并在磁盘 sha 与记录不一致（`changed`）时拒绝上传；`inventory scan` 删除、`inventory list` 改 DB 书目
+  视图（D16）；`--json` 输出 `book_id`（D10）。全局反岛守护三条测试落在 `tests/test_data_layout.py`
+  （禁写 `meta/resources`/`meta/transfers` 字面量、下载/清扫终态不建 `qed-tracker/` 顶层目录）。
+
+**三、门禁举证（本机 `conda run -n qed_env`）**
+
+- QED-071 定向 14 个测试文件 = **191 passed**（含 `test_reconcile`/`test_data_layout`/`test_services`/
+  `test_axiom`/`test_db_models`/`test_schema`/`test_cli_architecture`/`test_book_api`/`test_book_fetch`/
+  `test_knowledge_api`/`test_paper_application`/`test_download_inventory`/`test_documentation`/
+  `test_config_catalog_matching`）。
+- 全量 `pytest tests -q` = **532 passed, 1 failed, 1 skipped**；唯一失败
+  `tests/test_orchestration.py::test_evidence_packer_trims_deterministically_and_records_budget_omissions`
+  属 **QED-067 在途未提交工作**，与本任务无关（口径同「进度与复核记录」二）。
+- `ruff check src tests scripts` = All checks passed；文档门禁 `test_documentation.py` = 8 passed；
+  `qed-tracker --version` = 0.5.0；`--json catalog list` = `["math-qe"]`；`--json catalog show math-qe`
+  正常（GBK 控制台打印目录标题会 `UnicodeEncodeError`，属机器侧显示问题，UTF-8 stdout 下无异常）；
+  `catalog run` 已被 argparse 拒绝（invalid choice）。`git diff --check` = 0。
+
+**四、本轮文档同步清单**
+
+`docs/design/download-pipeline.md`（岛退役事实落点表 + 内容身份落点节 + D11 catalog 边界 + D16/D10 校验节 +
+实现状态 B 轮段）、`docs/architecture/database-private-tables.md`（B 轮节转「已实现——qed_test」+ D17 勘正
++ DDL 改普通索引 + 读路径口径转已实现 + 「待裁 Q4」改「已裁 D13：不做」+ 论文承载口径）、
+`docs/architecture/api.md`（register/import 输出含三列、传输记录节补 D15 入口契约、落点删 `inventory.py`）、
+`docs/architecture/system-overview.md`（职责边界/不变量 3·4·6/符合度 3·4·6 行/模块职责/独立能力面 MySQL 依赖）、
+`docs/architecture/code-map.md`（inventory.py 行改写 + 新增 `application/reconcile.py` 行 + resources/books/
+knowledge_repository 备注 + 两条测试行）、`docs/architecture/main-line.md`（岛行与数据根口径注记）、
+`docs/design/paper-discovery.md`（论文不入库承载 + 去重派生源 + 选择报告落 `qt_selections`）、
+`README.md`（数据位置与命令面）、`docs/trackers/project-status.md`（服务状态三行 + 当前主线 B 轮条目）。
+
+**五、遗留与移交**
+
+1. **生产 `qed` 库迁移未做**（本任务边界内明确不动）：上线新模型前必须先执行完整 ALTER
+   （三列 + `ix_qt_books_sha256` 普通索引），顺序「先 ALTER 后改模型」，红线同 B-W1。属人工 D 类操作。
+2. **候补 R3（B-W5）未排期**：`qt_books` 只加 `last_error`、时间戳从 `qt_tasks` 派生——B-W1 真实成本
+   已走通（一次手工 ALTER，测试库免备份），排期待用户定。
+3. **QED-070（缺陷台账）本轮无新增待修条目**：唯一实质缺陷是 **D17**（B-W1 唯一键与岛 N:1 共用语义
+   冲突，第二本同内容书登记被拒），已在任务内按裁决修复并把勘正写入本计划与专用表文档，不另开台账行。
+   `inventory verify` 的 `unfilled`/`changed` 与 reconcile `mismatch` 如何进入人工处置流程属功能范围
+   问题（QED-069/070），交用户裁决，不当作缺陷登记。
+4. **勘误 M1/M2 定义仍未落盘**（A 轮收口记录已登记）：本会话未新增定义，回执引用继续收窄为 M3/M4；
+   需用户补录或从 `plans/index.md` 与本计划引用中裁掉。
+5. **AGENTS.md「冻结目录自动下载必须保持严格匹配」** 在 D11 退役 `catalog run` 后措辞失效（strict 规则
+   本身仍在 `matching.py` 且由五阶段预筛承接）——属 `AGENTS.md` 治理面，交用户裁决后改，本轮未动。
+6. **git 提交（2026-09-26 已执行）**：B 轮改动与 QED-067 在途改动同处 `develop` 工作区，按单一目的
+   分组提交，只收录 QED-071 文件；`code-map.md`/`todo.md`/缺陷台账按行拆分，QED-067 的
+   `orchestration/`、`test_orchestration.py`、`pyproject.toml`、067 计划与其台账行不入本组。
+
+**六、REQ-093 终态回执（草稿，交用户提交根仓库——根仓文件本仓只读）**
+
+> QED-Tracker QED-071 **B 轮完成（2026-09-26）**，R1 全项收口：① `qt_books` 内容身份三列
+> （sha256/size_bytes/page_count）按「先 ALTER 后改模型」红线手工迁移落地测试库，只读列集对账七表
+> `drift=NONE`（自愈 no-op）；② `meta/resources/` 单资源 JSON 岛退役停写、`Inventory` 类删除，
+> 全局反岛守护（含禁写 `meta/transfers`）入测试；③ 读路径全切 DB——书侧 sha256 去重、
+> `inventory verify/list`、`axiom push`，DB 不可用一律显式报错（退出码 2），无岛回退（M4）；
+> ④ 磁盘重算回填 17/17 + `inventory reconcile` 三分类对账（新 CLI）；⑤ CLI 契约变更：
+> `catalog run` 退役、`inventory scan` 删除、`inventory list` 改 DB 书目视图、`axiom push` 仅接受
+> `book_id`。实现中勘正 **D17**：请求包设想的 `uk_qt_books_sha256` 唯一键与岛原语义「同内容多书 N:1
+> 共用」冲突，已放宽为普通索引 `ix_qt_books_sha256`（去重按 created_at/book_id 取首行）——
+> **根仓库 ADR 0018 / REQ-093 文档如引用唯一键需同步修正**。**本仓 QED-071 已于 2026-09-26 关闭**（计划按 ADR 0009 Retain 归档）。遗留：共享 `qed` 生产库迁移仍需人工按
+> 红线执行同一 ALTER（本任务只动测试库）；候补 R3（`last_error` 一列 + 时间戳派生）未排期；
+> 勘误 C1~C4、遗漏 M3/M4 已随本仓计划登记并落地，M1/M2 原文从未落盘、待补录或裁掉。
+> 证据：QED-071 定向 191 passed、全量 533 passed（1 例红属另一任务 QED-067 在途工作）、
+> `ruff check src tests scripts` clean、文档门禁 8 passed。见
+> `QED-Tracker/docs/history/baselines/2026-09-24-storage-json-island-retirement.md`「B 轮收口记录」（关闭后自 `docs/plans/` 归档至该位置）。
+
+**七、自查补正（2026-09-26 收口轮，用户指示「回退多余项 + 补齐缺口」）**
+
+自查 B 轮改动后确认两处偏差，均已处置：
+
+1. **回退越清单文档改动**：`docs/design/exploration-pipeline.md` 曾在「探索产物落盘机制」节加
+   5 行 ARCH-032 注记（讲探索产物 DB+raw 双落点，主题与资源岛相邻但非本任务面），且不在
+   A-W5「四处文档」也不在第四节九处清单内 → `git checkout` 回退，该文件本轮零改动。
+2. **补齐公开契约缺口**：`api/main.py` 在实现期新增了公开错误码
+   **409 `CONTENT_IDENTITY_CONFLICT`**（`set_content_identity` 遇磁盘库仍带 D17 旧唯一键时抛
+   `ValueError` 的映射），但 `api.md` 未登记、无测试覆盖，违反 AGENTS.md「公开契约必须同步
+   设计与测试」→ 已补：`api.md` register/import 两端点输出行 + 错误码表 409 行 + 半状态口径
+   （409 时书行 **owned 但三列未填**，不回滚登记，人工放宽索引后 `inventory reconcile` 补填，
+   `verify` 报 `unfilled`）；新增
+   `tests/test_book_api.py::test_register_and_import_map_identity_constraint_to_409`
+   （monkeypatch 令 `set_content_identity` 抛 `ValueError`，两端口断言 409 + 错误码 + 半状态）。
+   该错误码字面量只存在于 except 分支，分支不发生即无 409 可断言（变异校验受门禁策略拦截未实跑，
+   以逻辑等价性说明）。
+
+补正后门禁重跑：全量 **533 passed, 1 failed（同一 QED-067 在途例）, 1 skipped**（净增本轮 1 测试）；
+`ruff check src tests scripts` All checks passed；`test_documentation.py` + `test_book_api.py` +
+`test_schema.py` 定向 35 passed；`git diff --check` = 0。第四节清单不含 `exploration-pipeline.md`，
+与回退后事实一致。

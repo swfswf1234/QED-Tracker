@@ -20,13 +20,15 @@ docs/design/download-pipeline.md（九项裁决）。
 - 阶段4 机器验收：在 staging（tmp/qed-tracker/downloads）执行 accept_pdf 硬门槛
   （魔数/可解析/非加密/页数/大小）+ 文本层软信号（只记录不拒绝）；未过门槛文件停留
   staging 由下载器清理，永不进入数据根成品区。
-- 阶段5 登记：repo.mark_owned 唯一写 qt_books.holding/file_path；资源 JSON 登记
-  register_candidate；已 owned 书 fetch → no-op。LLM 判断不写资源事实。
+- 阶段5 登记：repo.mark_owned 唯一写 qt_books.holding/file_path；内容身份三列
+  （sha256/size_bytes/page_count）由 repo.set_content_identity 同步写入（QED-071 B 轮，
+  资源 JSON 岛已退役、register_candidate 删除）；已 owned 书 fetch → no-op。
+  LLM 判断不写资源事实。
 - 教程级批处理：refs 聚合书集（去重）→ 排除已 owned → 默认 textbook_ref+exercise_ref
   （include_parallel 显式纳入 parallel_ref）→ 单任务顺序逐书 → 部分失败不中断。
 
 并发与隔离：每次 fetch 经 factory 新建独立 BookService（providers + downloader +
-inventory）与 advisor，结束即 close（中止超时候选遗留的孤儿下载线程连接）；staging
+books repo）与 advisor，结束即 close（中止超时候选遗留的孤儿下载线程连接）；staging
 路径带唯一 tag，孤儿线程与后续候选不写同名 .download/.part 文件。
 """
 
@@ -46,7 +48,7 @@ from qed_tracker.application.resources import ResourceService
 from qed_tracker.config import Settings
 from qed_tracker.db.knowledge_repository import KnowledgeRepository, _refs_book_ids
 from qed_tracker.downloader import DownloadManager, accept_pdf, verify_content
-from qed_tracker.inventory import DEFAULT_DOMAIN_ID, Inventory, raw_course_dir, raw_general_dir
+from qed_tracker.inventory import DEFAULT_DOMAIN_ID, raw_course_dir, raw_general_dir
 from qed_tracker.matching import _language, _similarity
 from qed_tracker.models import Availability, BookExpectation, Candidate, ResourceKind
 from qed_tracker.providers.books import create_book_providers
@@ -60,8 +62,17 @@ class BookFetchError(RuntimeError):
     """全部自动候选失败：消息携带逐候选摘要、预筛失配与人工下载指引。"""
 
 
-def build_book_service(settings: Settings, names: tuple[str, ...] | None = None) -> BookService:
-    """每次取书任务新建独立 BookService（与 CLI _book_service 同构，任务结束 close）。"""
+def build_book_service(
+    settings: Settings,
+    names: tuple[str, ...] | None = None,
+    *,
+    books: KnowledgeRepository | None = None,
+) -> BookService:
+    """每次取书任务新建独立 BookService（与 CLI _book_service 同构，任务结束 close）。
+
+    QED-071 B 轮：`books` 必传（M4）——书侧去重与内容身份写读全在 qt_books，
+    无 repo 时教材下载路径显式报错，不再回落资源 JSON 岛。
+    """
     providers = create_book_providers(
         names or settings.sources,
         proxy=settings.proxy,
@@ -74,7 +85,7 @@ def build_book_service(settings: Settings, names: tuple[str, ...] | None = None)
         retries=settings.retries,
         tls_verify=settings.tls_verify,
     )
-    return BookService(providers, ResourceService(Inventory(settings.data_root), downloader))
+    return BookService(providers, ResourceService(settings.data_root, downloader, books=books))
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,8 +387,10 @@ class BookFetchService:
                                          provider_id=candidate.provider_id, page_url=candidate.page_url,
                                          download_url=candidate.download_url, ok=True,
                                          note=f"{record.resource_id}{content_note}")
-                    # 阶段5 登记（裁决 4 书级完成判据）：mark_owned 唯一写 holding/file_path
+                    # 阶段5 登记（裁决 4 书级完成判据）：mark_owned 唯一写 holding/file_path，
+                    # 内容身份三列同事务边界紧随写入（QED-071 B 轮，岛已退役）。
                     self.repo.mark_owned(state.book_id, file_path=record.file["relative_path"], status="downloaded")
+                    identity_note = self._record_content_identity(state.book_id, record)
                     state.attempts.append({"provider": candidate.provider, "title": candidate.title,
                                            "ok": True, "note": record.resource_id})
                     report(95, f"下载完成：{record.file['relative_path']}")
@@ -387,11 +400,33 @@ class BookFetchService:
                         "skipped": False,
                         "file_path": record.file["relative_path"],
                         "resource_id": record.resource_id,
+                        "identity": identity_note,
                         "attempts": state.attempts,
                         "provider_failures": state.provider_failures,
                         "manual_guidance": state.guidance,
                     }, True
         return None, found_any
+
+    def _record_content_identity(self, book_id: str, record) -> str:
+        """下载落盘成功后同步 qt_books 内容身份三列（B-W3）。
+
+        D17 后 sha256 为普通索引：同内容多书各行为一行三列（N:1 共用，与岛旧语义等价），
+        统一走 set_content_identity；去重命中他书只在返回值记 "shared:<book_id>" 留痕。
+        写入异常记 qt_sources 留痕不失败（文件已登记，reconcile 兜底）。
+        """
+        sha = record.file.get("sha256") or ""
+        try:
+            hit = self.repo.find_owned_by_sha256(sha) if sha else None
+            self.repo.set_content_identity(
+                book_id, sha256=sha, size_bytes=record.file["size_bytes"], page_count=record.file["page_count"]
+            )
+            if hit is not None and hit.book_id != book_id:
+                return f"shared:{hit.book_id}"
+            return "owned"
+        except (ValueError, KeyError) as exc:
+            self.repo.add_source(book_id, channel="content_identity", ok=False,
+                                 note=f"内容身份写入冲突（文件已登记，reconcile 可复核）：{exc}")
+            return f"conflict:{exc}"
 
     def _confirm(self, advisor, *, expectation: BookExpectation,
                  candidates: list[Candidate]) -> dict[str, _Verdict]:

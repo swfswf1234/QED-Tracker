@@ -1,8 +1,8 @@
 # 存储链路治理请求包（根仓库 ARCH-032 / ADR 0018 承接讨论稿）
 
-状态：待评审
+状态：Historical（2026-09-26 承接完毕，随 QED-071 关闭归档）
 任务类型：Plan（跨项目请求讨论稿；本文件不改代码、不改各任务契约）
-最后更新：2026-09-24
+最后更新：2026-09-26
 需求方：QED-Engine 根仓库（ARCH-032 存储链路规范化轮，勘察证据见其计划壳「勘察证据」节）
 目标项目：QED-Tracker
 评审方：用户
@@ -10,7 +10,9 @@
 关联设计：根仓库 `docs/standards/storage-conventions.md`（顶层白名单登记制、元数据 JSON 岛禁止）、`docs/design/dataset-conventions.md`（白名单节）
 关联 ADR：根仓库 `docs/adr/0018-data-root-whitelist-and-meta-json-ban.md`；本仓数据库模型口径见 `docs/adr/0006-database-model-as-schema-rebuild.md`
 关联 Tracker：根仓库 todo REQ-093；本仓 QED-071
-归档判定：待关闭时按 [ADR 0009](../history/adr/0009-closed-plan-archival.md) 两态判定
+归档判定：待关闭时按 [ADR 0009](../../history/adr/0009-closed-plan-archival.md) 两态判定
+
+> **关闭归档（2026-09-26，QED-071）**：本讨论稿的承接结论已在[执行计划归档](2026-09-24-storage-json-island-retirement.md) 与[完成台账](../../trackers/completed.md) 落定；勘误 C1~C4 与遗漏 M3/M4 随执行计划保留，M1/M2 原文从未落盘（待用户补录或裁掉）。REQ-093 根仓回执由用户提交。
 
 ## 目标与验收标准
 

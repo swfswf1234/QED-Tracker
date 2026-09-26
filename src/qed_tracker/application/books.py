@@ -1,4 +1,10 @@
-"""教材搜索、选择和冻结目录批处理用例。"""
+"""教材搜索和选择用例。
+
+D11（QED-071 B 轮，2026-09-26）：冻结目录批处理链（`run_catalog`/`CatalogAttempt`/
+`catalog_target` 路由/`find_by_catalog_target` 岛读）随资源 JSON 岛一并退役——
+它只服务已归档的 math-qe 人工盘点流程；自动取书唯一正源是 `book_fetch` 五阶段编排
+（qt_books 驱动）。`catalog.py`/`matching.py` 本体保留（历史资料仍可查目录）。
+"""
 
 from __future__ import annotations
 
@@ -8,8 +14,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 
 from qed_tracker.application.resources import ResourceService
-from qed_tracker.catalog import Catalog
-from qed_tracker.inventory import raw_course_dir, raw_general_dir
+from qed_tracker.inventory import raw_general_dir
 from qed_tracker.matching import match_candidate
 from qed_tracker.models import Candidate, CatalogTarget, MatchResult, ResourceKind, ResourceRecord
 from qed_tracker.providers.books import BookProvider, ProviderError
@@ -21,14 +26,6 @@ logger = logging.getLogger("qed_tracker.books")
 class RankedCandidate:
     candidate: Candidate
     match: MatchResult | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class CatalogAttempt:
-    target: CatalogTarget
-    status: str
-    reason: str
-    record: ResourceRecord | None = None
 
 
 class BookService:
@@ -96,66 +93,16 @@ class BookService:
         candidate: Candidate,
         *,
         kind: ResourceKind = ResourceKind.BOOK,
-        catalog_target: CatalogTarget | None = None,
-        catalog_id: str = "",
         staging_tag: str = "",
     ) -> ResourceRecord:
+        """手动选书落盘：解析直链后经通用服务下载登记（课程桶由取书编排决定）。
+
+        D11：catalog_target 课程桶路由随冻结目录链退役——交互式下载一律落领域通用桶
+        `raw/<domain>/_general/`（与 fetch-url 同构）；主链路自动取书仍按 refs 反查
+        课程桶（book_fetch._destination_dir）。
+        """
         resolved = self.resolve(candidate)
-        root = self.resources.inventory.data_root
-        # ARCH-019 共享布局：课程桶 raw/<domain>/<course>/；inbox/习题入领域通用桶 _general/。
-        if kind == ResourceKind.EXERCISE:
-            destination = raw_general_dir(root)
-        elif catalog_target:
-            destination = raw_course_dir(root, catalog_target.course_id)
-        else:
-            destination = raw_general_dir(root)
-        record = self.resources.download_candidate(
-            resolved, kind=kind, destination_dir=destination, catalog_target=catalog_target, staging_tag=staging_tag
+        destination = raw_general_dir(self.resources.data_root)
+        return self.resources.download_candidate(
+            resolved, kind=kind, destination_dir=destination, staging_tag=staging_tag
         )
-        return record
-
-    def run_catalog(
-        self, catalog: Catalog, *, course: str = "", download: bool = False, limit: int = 8
-    ) -> list[CatalogAttempt]:
-        attempts: list[CatalogAttempt] = []
-        targets = [target for target in catalog.targets if not course or target.course_id == course]
-        for target in targets:
-            existing = self.resources.inventory.find_by_catalog_target(catalog.id, target.id)
-            if existing:
-                attempts.append(CatalogAttempt(target, "EXISTS", "清单中已有该目标", existing))
-                continue
-            ranked = self.search(target.query or target.title, limit=limit, target=target)
-            strict = next((item for item in ranked if item.match and item.match.strict), None)
-            if not strict:
-                reason = "没有严格匹配候选"
-                if self.failures:
-                    reason += "; 来源失败: " + ", ".join(name for name, _ in self.failures)
-                attempts.append(CatalogAttempt(target, "REVIEW", reason))
-                continue
-            if not download:
-                attempts.append(
-                    CatalogAttempt(target, "READY", f"{strict.candidate.provider}: {strict.candidate.title}")
-                )
-                continue
-            try:
-                record = self.download(strict.candidate, kind=target.kind, catalog_target=target, catalog_id=catalog.id)
-                attempts.append(CatalogAttempt(target, "DOWNLOADED", strict.candidate.provider, record))
-            except Exception as exc:
-                attempts.append(CatalogAttempt(target, "FAILED", str(exc)))
-        return attempts
-
-
-def attempts_markdown(catalog: Catalog, attempts: Iterable[CatalogAttempt]) -> str:
-    lines = [
-        f"# {catalog.name} 下载报告",
-        "",
-        "| Target | Course | Kind | Status | Reason | Resource |",
-        "| --- | --- | --- | --- | --- | --- |",
-    ]
-    for attempt in attempts:
-        resource_id = attempt.record.resource_id if attempt.record else "-"
-        reason = attempt.reason.replace("|", "\\|")
-        lines.append(
-            f"| {attempt.target.title} | {attempt.target.course_id} | {attempt.target.kind.value} | {attempt.status} | {reason} | {resource_id} |"
-        )
-    return "\n".join(lines) + "\n"

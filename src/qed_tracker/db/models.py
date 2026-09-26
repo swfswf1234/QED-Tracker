@@ -17,7 +17,17 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -167,6 +177,9 @@ class QtBook(Base):
 
     __tablename__ = "qt_books"
     __table_args__ = (
+        # D17（QED-071 B 轮）：sha256 为普通索引——岛旧语义「多书共用一内容」是 N:1，
+        # 唯一键会让第二本同内容书登记被拒；去重查询按 created_at 取首行。
+        Index("ix_qt_books_sha256", "sha256"),
         {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4",
          "comment": "书库表：域级书库，登记一册/一本书的选用状态与持有状态，承载补书优先级；下载执行由 qt_sources 承载"},
     )
@@ -200,6 +213,15 @@ class QtBook(Base):
         index=True, comment="持有状态：owned=已到手；missing=未持有",
     )
     file_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="PDF 文件路径（数据根相对）")
+    sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="文件内容 SHA-256 小写十六进制（B 轮内容身份，QED-071；同内容多书可重复，D17 普通索引）"
+    )
+    size_bytes: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, comment="文件字节数（B 轮内容身份，QED-071）"
+    )
+    page_count: Mapped[int | None] = mapped_column(
+        Integer(), nullable=True, comment="PDF 页数（B 轮内容身份；verify 三项比较之一，QED-071）"
+    )
     priority: Mapped[int | None] = mapped_column(Integer(), nullable=True, index=True, comment="补书优先级：0=P0/1=P1/2=P2/NULL")
     notes: Mapped[str | None] = mapped_column(Text(), nullable=True, comment="备注")
     domain_id: Mapped[str] = mapped_column(String(32), nullable=False, default="", index=True, comment="所属领域标识")

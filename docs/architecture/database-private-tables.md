@@ -34,7 +34,7 @@
    （阶段/先修/别名）不在 DB，三项目无法共享；
 2. **缺指引检索的简介**：教材/习题集简介（用于指引后续候选检索）无处存放；
 3. **缺审计字段**：无 `created_by` / `updated_by`；
-4. **不承载论文/博客**：论文走 arXiv 下载 + `meta/resources/` JSON（kind=paper），MySQL 无索引
+4. **不承载论文/博客**：论文只落 `raw/<domain>/_general/papers/<year>/`（B 轮后岛退役，无 JSON 事实源），MySQL 无索引
    （**现状注记 2026-09-24 QED-071**：此句是上方旧三表模型的历史缺口描述；五层模型当前论文
    承载面仍为资源岛 JSON + `qt_selections.downloads` 派生，`qt_books.roles` 承载类型、无
    `kind` 列；论文进 `qt_books` 的契约（下方「接口/契约影响」）**实现未落地，D2 待裁**）；
@@ -255,12 +255,13 @@ CREATE TABLE qt_books (
 - **holding 语义**：显式化「PDF 是否到手」（旧 status 下载机隐含），与选用状态解耦。
 - **补书优先级**：`priority` 列由人工运营填写，LLM 不输出（运营决策）。
 
-### B 轮内容身份列契约（QED-071，待实现——设计定稿，本轮零 DDL、零模型改动）
+### B 轮内容身份列契约（QED-071，已实现——2026-09-26，qed_test）
 
-> **状态：待实现**。本节是存储链路治理 A/B 拆岛（QED-071，承接根仓 ADR 0018 / REQ-093）
-> 的 B 轮目标契约；A 轮（数据根侧）已交付，B 轮开工须满足「B 轮开工硬门」。当前
-> （B 轮前）`qt_books` **无**内容身份列，资源岛 `meta/resources/` 仍是唯一载体——
-> 本节落地前不得停写岛（先迁列、后拆岛）。
+> **状态：已实现（`qed_test`）**。本节是存储链路治理 A/B 拆岛（QED-071，承接根仓
+> ADR 0018 / REQ-093）的 B 轮契约：B-W1 已按「先 ALTER 后改模型」红线加三列，
+> D17 已把唯一键放宽为普通索引；`meta/resources/` 资源 JSON 岛与 `Inventory` 类
+> 已退役停写。**生产 `qed` 库未动**：正式迁移需先执行本节完整 ALTER 再发布新模型
+> （红线顺序不变）。
 
 **目标 DDL 草案**（命名对齐兄弟仓 `af_parse_jobs.source_sha256` 与本仓 `sha256:<digest>` 口径）：
 
@@ -269,9 +270,16 @@ ALTER TABLE qt_books
   ADD COLUMN sha256     VARCHAR(64) NULL COMMENT '文件内容 SHA-256（B 轮内容身份）',
   ADD COLUMN size_bytes BIGINT      NULL COMMENT '文件字节数（B 轮内容身份）',
   ADD COLUMN page_count INT         NULL COMMENT 'PDF 页数（B 轮内容身份；verify 三项比较之一）',
-  ADD UNIQUE KEY uk_qt_books_sha256 (sha256);
--- MySQL 唯一索引允许多 NULL：未下载书目（holding=missing）不受影响。
+  ADD INDEX ix_qt_books_sha256 (sha256);
+-- 多 NULL 不受影响：未下载书目（holding=missing）三列为 NULL。
 ```
+
+> **D17 勘正（2026-09-26，B-W3 实施发现）**：B-W1 原以 `ADD UNIQUE KEY
+> uk_qt_books_sha256` 落地，但唯一键与资源岛旧语义「多书共用同一内容（N:1）」冲突——
+> 第二本同内容书登记会被拒（批量取书直接 failed）。已放宽为**普通索引**
+> `ix_qt_books_sha256`（`qed_test` 已执行 `DROP INDEX uk_qt_books_sha256,
+> ADD INDEX ix_qt_books_sha256 (sha256)`）。去重查询按 `created_at, book_id` 取首行，
+> 确定性保持。生产 `qed` 迁移须按红线先执行本节完整 ALTER（三列 + 普通索引）再改模型。
 
 **红线顺序（防数据丢失；B 轮开工硬门）**：`ensure_schema` 对列集漂移的判定是
 **DROP + CREATE 全表重建**（`src/qed_tracker/db/schema.py` 判漂移于 `_table_drifted`、
@@ -283,8 +291,8 @@ ALTER TABLE qt_books
 `ensure_schema` 返回 `(created, rebuilt) == (0, 0)`**。三个子步骤不得拆到不同提交跨顺序落地；
 任何反向操作（先提交模型、后补 DDL）会在下次服务启动时清空 `qt_books`。
 
-**B 轮后读路径口径**（设计定稿，实现推后；逐条切换表见
-[QED-071 实施计划](../plans/2026-09-24-storage-json-island-retirement.md)）：
+**B 轮后读路径口径**（已实现，2026-09-26；逐条切换表见
+[QED-071 实施计划](../history/baselines/2026-09-24-storage-json-island-retirement.md)）：
 
 - 书侧 sha256 去重、`inventory verify`（三项比较 sha256/size/page_count，缺一即静默降级，
   故 `page_count` 必须一并迁）全部读本表三列；
@@ -297,8 +305,8 @@ ALTER TABLE qt_books
 **候补 R3（B-W5，未排期）**：`qt_books` 只加 `last_error` 一列，下载起止时间戳从
 `qt_tasks.error`/`created_at`/`updated_at` 只读聚合派生（每本书一个 `book_download` 任务），
 避开请求包设想的四列迁移；等 B-W1 走通「加列 = 手工迁移 + 备份」真实成本后再定排期。
-加法列自愈（磁盘仅缺列时拒绝重建并报错，照 `qed_llm_calls` 先例）**默认不做**（待裁 Q4，
-需新 ADR），只登记「加列 = 手工迁移 + 备份」纪律。
+加法列自愈（磁盘仅缺列时拒绝重建并报错，照 `qed_llm_calls` 先例）**已裁 D13：不做**
+（需新 ADR 才能翻案），只登记「加列 = 手工迁移 + 备份」纪律。
 
 ### 在本项目中的作用
 

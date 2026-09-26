@@ -3,7 +3,7 @@
 覆盖：书库化创建（201/409/422）、原地登记与人工导入（mark_owned 唯一写入口、
 D9 命名、无归属 422、不覆盖用户文件 409、跳过初筛门槛）、书级 fetch（202、
 任务成功 owned / 已 owned no-op / 退役 409）、教程级 fetch（refs 聚合 /
-include_parallel / 404）、同书与同教程活动任务查重 409。
+include_parallel / 404）、同书与同教程活动任务查重 409、内容身份三列约束 409（D17 兜底）。
 
 默认测试不访问公网：providers 为假实现，下载走 MockTransport；LLM 由
 monkeypatch 清空。
@@ -31,7 +31,6 @@ from qed_tracker.config import load_settings
 from qed_tracker.db.knowledge_repository import KnowledgeRepository
 from qed_tracker.db.models import Base, QedCourse, QedDomain
 from qed_tracker.downloader import DownloadManager
-from qed_tracker.inventory import Inventory
 from qed_tracker.models import Availability, Candidate
 
 COURSE = "01_math_analysis"
@@ -153,7 +152,7 @@ def _fetch_client(tmp_path, repo, provider, pdf: bytes, monkeypatch) -> TestClie
         manager = DownloadManager(retries=1)
         manager.client.close()
         manager.client = httpx.Client(transport=httpx.MockTransport(handler))
-        return BookService([provider], ResourceService(Inventory(tmp_path), manager))
+        return BookService([provider], ResourceService(tmp_path, manager, books=repo))
 
     settings = replace(load_settings(data_root=tmp_path), db_password="")
     app = create_app(settings, knowledge_repository=repo, book_service_factory=factory)
@@ -256,6 +255,31 @@ def test_register_validations(client, repo, tmp_path):
 
 
 # ---------------- 人工导入（POST /books/{id}/import） ----------------
+
+
+def test_register_and_import_map_identity_constraint_to_409(client, repo, tmp_path, pdf_bytes, monkeypatch):
+    """D17 兜底契约：磁盘库仍带旧唯一键时三列写入被拒 → 409，且登记不回滚（owned/三列未填）。"""
+
+    def _reject(self, book_id, **kwargs):
+        raise ValueError("内容身份写入被磁盘库约束拒绝（未放宽唯一键？D17）")
+
+    monkeypatch.setattr(KnowledgeRepository, "set_content_identity", _reject)
+    repo.create_book(f"{ABBR}-b01", title="微积分学教程", domain_id="math")
+    rel = "raw/math/01_math_analysis/manual.pdf"
+    target = tmp_path / rel
+    target.parent.mkdir(parents=True)
+    target.write_bytes(pdf_bytes)
+
+    for path, payload in (
+        ("/register", {"relative_path": rel}),
+        ("/import", {"file_path": str(tmp_path / "s.pdf"), "target_path": rel}),
+    ):
+        (tmp_path / "s.pdf").write_bytes(pdf_bytes)
+        resp = client.post(f"/api/v1/books/{ABBR}-b01{path}", json=payload)
+        assert resp.status_code == 409, path
+        assert resp.json()["detail"]["code"] == "CONTENT_IDENTITY_CONFLICT", path
+    row = repo.get_book(f"{ABBR}-b01")
+    assert row.holding == "owned" and row.sha256 is None  # 不回滚，交 reconcile 补填
 
 
 def test_import_default_bucket_and_d9_naming(client, repo, tmp_path, pdf_bytes):

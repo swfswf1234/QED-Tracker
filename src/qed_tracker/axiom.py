@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 
-from qed_tracker.inventory import Inventory
 from qed_tracker.models import ResourceRecord
 
 
@@ -33,14 +33,15 @@ class AxiomClient:
     def push(
         self,
         resource: ResourceRecord,
-        inventory: Inventory,
+        data_root: Path,
         *,
         parse: bool = False,
         page_start: int | None = None,
         page_end: int | None = None,
     ) -> dict:
+        """上传内存 DTO 指向的数据根内文件（D15：DTO 由 CLI 从 qt_books 行 + 现场校验拼装）。"""
         self.health()
-        path = resource.absolute_path(inventory.data_root)
+        path = resource.absolute_path(Path(data_root))
         if not path.exists():
             raise AxiomError(f"资源文件不存在：{path}")
         with path.open("rb") as stream:
