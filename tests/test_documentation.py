@@ -60,6 +60,8 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/plans/2026-09-14-download-channel-evaluation.md"),
     Path("docs/plans/2026-09-14-bugfix-ledger.md"),
     Path("docs/plans/2026-09-24-v1-task-chain.md"),
+    Path("docs/plans/2026-09-24-storage-json-island-retirement-request.md"),
+    Path("docs/plans/2026-09-24-storage-json-island-retirement.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
     Path("docs/trackers/completed.md"),

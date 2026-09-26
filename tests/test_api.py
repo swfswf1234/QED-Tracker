@@ -104,6 +104,28 @@ def test_health_returns_ok(tmp_path):
         assert response.json() == {"status": "ok"}
 
 
+def test_service_construction_sweeps_stale_staging(tmp_path):
+    """QED-071 R2：服务构造即按 mtime 年龄清扫 tmp/qed-tracker/downloads/ 的孤儿
+    .download（08-28 50MB 残留类），新鲜 staging 与非本仓命名不动。"""
+    import os
+    import time
+
+    from qed_tracker.inventory import downloads_tmp_dir
+
+    staging = downloads_tmp_dir(tmp_path)
+    staging.mkdir(parents=True)
+    stale = staging / "Apostol_Calculus_5b000001.download"
+    stale.write_bytes(b"x" * 1024)
+    stamp = time.time() - 24 * 3600
+    os.utime(stale, (stamp, stamp))
+    foreign = staging / "other_project_note.txt"
+    foreign.write_text("keep", encoding="utf-8")
+
+    with make_client(tmp_path):
+        assert not stale.exists(), "超龄 staging 应在服务启动时被清扫"
+        assert foreign.exists(), "非本仓命名模式不得误删"
+
+
 def test_books_search_is_sync_and_returns_candidates(tmp_path):
     candidate = Candidate(
         "fake", "x1", "Topology", ("James Munkres",), "English", download_url="https://example.test/t.pdf"

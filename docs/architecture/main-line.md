@@ -86,7 +86,7 @@ flowchart LR
 | 现有体系 | 与主链路关系 |
 | --- | --- |
 | `catalog/evaluate` 任务 | 已退役（QED-030）；渠道评估职责由教材搜索/下载路径承接。 |
-| `meta/resources/` + 五层表（qt_knowledge/qt_books/qt_sources） | 资源登记链路保留（下载文件校验/哈希/登记，旧三表已退役）；QED-050-D 书库化后主链路条目即 `qt_knowledge`/`qt_books` 行，登记统一走 `mark_owned`。 |
+| `meta/resources/` + 五层表（qt_knowledge/qt_books/qt_sources） | 资源登记链路保留（下载文件校验/哈希/登记，旧三表已退役；`meta/resources/` 岛为 B 轮退役对象，QED-071）；QED-050-D 书库化后主链路条目即 `qt_knowledge`/`qt_books` 行，登记统一走 `mark_owned`。 |
 | `catalogs/math-qe.json` | 现有 13 门课程目录（研究生 QE 方向）保留；主链路课程体系与之并行，`course_id` 命名对齐（同一课程不同名称由用户审理映射，如「线性代数/高等代数」）。 |
 | 来源适配器 / 通用下载器 | 复用：主链路下载仍走 providers → 通用下载器 → 校验/哈希，不新建下载实现。 |
 | 8903 前端 | 课程知识链路与评审台经 `/courses` API 与主链路端点消费（数据源切换 REQ-035）。 |

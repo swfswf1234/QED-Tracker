@@ -3,7 +3,7 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-21
+最后更新：2026-09-24
 需求方：QED-Engine（根仓库 REQ-026/REQ-029/REQ-030；2026-08-16 用户裁决知识层次重构）
 关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/db/schema.py`、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/db/selection_repository.py`、`src/qed_tracker/db/tasks_repository.py`
 关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、`tests/test_schema.py`、`tests/test_schema_mysql_smoke.py`（实现轮同步更新）
@@ -34,7 +34,10 @@
    （阶段/先修/别名）不在 DB，三项目无法共享；
 2. **缺指引检索的简介**：教材/习题集简介（用于指引后续候选检索）无处存放；
 3. **缺审计字段**：无 `created_by` / `updated_by`；
-4. **不承载论文/博客**：论文走 arXiv 下载 + `meta/resources/` JSON（kind=paper），MySQL 无索引；
+4. **不承载论文/博客**：论文走 arXiv 下载 + `meta/resources/` JSON（kind=paper），MySQL 无索引
+   （**现状注记 2026-09-24 QED-071**：此句是上方旧三表模型的历史缺口描述；五层模型当前论文
+   承载面仍为资源岛 JSON + `qt_selections.downloads` 派生，`qt_books.roles` 承载类型、无
+   `kind` 列；论文进 `qt_books` 的契约（下方「接口/契约影响」）**实现未落地，D2 待裁**）；
    博客（课程延展资料）完全不在模型内；
 5. **粒度错位**：qt_selections 一条=一套书，「套」与「候选/决定/下载/验证」四段进度混杂，
    多卷教材靠 vols JSON 表达，下载与验收入口在 qt_downloads 跨表。
@@ -252,6 +255,51 @@ CREATE TABLE qt_books (
 - **holding 语义**：显式化「PDF 是否到手」（旧 status 下载机隐含），与选用状态解耦。
 - **补书优先级**：`priority` 列由人工运营填写，LLM 不输出（运营决策）。
 
+### B 轮内容身份列契约（QED-071，待实现——设计定稿，本轮零 DDL、零模型改动）
+
+> **状态：待实现**。本节是存储链路治理 A/B 拆岛（QED-071，承接根仓 ADR 0018 / REQ-093）
+> 的 B 轮目标契约；A 轮（数据根侧）已交付，B 轮开工须满足「B 轮开工硬门」。当前
+> （B 轮前）`qt_books` **无**内容身份列，资源岛 `meta/resources/` 仍是唯一载体——
+> 本节落地前不得停写岛（先迁列、后拆岛）。
+
+**目标 DDL 草案**（命名对齐兄弟仓 `af_parse_jobs.source_sha256` 与本仓 `sha256:<digest>` 口径）：
+
+```sql
+ALTER TABLE qt_books
+  ADD COLUMN sha256     VARCHAR(64) NULL COMMENT '文件内容 SHA-256（B 轮内容身份）',
+  ADD COLUMN size_bytes BIGINT      NULL COMMENT '文件字节数（B 轮内容身份）',
+  ADD COLUMN page_count INT         NULL COMMENT 'PDF 页数（B 轮内容身份；verify 三项比较之一）',
+  ADD UNIQUE KEY uk_qt_books_sha256 (sha256);
+-- MySQL 唯一索引允许多 NULL：未下载书目（holding=missing）不受影响。
+```
+
+**红线顺序（防数据丢失；B 轮开工硬门）**：`ensure_schema` 对列集漂移的判定是
+**DROP + CREATE 全表重建**（`src/qed_tracker/db/schema.py` 判漂移于 `_table_drifted`、
+执行于 `ensure_schema`；本仓无 Alembic，ADR 0006 重建式自愈）。`qt_books` 承载人工书目决策链
+（`status`/`roles`/`priority`/`notes`）、被 `qt_sources.book_id` 外键引用、且与
+`parsed/<domain>/<course>/<book_id>/` 关联——**一旦被重建即不可从事实源重放**。
+因此硬顺序为：**① 备份 `mysqldump` 进 `<data_root>/backups/<日期>-qed071-storage-island/`
+→ ② ALTER 磁盘表加三列 → ③ 才改 `src/qed_tracker/db/models.py` → ④ 立刻启动验证
+`ensure_schema` 返回 `(created, rebuilt) == (0, 0)`**。三个子步骤不得拆到不同提交跨顺序落地；
+任何反向操作（先提交模型、后补 DDL）会在下次服务启动时清空 `qt_books`。
+
+**B 轮后读路径口径**（设计定稿，实现推后；逐条切换表见
+[QED-071 实施计划](../plans/2026-09-24-storage-json-island-retirement.md)）：
+
+- 书侧 sha256 去重、`inventory verify`（三项比较 sha256/size/page_count，缺一即静默降级，
+  故 `page_count` 必须一并迁）全部读本表三列；
+- DB 未配置/不可达时**显式报错退出**（沿用 `cli.py` 的 `db_configured` 门），
+  **不得**回退读资源岛或静默跳过；
+- `inventory reconcile` 新 CLI（B-W2 回填对账：磁盘重算 → 三分类报告）；
+- 回填源为磁盘重算（`inspect_pdf`），与 `qt_sources.note` 的 sha8 只读对账（岛存量已删，
+  所谓「双源回填」实为单源——勘误 C3）。
+
+**候补 R3（B-W5，未排期）**：`qt_books` 只加 `last_error` 一列，下载起止时间戳从
+`qt_tasks.error`/`created_at`/`updated_at` 只读聚合派生（每本书一个 `book_download` 任务），
+避开请求包设想的四列迁移；等 B-W1 走通「加列 = 手工迁移 + 备份」真实成本后再定排期。
+加法列自愈（磁盘仅缺列时拒绝重建并报错，照 `qed_llm_calls` 先例）**默认不做**（待裁 Q4，
+需新 ADR），只登记「加列 = 手工迁移 + 备份」纪律。
+
 ### 在本项目中的作用
 
 - 域级书库与补书运营的事实源：五阶段取书（检索→确认→下载→staging 机器验收→登记）的
@@ -397,6 +445,10 @@ CREATE TABLE qt_selections (
 
 ## Schema 自愈（ADR 0006：模型即 schema）
 
+> **QED-071 纪律注记（2026-09-24）**：本机制对私有表意味着「**磁盘加列即整表重建**」——
+> 私有表新增列必须走手工迁移（备份 → 先 ALTER 磁盘 → 后改模型），不得先提交模型改动；
+> 红线顺序与 DDL 草案见上方「B 轮内容身份列契约」。
+
 **Alembic 迁移链已退役**（ADR 0006）：`alembic.ini` 与迁移目录 migrations/ 已删除，
 `ensure_schema(engine)` 启动自愈取代 `alembic upgrade head`；历史链仅作 Git 历史追溯，
 不再作为实现依据。
@@ -420,7 +472,8 @@ CREATE TABLE qt_selections (
   8901 教程级取书、verify 只读复核、channels 全量遍历 qt_books 聚合 qt_sources；
   approve/reject 已删除，设计裁决 6）；`books fetch <book_id>` 书级取书（裁决 9 双入口）。
 - 论文/博客：进入 qt_books（roles 承载类型），快照落盘统一链路（HTML→PDF 或归档，
-  实现计划明确）。
+  实现计划明确）。**实现未落地（2026-09-24 QED-071 注记：D2 论文承载面待裁，拆岛不被此项阻塞；
+  岛内 `kind=paper` 记录已随存量删除，论文去重当前实际经 `qt_selections.downloads` 派生）。**
 - 课程体系只读端点（`GET /api/v1/courses`、`GET /api/v1/courses/{domain_id}`）读共享表，
   契约见[数据库共享表设计](database-shared-tables.md)与 [API 设计文档](api.md)。
 
@@ -431,8 +484,10 @@ CREATE TABLE qt_selections (
 （book_id/title/original_title/part/authors/publisher/edition/year/language/roles/status/
 retire_reason/holding/file_path/priority/notes/domain_id/created_at/updated_at）：
 
-- **无** `display_title` / `sha256` / `size` / `page_count` 列（书库化已删）——展示名由前端按
-  `title + part` 组装；文件内容指纹只落 qt_sources.note 与资源清单 JSON。
+- **无** `display_title` 列（书库化已删）——展示名由前端按 `title + part` 组装；
+  **B 轮前**（当前）`sha256`/`size_bytes`/`page_count` 列不存在，文件内容指纹只落
+  qt_sources.note 与资源清单 JSON；**B 轮后**三列为内容身份列（契约见下方
+  「B 轮内容身份列契约」节），`to_dict()` 全列随之含三列。
 - `holding=owned` 时 `file_path` 回填（数据根相对路径），`status=downloaded`（待验证）；
   `verify_book` 后 `status=verified`；下载执行细节见 qt_sources。落盘目录 `raw/<domain_id>/<course_id>/`。
 - `roles` 取值 `textbook`/`exercises`/`solutions`；教材含习题 → `roles=["textbook","exercises"]`。

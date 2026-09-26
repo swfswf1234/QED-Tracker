@@ -1044,15 +1044,16 @@ QED-Tracker 客户端（`src/qed_tracker/axiom.py`）只消费以下 3 个端点
 
 ### 传输记录（客户端行为事实）
 
-成功上传后，本仓库将结果写入 `meta/transfers/axiom/<sha256>.json`，包含：`schema_version`、
-QED `resource_id` 和 Axiom 服务 URL；Axiom `document_id`、完整文档响应和 UTC 推送时间；
-显式解析成功时的 `parse_command` 响应。传输记录是下游交接状态，不得写入单资源 JSON，
-也不得改变 PDF 的 `resource_id`。
+**2026-09-24（QED-071 D3）起传输留痕判废**：成功上传后不再向数据根写传输 JSON，
+`push()` 结果只经返回值（CLI/调用方输出）透出，包含：`schema_version`、QED `resource_id`
+和 Axiom 服务 URL；Axiom `document_id`、完整文档响应和 UTC 推送时间；显式解析成功时的
+`parse_command` 响应。需审计时经 `qt_tasks`/`qed_llm_calls` 与 Axiom-Flow 侧记录反查，
+本仓不新建承载（根仓 ADR 0018 元数据 JSON 岛禁止）。传输状态不改变 PDF 的 `resource_id`。
 
 ### 失败语义
 
 - 健康检查、连接、上传、服务限制或解析提交失败均返回运行错误和有限长度的 HTTP 摘要。
-- 上传失败时不写成功传输记录，也不修改本地资源事实。
-- 上传成功而解析提交失败时，保留 Axiom 已导入文档，将 `parse_error` 写入传输记录，然后向 CLI 返回失败。
+- 上传失败时不修改本地资源事实。
+- 上传成功而解析提交失败时，保留 Axiom 已导入文档，向 CLI 返回失败（不落盘留痕）。
 - 工具不自动删除已上传文档，也不自动重试可能产生费用的解析任务。
 - 再次推送同一资源依赖 Axiom 的内容哈希幂等语义，本项目不通过共享状态实现下游去重。

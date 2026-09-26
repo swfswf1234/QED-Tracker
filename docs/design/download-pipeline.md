@@ -3,7 +3,7 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-21
+最后更新：2026-09-24
 关联代码：`src/qed_tracker/application/book_fetch.py`（编排母本）、`src/qed_tracker/downloader.py`、`src/qed_tracker/application/resources.py`、`src/qed_tracker/inventory.py`、`src/qed_tracker/catalog.py`（catalog run 与冻结目录）、`src/qed_tracker/matching.py`（严格匹配）、`src/qed_tracker/catalogs/math-qe.json`（math-qe 冻结书单）、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/providers/books.py`、`src/qed_tracker/providers/book_advisor.py`、`src/qed_tracker/api/main.py`（书籍组端点）、`src/qed_tracker/cli.py`（mainline/books/catalog 命令）
 关联测试：`tests/test_book_providers.py`、`tests/test_book_fetch.py`、`tests/test_book_llm_advisor.py`、`tests/test_book_acceptance.py`、`tests/test_book_api.py`、`tests/test_download_inventory.py`、`tests/test_services.py`、`tests/test_config_catalog_matching.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0003](../history/adr/0003-pending-design-location.md)、[ADR 0008](../history/adr/0008-design-doc-scope-reshuffle.md)
@@ -253,6 +253,14 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
   未到释放点即超时 → 候选失败换下一个。
 - **孤儿隔离**：沿用 `_timed_download` 模式（ThreadPoolExecutor + 唯一 staging_tag）；
   超时候选的孤儿线程与后续候选不写同名 `.part`，`service.close()` 断连自灭。
+- **staging 生命周期（QED-071 R2，2026-09-24 实况）**：孤儿线程可能在候选被超时放弃后
+  仍把 `.download` 写完，此时已无人 promote 或清理（08-28 50MB 残留根因）——失败/取消路径
+  的即时清理覆盖不到该 case，须靠**年龄清扫**兜底：`inventory.sweep_downloads(directory,
+  max_age_seconds=...)` 只匹配 `*.download`/`*.download.part`，非递归、不删目录、不碰其他
+  项目前缀，失败只告警不阻断任务；阈值 = `timeout_seconds × retries × 4` 且绝对下限
+  6 小时（`staging_max_age_seconds`，裁决 D7），严格大于单次下载最长寿命故无需 in-flight
+  注册表（卡死由 httpx timeout 兜底）。挂载点：服务构造（`Application.__init__`）+
+  取书任务入口（`book_download`/`tutorial_fetch` handler）；不挂公开 CLI（裁决 D8）。
 - **完整性**：来源声明 md5 校验（IA/libgen identifiers.md5）保留，不一致 → 候选失败 +
   staging 清理。
 - resolve 无直链（IA 无公开 PDF、GB 无 downloadLink）→ 候选失败。
@@ -335,6 +343,11 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
 
 ## 事实落点表
 
+> **存储链路约束（ARCH-032）**：`raw/` 是书籍/论文 PDF 的**唯一成品落点**；书籍元数据
+> 唯一事实源为 DB（`qt_books`/`qt_sources`）；LLM 调用写 `qed_llm_calls`，不另落 JSON；
+> `meta/resources/<sha256>.json` 是内容身份的临时 JSON 岛（野生区），QED-071 B 轮退役前不停写，
+> B 轮完成后即消失——B 轮前不得视其为合规落点。
+
 | 事件 | qt_books | qt_sources | qt_tasks | qed_llm_calls | 资源 JSON | staging |
 |---|---|---|---|---|---|---|
 | 检索（硬编码） | 不写 | 零候选时 1 条（channel=search, ok=0, note=queries） | progress | 不写 | 不写 | 不产生 |
@@ -373,6 +386,15 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
 资源服务把下载器已经计算的 SHA-256、大小和页数直接交给 Inventory，不重复解析 PDF。如果相同 SHA-256 已有有效记录，则复用既有记录并移除本次新产生的重复文件。
 
 **资源 schema v1**：资源身份固定为 `sha256:<digest>`。单资源 JSON 写入 `meta/resources/<sha256>.json`，字段如下：
+
+> **B 轮退役预告（QED-071，2026-09-24）**：本落点是 A/B 拆岛的 A 轮非目标——`meta/resources/`
+> 当前仍是书侧 sha256 去重、论文去重索引与 `inventory verify` 的唯一载体，DB 内容身份列
+> （`qt_books.sha256`/`size_bytes`/`page_count`）就位并回填对账前**不得停写**（先迁列、后拆岛）。
+> B 轮落点 = `qt_books` 列 + `qt_sources` 现有列，读路径切换表见
+> [QED-071 实施计划](../plans/2026-09-24-storage-json-island-retirement.md)；目标契约见
+> [数据库专用表设计](../architecture/database-private-tables.md)「B 轮内容身份列契约」。
+> 另：Axiom 传输留痕（原 `meta/transfers/` 写入）已于 A 轮判废删除（D3），交付结果只经
+> `push()` 返回值透出，见[架构 API](../architecture/api.md)「传输记录」。
 
 | 字段 | 内容 |
 | --- | --- |

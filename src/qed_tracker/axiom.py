@@ -65,14 +65,10 @@ class AxiomClient:
             if page_end is not None:
                 payload["page_end"] = page_end
             command = self.client.post(f"/api/v1/documents/{document['id']}/parse-jobs", json=payload)
-            try:
-                self._raise(command, "Axiom-Flow 解析任务创建失败")
-            except AxiomError as exc:
-                result["parse_error"] = str(exc)
-                inventory.record_axiom_transfer(resource, result)
-                raise
+            self._raise(command, "Axiom-Flow 解析任务创建失败")
             result["parse_command"] = command.json()
-        inventory.record_axiom_transfer(resource, result)
+        # QED-071 D3：传输留痕判废——结果只经返回值透出，不落盘（根仓 ADR 0018 反岛）；
+        # 需审计时经 qt_tasks/qed_llm_calls 与 Axiom-Flow 侧记录反查。
         return result
 
     @staticmethod

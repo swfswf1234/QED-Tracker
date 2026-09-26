@@ -55,7 +55,7 @@ from qed_tracker.db.knowledge_repository import (
 from qed_tracker.db.models import BookStatus, QedDomain
 from qed_tracker.db.tasks_repository import ActiveTaskExists, TaskStore
 from qed_tracker.downloader import DownloadManager, inspect_pdf, safe_filename
-from qed_tracker.inventory import Inventory, downloads_tmp_dir, raw_course_dir
+from qed_tracker.inventory import Inventory, downloads_tmp_dir, raw_course_dir, staging_max_age_seconds, sweep_downloads
 from qed_tracker.models import Candidate
 from qed_tracker.prompt_lab.pipeline import (
     CoursePipeline,
@@ -90,6 +90,12 @@ class Application:
     ):
         self.settings = settings
         inventory = Inventory(settings.data_root)
+        # QED-071 R2：服务构造即清扫超龄孤儿 staging（08-28 50MB .download 残留类；
+        # 阈值见 staging_max_age_seconds，失败只告警不阻断启动）。
+        sweep_downloads(
+            downloads_tmp_dir(settings.data_root),
+            max_age_seconds=staging_max_age_seconds(settings.timeout_seconds, settings.retries),
+        )
         downloader = downloader or DownloadManager(
             proxy=settings.proxy,
             timeout=settings.timeout_seconds,
@@ -223,11 +229,19 @@ def create_app(
             advisor_factory=_book_advisor,
         )
 
+    def _sweep_staging() -> None:
+        """取书任务入口清扫：兜底非服务构造期产生的超龄 staging（失败只告警，不阻断任务）。"""
+        sweep_downloads(
+            downloads_tmp_dir(settings.data_root),
+            max_age_seconds=staging_max_age_seconds(settings.timeout_seconds, settings.retries),
+        )
+
     def _book_download_handler(params: dict[str, Any], progress) -> dict[str, Any]:
         """book_download 后台任务：书级五阶段取书（检索→确认→预算下载→staging 验收→登记）。"""
         book_id = str(params.get("book_id", "")).strip()
         if not book_id:
             raise ValueError("book_id 必填")
+        _sweep_staging()
         return _new_fetcher().fetch(book_id, progress=progress)
 
     def _tutorial_fetch_handler(params: dict[str, Any], progress) -> dict[str, Any]:
@@ -236,6 +250,7 @@ def create_app(
         if not knowledge_id:
             raise ValueError("knowledge_id 必填")
         include_parallel = params.get("include_parallel") is True
+        _sweep_staging()
         return _new_fetcher().fetch_tutorial(
             knowledge_id, include_parallel=include_parallel, progress=progress
         )

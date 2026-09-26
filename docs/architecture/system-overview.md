@@ -11,7 +11,8 @@
 
 QED-Tracker 是本地优先的 PDF 获取组件：发现、下载、校验和登记原始 PDF，并通过 8901 HTTP 服务
 （`/api/v1`）向统一 CLI 与 8903 前端暴露能力。长操作（下载、评估、推荐）由后台任务执行并以
-任务状态轮询暴露，不阻塞请求。资源事实存放于 `meta/resources/` 单资源 JSON，MySQL `qed` 库
+任务状态轮询暴露，不阻塞请求。资源事实存放于 `meta/resources/` 单资源 JSON（**B 轮退役对象**：
+QED-071 A/B 拆分，DB 内容身份列就位后改读 `qt_books` 列，见[专用表设计](database-private-tables.md)「B 轮内容身份列契约」），MySQL `qed` 库
 五层模型（`qed_domain`/`qed_course`（共享）→ `qt_knowledge`/`qt_books`/`qt_sources`（私有））作为册级明细登记索引（无密码时降级）。
 
 Axiom-Flow 从 HTTP 导入边界之后负责不可变文档存储、OCR/解析、质量审阅和知识发布。两个项目
@@ -150,7 +151,7 @@ QED-Tracker 可**独立运行**，也可作为 QED-Engine 体系的**组件运�
 | `providers/book_advisor.py` | 百炼书籍顾问：检索词变体（book-query/variants@v1）与候选确认评估（book-confirm/assess@v1，可审阅，不写资源事实）。 |
 | `matching.py` | 对冻结目录执行保守的标题、作者、语言和版本匹配。 |
 | `downloader.py` | 处理从头重试、PDF 校验、SHA-256 和原子落盘；`accept_pdf` 机器验收门（页数/大小硬门槛 + 文本层软信号）。 |
-| `inventory.py` | 保存单资源 JSON、完整性结果和 Axiom 传输记录（`manifest.jsonl` 已停用）。 |
+| `inventory.py` | 保存单资源 JSON、完整性结果（`manifest.jsonl` 已停用；Axiom 传输记录 QED-071 判废；含 staging 年龄清扫 `sweep_downloads`）。 |
 | `catalog.py` | 读取包内只读目录数据。 |
 | `db/engine.py` | 连接管理：按 `QED_DB_*` 构造 SQLAlchemy 引擎（QueuePool 参数化）、会话工厂、`utc_now`、`dispose`。 |
 | `db/schema.py` | `ensure_schema` 快照自愈：七表缺表补建/列不一致重建（含共享表）、`qed_llm_calls` 缺列增量补齐（绝不 DROP）、幂等；取代 Alembic 迁移链（ADR 0006）。 |
@@ -171,7 +172,7 @@ dataset/qed-tracker/
 ├── raw/books/{inbox,math-qe/<course-id>}/        # 教材（kind=book）
 ├── raw/exercises/inbox/                          # 习题集（kind=exercise 独立）
 ├── raw/papers/<year>/                            # 论文
-├── meta/{resources,transfers}/                   # JSON 状态事实（资源、Axiom 传输）
+├── meta/{resources}/                            # JSON 状态事实（资源；Axiom 传输留痕 QED-071 判废）
 └── tmp/downloads/<task-id>.part                  # 下载临时区（原子落盘后清理）
 ```
 
@@ -185,7 +186,7 @@ dataset/qed-tracker/
 `raw/` 即成品区（本仓库数据根为临时中转，可删可重建；无「复制移交根仓库」步骤）。
 
 PDF 路径可以变化，内容身份固定为 `sha256:<digest>`。`meta/resources/` 中的单资源 JSON 是本地
-资源事实源；MySQL 五层模型是册级明细登记索引（书籍登记经 `mark_owned` 唯一入口）；
+资源事实源（**B 轮退役对象**，当前仍是去重/校验唯一载体——先迁列、后拆岛，勿提前停写）；MySQL 五层模型是册级明细登记索引（书籍登记经 `mark_owned` 唯一入口）；
 论文选择与任务记录已迁 `qt_selections`/`qt_tasks` 表（`meta/selections/`、`meta/tasks/` 已退役），
 分别保存，不能混入资源事实。任务经 `GET /api/v1/tasks/{task_id}` 轮询与「任务 → 文件」跳转。
 

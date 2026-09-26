@@ -1,14 +1,20 @@
 """以 PDF 哈希为身份的本地资源清单。
 
 ARCH-019 统一数据根：data_root 即 <QED_DATA_ROOT> 共享树——raw/ 为原始成品区
-（唯一被外部读取），tmp/qed-tracker/downloads/ 为下载临时区（终态不保留），
-qed-tracker/meta/ 为本仓库私有状态区。
+（唯一被外部读取），tmp/qed-tracker/downloads/ 为下载临时区（终态不保留）。
+
+QED-071（A/B 轮拆岛）注意：<data_root>/qed-tracker/meta/resources/ 的单资源 JSON 岛
+是 B 轮退役对象，**当前仍是内容身份（sha256/size/page_count）唯一载体**——书侧去重、
+论文去重与 inventory verify 均依赖它；DB 内容身份列就位前不得停写（先迁列、后拆岛）。
+Axiom 传输留痕（transfers 区）已判废删除（2026-09-24，D3，无读取方）。
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,8 +23,52 @@ from typing import Any
 from qed_tracker.downloader import DownloadedFile, inspect_pdf
 from qed_tracker.models import Candidate, CatalogTarget, ResourceKind, ResourceRecord
 
+logger = logging.getLogger("qed_tracker.inventory")
+
 # 领域缺省：catalog 流程当前只服务 math-qe 目录；体系扩展后由调用方传 domain_id。
 DEFAULT_DOMAIN_ID = "math"
+
+# QED-071 R2/D7：staging 清扫阈值 = timeout × retries × 4，绝对下限 6 小时。
+_STAGING_AGE_MULTIPLIER = 4
+_STAGING_AGE_FLOOR_SECONDS = 6 * 3600
+
+
+def staging_max_age_seconds(timeout_seconds: float, retries: int) -> int:
+    """孤儿 staging 清扫阈值：严格大于单次下载最长寿命（timeout × retries）。
+
+    4 倍安全系数 + 6 小时下限（裁决 D7）；卡死长连接由 httpx timeout 兜底，
+    因此无需进程内 in-flight 注册表即可安全清扫。
+    """
+    return max(int(timeout_seconds * retries * _STAGING_AGE_MULTIPLIER), _STAGING_AGE_FLOOR_SECONDS)
+
+
+def sweep_downloads(directory: Path, *, max_age_seconds: int) -> list[Path]:
+    """按 mtime 年龄清扫本仓孤儿 staging 文件（QED-071 R2）。
+
+    只匹配 `*.download` 与 `*.download.part` 两种本仓命名模式；非递归、不删目录、
+    不碰其他项目前缀。失败（权限/占用）只告警不抛出，不得阻断取书任务。
+    """
+    removed: list[Path] = []
+    if not directory.is_dir():
+        return removed
+    deadline = time.time() - max_age_seconds
+    try:
+        entries = sorted(directory.iterdir())
+    except OSError as exc:
+        logger.warning("staging 清扫目录不可读（跳过）：%s：%s", directory, exc)
+        return removed
+    for path in entries:
+        if not path.is_file() or not path.name.endswith((".download", ".download.part")):
+            continue
+        try:
+            if path.stat().st_mtime <= deadline:
+                path.unlink()
+                removed.append(path)
+        except OSError as exc:
+            logger.warning("staging 清扫失败（跳过）：%s：%s", path, exc)
+    if removed:
+        logger.info("staging 年龄清扫：移除 %d 个超龄中间态（>%ss）", len(removed), max_age_seconds)
+    return removed
 
 
 def raw_course_dir(data_root: Path, course_id: str, *, domain_id: str = DEFAULT_DOMAIN_ID) -> Path:
@@ -40,7 +90,6 @@ class Inventory:
     def __init__(self, data_root: Path):
         self.data_root = data_root.resolve()
         self.resources_dir = self.data_root / "qed-tracker" / "meta" / "resources"
-        self.transfers_dir = self.data_root / "qed-tracker" / "meta" / "transfers" / "axiom"
 
     def _record_path(self, digest: str) -> Path:
         return self.resources_dir / f"{digest}.json"
@@ -156,14 +205,6 @@ class Inventory:
             return None
         return ResourceRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
-    def remove(self, resource_id: str) -> bool:
-        """删除本地清单记录（调用方负责文件删除；供验收级拒绝硬删留痕）。"""
-        path = self._record_path(resource_id.removeprefix("sha256:"))
-        if not path.exists():
-            return False
-        path.unlink()
-        return True
-
     def find_by_catalog_target(self, catalog_id: str, target_id: str) -> ResourceRecord | None:
         for record in self.list():
             reference = record.catalog_ref or {}
@@ -205,10 +246,3 @@ class Inventory:
                 except Exception as exc:
                     errors.append((path, str(exc)))
         return registered, errors
-
-    def record_axiom_transfer(self, resource: ResourceRecord, payload: dict[str, Any]) -> Path:
-        digest = resource.resource_id.removeprefix("sha256:")
-        target = self.transfers_dir / f"{digest}.json"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        return target

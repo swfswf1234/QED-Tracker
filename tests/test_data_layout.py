@@ -2,9 +2,13 @@
 - 共享树 <QED_DATA_ROOT>/：raw/<domain>/<course>/ 原始区、tmp/qed-tracker/downloads/ 下载临时区；
 - 私有状态区 <QED_DATA_ROOT>/qed-tracker/meta/（resources JSON / selections / tasks）;
 - `<slug>_<sha256前8>.pdf` 文件名规则与 md5 内容校验回归。
+- QED-071 A-W4 局部反岛守护：Axiom 传输留痕全仓零写入 + staging 年龄清扫挂载。
 """
 
 import hashlib
+import os
+import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -13,8 +17,10 @@ from qed_tracker.application import BookService, ResourceService
 from qed_tracker.application.papers import PaperService
 from qed_tracker.catalog import Catalog, load_catalog
 from qed_tracker.downloader import DownloadError, DownloadManager
-from qed_tracker.inventory import Inventory, downloads_tmp_dir, raw_course_dir, raw_general_dir
+from qed_tracker.inventory import Inventory, downloads_tmp_dir, raw_course_dir, raw_general_dir, sweep_downloads
 from qed_tracker.models import Candidate, ResourceKind
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _manager_with(pdf_bytes: bytes) -> DownloadManager:
@@ -263,3 +269,42 @@ def test_exercise_download_lands_in_general_bucket(tmp_path, pdf_bytes):
         service.close()
     assert attempt.status == "DOWNLOADED"
     assert raw_general_dir(tmp_path).exists()
+
+
+# ---- QED-071 A-W4：局部反岛守护（全局 qed-tracker/ 断言留 B 轮） ----
+
+
+def test_source_never_writes_axiom_transfer_island():
+    """① src/ 全仓不出现 meta/transfers 字符串——Axiom 传输留痕已判废（D3），
+    任何新增写入路径都会重建野生区，违反根仓 ADR 0018。"""
+    offenders = [
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in sorted((REPO_ROOT / "src").rglob("*.py"))
+        if "meta/transfers" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
+
+
+def test_inventory_and_sweep_never_create_axiom_trace_dir(tmp_path, pdf_bytes):
+    """② 构造 Inventory + 登记 + 跑完 A-W2 清扫：Axiom 传输留痕目录不生成，
+    tmp/qed-tracker/downloads/ 终态符合预期（超龄清掉、新鲜保留）。"""
+    pdf = tmp_path / "book.pdf"
+    pdf.write_bytes(pdf_bytes)
+    inventory = Inventory(tmp_path)
+    inventory.register(pdf, kind=ResourceKind.BOOK, title="Book")
+
+    staging = downloads_tmp_dir(tmp_path)
+    staging.mkdir(parents=True)
+    stale = staging / "Orphan_deadbeef.download"
+    stale.write_bytes(b"stale")
+    stamp = time.time() - 24 * 3600
+    os.utime(stale, (stamp, stamp))
+    fresh = staging / "InFlight_01234567.download"
+    fresh.write_bytes(b"fresh")
+
+    removed = sweep_downloads(staging, max_age_seconds=6 * 3600)
+
+    assert not (tmp_path / "qed-tracker" / "meta" / "transfers").exists()
+    assert removed == [stale]
+    assert not stale.exists()
+    assert fresh.exists()

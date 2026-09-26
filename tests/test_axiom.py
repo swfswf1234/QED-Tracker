@@ -30,7 +30,8 @@ def test_axiom_push_uploads_without_parse_by_default(tmp_path, pdf_bytes):
 
     assert result["document_id"] == "doc-1"
     assert [request.url.path for request in requests] == ["/api/v1/health", "/api/v1/documents"]
-    assert (inventory.transfers_dir / f"{resource.sha256}.json").exists()
+    # QED-071 D3：传输留痕判废——push 结果只经返回值透出，不再落盘（根仓 ADR 0018 反岛）。
+    assert not (tmp_path / "qed-tracker" / "meta" / "transfers").exists()
 
 
 def test_axiom_parse_is_explicit_and_preserves_page_range(tmp_path, pdf_bytes):
@@ -84,7 +85,9 @@ def test_axiom_reports_http_error(tmp_path, pdf_bytes):
         client.close()
 
 
-def test_axiom_records_successful_upload_when_parse_creation_fails(tmp_path, pdf_bytes):
+def test_axiom_parse_creation_failure_raises_without_transfer_trace(tmp_path, pdf_bytes):
+    """QED-071 D3：解析任务创建失败时照常抛 AxiomError，且不留 meta/transfers 磁盘痕
+    （原「上传成功留痕」判废——无读取方，审计经 qt_tasks/Axiom-Flow 侧反查）。"""
     pdf = tmp_path / "book.pdf"
     pdf.write_bytes(pdf_bytes)
     inventory = Inventory(tmp_path)
@@ -103,11 +106,10 @@ def test_axiom_records_successful_upload_when_parse_creation_fails(tmp_path, pdf
     try:
         try:
             client.push(resource, inventory, parse=True)
-        except AxiomError:
-            transfer = json.loads((inventory.transfers_dir / f"{resource.sha256}.json").read_text(encoding="utf-8"))
-            assert transfer["document_id"] == "doc-saved"
-            assert "parse_error" in transfer
+        except AxiomError as exc:
+            assert "HTTP 503" in str(exc)
         else:
             raise AssertionError("expected AxiomError")
     finally:
         client.close()
+    assert not (tmp_path / "qed-tracker" / "meta" / "transfers").exists()

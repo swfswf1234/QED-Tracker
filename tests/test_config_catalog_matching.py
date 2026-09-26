@@ -54,7 +54,6 @@ def test_load_settings_defaults_without_environment(monkeypatch, tmp_path):
     assert settings.db_password == ""
     assert not settings.db_configured
     assert settings.llm_timeout_seconds == 300.0  # REQ-061 同步：默认 300s（原 60s 硬顶）
-    assert settings.state_dir == (tmp_path / "dataset" / "qed-tracker" / "meta").resolve()
 
 
 def test_load_settings_book_keys_defaults(monkeypatch, tmp_path):
@@ -106,14 +105,12 @@ def test_fetch_attempt_timeout_alias_feeds_book_budget(monkeypatch, tmp_path):
 
 
 def test_load_settings_maps_qed_data_root(monkeypatch, tmp_path):
-    """ARCH-019 统一数据根：QED_DATA_ROOT→data_root 映射，三项目共享同一目录树；
-    私有状态区固定 <data_root>/qed-tracker/meta。"""
+    """ARCH-019 统一数据根：QED_DATA_ROOT→data_root 映射，三项目共享同一目录树。"""
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("QED_DATA_ROOT", str(tmp_path / "shared-dataset"))
     settings = load_settings()
     assert settings.data_root == (tmp_path / "shared-dataset").resolve()
-    assert settings.state_dir == (tmp_path / "shared-dataset" / "qed-tracker" / "meta").resolve()
 
 
 def test_llm_key_reads_api_key_without_entering_settings(monkeypatch, tmp_path):
