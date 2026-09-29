@@ -22,6 +22,10 @@ v8 重构（2026-09-03 用户裁决，D1~D4）：
 - 命名优先级：领域先验 naming_convention > 清华命名基准默认；
 - notes 为整体编排说明（可选 ≤500 字）。
 领域专属知识一律经 priors.py 注册并注入 payload，模板本体保持学科中立。
+
+QED-072 W-8（2026-09-29 裁决 D-7）：注册表是全项目 LLM prompt 的唯一事实源。本文件承载
+探索族模板与注册表核心；书级/主链路顾问族（book-query、book-confirm、mainline-prefill）
+文案由 `advisor_templates.py` 注册进同一 REGISTRY（见该模块说明），导入 prompt_lab 包即完成注册。
 """
 
 from __future__ import annotations
@@ -58,13 +62,21 @@ class PromptTemplate:
     step: str
     version: int
     name: str
-    system: str
+    system: str | Callable[[dict[str, Any]], str]
     build_user: Callable[[dict[str, Any]], str]
-    validate: Callable[[object], Any]
+    validate: Callable[[object], Any] | None = None
+    validate_for: Callable[[dict[str, Any]], Callable[[object], Any]] | None = None
+
+    def __post_init__(self) -> None:
+        if self.validate is None and self.validate_for is None:
+            raise ValueError(f"模板 {self.task}/{self.step} 必须提供 validate 或 validate_for")
 
     @property
     def template_id(self) -> str:
         return f"{self.task}/{self.step}@v{self.version}"
+
+    def system_text(self, payload: dict[str, Any]) -> str:
+        return self.system(payload) if callable(self.system) else self.system
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -73,15 +85,20 @@ class PromptTemplate:
             "step": self.step,
             "version": self.version,
             "name": self.name,
-            "system": self.system,
+            "system": self.system if isinstance(self.system, str) else "(随 payload 生成)",
             "user": "(随 payload 生成)",
         }
 
     def messages(self, payload: dict[str, Any]) -> list[dict[str, str]]:
         return [
-            {"role": "system", "content": self.system},
+            {"role": "system", "content": self.system_text(payload)},
             {"role": "user", "content": self.build_user(payload)},
         ]
+
+    def validator(self, payload: dict[str, Any] | None = None) -> Callable[[object], Any]:
+        """返回本次调用的校验器：`validate_for` 按 payload 生成（契约依赖输入上下文）。"""
+        context = payload or {}
+        return self.validate_for(context) if self.validate_for is not None else self.validate
 
 
 REGISTRY: dict[tuple[str, str], PromptTemplate] = {}

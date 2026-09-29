@@ -35,9 +35,12 @@
 | --- | --- | --- | --- | --- | --- |
 | `src/qed_tracker/llm_client.py` | 模型调用兼容层（QED-037）：`local` 直连 / `qed-engine` 经 8900 网关（不接触密钥） | Current | `docs/design/service-management.md`、`docs/architecture/database-shared-tables.md`（qed_llm_calls 写入路径） | `tests/test_llm_client.py`、`tests/test_prompt_template_ids.py` | 调用记录写 `qed_llm_calls`，失败静默降级。 |
 | `src/qed_tracker/prompt_lab/pipeline.py` | 探索管线：DomainPipeline（领域→课程两步，courses@v8 输出含 stage/prerequisites，交叉校验 track⊆classic_tracks）/ CoursePipeline（tutorials 单步，proposal_id 前缀） | Current | `docs/design/exploration-pipeline.md` | `tests/test_prompt_lab.py`、`tests/test_prompt_lab_course.py`、`tests/test_prompt_lab_api.py`、`tests/test_task_handlers.py` | dry-run 模式不写任何表（engine 置 None）。 |
-| `src/qed_tracker/prompt_lab/templates.py` | 模板注册表（唯一事实源）：domain-explore domain@v4/courses@v8（path@v5 已并入）+ course-explore tutorials@v2、教程契约校验 `_validate_tutorials_v2` | Current | `docs/design/exploration-pipeline.md` | `tests/test_prompt_template_ids.py`、`tests/test_prompt_lab.py`（学科中立守护）、`tests/test_prompt_lab_course.py` | 编号格式 `{task}/{step}@v{n}`，落 `qed_llm_calls.prompt_template`。 |
+| `src/qed_tracker/prompt_lab/templates.py` | 模板注册表核心（REGISTRY + `register`/`get_template` + 版本单调拒绝）与探索族文案：domain-explore domain@v4/courses@v8（path@v5 已并入）+ course-explore tutorials@v2、教程契约校验 `_validate_tutorials_v2`；QED-072 W-8 为 `PromptTemplate` 增 `validate_for` 工厂契约位（校验器随 payload 生成） | Current | `docs/design/exploration-pipeline.md` | `tests/test_prompt_template_ids.py`、`tests/test_prompt_lab.py`（学科中立守护）、`tests/test_prompt_lab_course.py` | prompt 文案唯一事实源 = `prompt_lab` 包（`__init__.py` 导入两族模块即完成注册，不承载业务规则）；编号格式 `{task}/{step}@v{n}`，落 `qed_llm_calls.prompt_template`。 |
+| `src/qed_tracker/prompt_lab/advisor_templates.py` | 顾问族文案（QED-072 W-8 步骤 3 自 `providers/book_advisor.py` 与 `main_line/advisor.py` 迁入，文案逐字等价、出站 messages 前后比对一致）：book-query/variants@v1、book-confirm/assess@v1、mainline-prefill/prefill@v1 与各自校验器工厂 | Current | `docs/design/download-pipeline.md`、`docs/design/main-line-curriculum.md` | `tests/test_prompt_template_ids.py`、`tests/test_book_llm_advisor.py`、`tests/test_main_line_advisor.py` | 只承载 prompt 文本与校验器，不发起模型调用；`paper-plan` 两条仍内联于 `providers/bailian.py`（QED-074 W-2 待迁入）。 |
 | `src/qed_tracker/prompt_lab/priors.py` | 领域先验注入（DOMAIN_PRIORS：精确域名匹配，未命中不影响其它领域） | Current | `docs/design/exploration-pipeline.md` | `tests/test_prompt_lab.py`、`tests/test_prompt_lab_course.py` | 领域专属知识一律走本模块，模板保持学科中立。 |
 | `src/qed_tracker/providers/explore_advisor.py` | 探索 LLM advisor 基类（ExploreAdvisorBase：严格 JSON 校验 + 一次修复重试 + 预算控制）与参考输入归一化（direct/text/doc） | Current | `docs/design/exploration-pipeline.md` | `tests/test_prompt_lab.py`、`tests/test_prompt_lab_course.py`（经管线假 advisor 驱动） | 模型调用经 `llm_client.py`；参考文本按不可信数据处理（防注入）。 |
+| `src/qed_tracker/orchestration/` | QED-067 隔离 LangChain 编排试点：LCEL 适配、YAML 配置/只读工具目录、EvidenceBundle 预算打包、两轮领域/课程报告综合，`runner.py` 按声明顺序执行步骤并记录**实测** `prompt_template` 序列与运行产物 | In Progress | `docs/plans/2026-09-14-local-llm-langchain.md` | `tests/test_orchestration.py` | 默认测试仅 mock 全链；经 `llm_client.py` 调用且不改 `prompt_lab` 生产链，不执行真实 MCP/网络；真实网关冒烟走 `scripts/qed067_gateway_smoke.py`。 |
+| `scripts/qed067_gateway_smoke.py` | QED-067-1 网关端到端冒烟：8900 探活与通道判定、真实两轮编排调用、`qed_llm_calls` 按 `prompt_template` 回读（id 升序即调用序）、失败轮也留痕并落运行产物 | In Progress | `docs/plans/2026-09-14-local-llm-langchain.md`（067-1 结论） | 无（人工冒烟件，不入默认门禁） | 工具步取证用 `orchestration/fixtures/067-smoke-evidence.json` 冻结样本；不改根 `.env`、不写库、不下载。 |
 
 ### ③ 下载与登记线
 
@@ -50,7 +53,7 @@
 | `src/qed_tracker/providers/books.py` | 教材来源适配器（internet_archive/open_library/google_books/libgen_li）与 `RETIRED_PROVIDERS` | Current | `docs/design/download-pipeline.md`、`docs/plans/2026-09-source-discovery.md` | `tests/test_book_providers.py` | libgen_li 发现专用（QED-021），CJK 查询策略（QED-018）。 |
 | `src/qed_tracker/providers/arxiv.py` | arXiv 搜索适配器 | Current | `docs/design/download-pipeline.md` | `tests/test_arxiv_provider.py` | 关键词/分类/作者/ID 查询。 |
 | `src/qed_tracker/providers/bailian.py` | 百炼论文顾问：检索计划与评分（不写资源事实） | Current | `docs/design/paper-discovery.md` | `tests/test_bailian_advisor.py` | 模型调用经 `llm_client.py` 兼容层（`API_KEY`，自身 `.env` → 根 `.env` 兜底；local 直连 / qed-engine 网关）。 |
-| `src/qed_tracker/providers/book_advisor.py` | 百炼书籍顾问（QED-050-D）：检索词变体 `book-query/variants@v1`（≤N 条，坏 JSON 一次修复）+ 候选确认 `book-confirm/assess@v1`（两值 verdict，覆盖完整性校验），书级共享 LLM 预算 | Current | `docs/design/download-pipeline.md` | `tests/test_book_llm_advisor.py`、`tests/test_prompt_template_ids.py` | 输出可审阅评估，不写资源事实。 |
+| `src/qed_tracker/providers/book_advisor.py` | 百炼书籍顾问（QED-050-D）：检索词变体 `book-query/variants@v1`（≤N 条，坏 JSON 一次修复）+ 候选确认 `book-confirm/assess@v1`（两值 verdict，覆盖完整性校验），书级共享 LLM 预算 | Current | `docs/design/download-pipeline.md` | `tests/test_book_llm_advisor.py`、`tests/test_prompt_template_ids.py` | 输出可审阅评估，不写资源事实；prompt 文案与校验器已迁入 `prompt_lab/advisor_templates.py`（W-8 步骤 3），本类只经 `get_template` 取用。 |
 | `src/qed_tracker/downloader.py` | 通用下载器：重试、PDF 校验、SHA-256、原子落盘；`accept_pdf` 机器验收门（魔数/可解析/非加密/页数/大小硬门槛 + 文本层软信号）；`verify_content` 下载后内容校验（REQ-019, QED-066，首页文本 vs 登记标题，软信号） | Current | `docs/design/download-pipeline.md`、`docs/history/baselines/2026-09-service-hardening.md` | `tests/test_download_inventory.py`、`tests/test_book_acceptance.py`、`tests/test_downloader.py` | `.part` 校验后原子替换。 |
 | `src/qed_tracker/inventory.py` | 数据根布局访问器（`raw_course_dir`/`raw_general_dir`/`downloads_tmp_dir`）+ staging 年龄清扫（`sweep_downloads`） | Current | `docs/design/download-pipeline.md` | `tests/test_download_inventory.py`、`tests/test_data_layout.py` | `Inventory` 类与 `meta/resources/` 单资源 JSON 岛已于 QED-071 B 轮退役删除；内容身份唯一事实源 = `qt_books` 三列。 |
 | `src/qed_tracker/application/reconcile.py` | 内容身份回填对账（`inventory reconcile`）：磁盘重算 → 三分类报告（filled/mismatch/conflict）+ `qt_sources.note` sha8 只读对账 | Current | `docs/design/download-pipeline.md`、`docs/architecture/database-private-tables.md` | `tests/test_reconcile.py` | QED-071 B-W2；不覆盖已回填列，异常只报人工裁。 |
@@ -64,7 +67,7 @@
 | 代码路径 | 层级/职责 | 状态 | 设计关联 | 关联测试 | 备注 |
 | --- | --- | --- | --- | --- | --- |
 | `src/qed_tracker/courses.py` | 学科课程体系加载（`qed_domain`/`qed_course` 共享表，无 DB 显式拒绝；课程数据经 `docs/knowledge/` 确认导入，DAG 先修关系） | Current | `docs/design/main-line-curriculum.md`、`docs/architecture/database-shared-tables.md` | `tests/test_courses.py` | 主链路课程梳理；与 catalogs/ 线并行（见该行口径备注）。 |
-| `src/qed_tracker/main_line/advisor.py` | 主链路 LLM 预填（参照顶尖大学 + 防总评高校准，可审阅） | Current | `docs/design/main-line-curriculum.md` | `tests/test_main_line_advisor.py` | 模型不写资源事实。 |
+| `src/qed_tracker/main_line/advisor.py` | 主链路 LLM 预填（参照顶尖大学 + 防总评高校准，可审阅） | Current | `docs/design/main-line-curriculum.md` | `tests/test_main_line_advisor.py`、 `tests/test_prompt_template_ids.py` | 模型不写资源事实；`mainline-prefill/prefill@v1` 文案与校验器在 `prompt_lab/advisor_templates.py`（W-8 步骤 3）。 |
 
 
 ### ⑤ 配置与数据库
@@ -148,7 +151,7 @@
 | `tests/test_documentation.py` | 文档治理：入口清单（严格集合相等）/强元数据/链接解析/代码引用存在性/CLI 命令可解析/legacy 词禁令 | `docs/standards/doc-governance.md` |
 | `tests/test_prompt_lab.py` | 模板文本学科中立——领域只由输入决定，专属知识一律走 priors.py | 兼领域管线行为测试（见代码测试块） |
 | `tests/test_prompt_lab_course.py` | course-explore 模板学科中立守护 | 兼课程管线行为测试 |
-| `tests/test_prompt_template_ids.py` | 模板编号落库契约：全部 LLM 调用点向 qed_llm_calls 传 `{task}/{step}@v{n}` | 共享表审计列契约 |
+| `tests/test_prompt_template_ids.py` | 模板编号落库契约：全部 LLM 调用点向 qed_llm_calls 传 `{task}/{step}@v{n}`；QED-072 W-8 增孤儿 prompt 守护（源码/YAML 出现的模板 id 必须已注册或在豁免清单并写明去向）与在册 id 清单钉死 | 共享表审计列契约 |
 | `tests/test_knowledge_import.py` | 知识正本契约：`docs/knowledge/math-advanced.json` 及课程 JSON 均通过对应校验器（validate_domain / validate_course） | 兼 import 端点行为测试 |
 
 变更规则：模块职责或 DesignRef 变化时同步本表、设计文档与关联测试；`__init__.py` 等豁免文件

@@ -117,16 +117,6 @@ class PaperAssessment:
 
 
 @dataclass(frozen=True, slots=True)
-class BookAssessment:
-    """教材候选评估（QED-013）：LLM 只生成可审阅评分，不写资源事实。"""
-
-    provider_id: str
-    score: int  # 0-100
-    verdict: str  # recommend | uncertain
-    summary: str = ""
-
-
-@dataclass(frozen=True, slots=True)
 class BookExpectation:
     """书级期望元数据（QED-050 阶段2）：确定性预筛与 LLM 确认的输入（qt_books + refs 归一）。"""
 
