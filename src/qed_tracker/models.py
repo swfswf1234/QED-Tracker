@@ -92,6 +92,7 @@ class PaperProfile:
     topics: tuple[str, ...]
     allowed_categories: tuple[str, ...]
     exclude: tuple[str, ...] = ()
+    years_limit: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

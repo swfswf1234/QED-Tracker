@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from contextlib import ExitStack
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from qed_tracker.application.resources import ResourceService
@@ -17,12 +17,16 @@ from qed_tracker.profiles import CATEGORY_PATTERN
 MAX_SEARCHES = 4
 MAX_CANDIDATES = 40
 RECOMMENDATION_THRESHOLD = 70
+DEFAULT_YEARS_LIMIT = 3
+DAYS_PER_YEAR = 365
 
 
 class ArxivSource(Protocol):
-    def search(self, query: str = "", *, category: str = "", author: str = "", limit: int = 10) -> list[Candidate]: ...
+    def search(self, query: str = "", *, category: str = "", author: str = "", limit: int = 10, sort_by: str = "date") -> list[Candidate]: ...
 
-    def search_terms(self, terms: tuple[str, ...], *, category: str, limit: int = 10) -> list[Candidate]: ...
+    def search_terms(
+        self, terms: tuple[str, ...], *, category: str, limit: int = 10, sort_by: str = "date", overfetch: bool = False
+    ) -> list[Candidate]: ...
 
     def get(self, identifier: str) -> Candidate: ...
 
@@ -54,10 +58,12 @@ class PaperService:
         advisor: PaperAdvisor | None = None,
         selections: SelectionStore | None = None,
         session_factory=None,
+        today: datetime | None = None,
     ):
         self.provider = provider
         self.resources = resources
         self.advisor = advisor
+        self.today = today
         if selections is not None:
             self.selections = selections
         elif session_factory is not None:
@@ -107,6 +113,7 @@ class PaperService:
         categories: Iterable[str] = (),
         limit: int = 10,
         top: int = 10,
+        years_limit: int | None = None,
     ) -> dict[str, Any]:
         if self.advisor is None:
             raise ValueError("论文推荐需要配置百炼顾问")
@@ -114,6 +121,7 @@ class PaperService:
             raise ValueError("每组 arXiv 结果数必须在 1 到 25 之间")
         if not 1 <= top <= 20:
             raise ValueError("推荐数量必须在 1 到 20 之间")
+        years = self._resolve_years_limit(years_limit, profile.years_limit)
         extras = tuple(dict.fromkeys(item.strip() for item in categories if item.strip()))
         invalid = [item for item in extras if not CATEGORY_PATTERN.fullmatch(item)]
         if invalid:
@@ -127,6 +135,7 @@ class PaperService:
             "created_at": datetime.now(UTC).isoformat(),
             "profile": asdict(profile),
             "temporary_goal": goal,
+            "years_limit": years,
             "allowed_categories": list(allowed),
             "search_plan": [],
             "search_failures": [],
@@ -141,7 +150,7 @@ class PaperService:
             searches = self.advisor.plan(profile, goal, allowed)
             self._validate_searches(searches, allowed)
             report["search_plan"] = [asdict(item) for item in searches]
-            candidates = self._search_candidates(searches, limit, report)
+            candidates = self._search_candidates(searches, limit, report, self._years_cutoff(years))
             existing_ids = self._existing_arxiv_ids()
             report["excluded_existing"] = sorted(item.identifiers.get("arxiv", "") for item in candidates if item.identifiers.get("arxiv", "") in existing_ids)
             candidates = [item for item in candidates if item.identifiers.get("arxiv", "") not in existing_ids][:MAX_CANDIDATES]
@@ -231,24 +240,56 @@ class PaperService:
         self.selections.save(report)
         return report, failures
 
-    def _search_candidates(self, searches: list[PaperSearch], limit: int, report: dict[str, Any]) -> list[Candidate]:
+    def _search_candidates(
+        self, searches: list[PaperSearch], limit: int, report: dict[str, Any], cutoff: datetime | None
+    ) -> list[Candidate]:
         candidates: list[Candidate] = []
         seen: set[str] = set()
         for search in searches:
             try:
-                results = self.provider.search_terms(search.terms, category=search.category, limit=limit)
+                results = self.provider.search_terms(
+                    search.terms, category=search.category, limit=limit, sort_by="relevance", overfetch=True
+                )
             except Exception as exc:
                 report["search_failures"].append({"category": search.category, "terms": list(search.terms), "error": str(exc)[:500]})
                 continue
+            kept = 0
             for candidate in results:
                 arxiv_id = candidate.identifiers.get("arxiv", "")
-                if not arxiv_id or arxiv_id in seen:
+                if not arxiv_id or arxiv_id in seen or not self._within_years(candidate, cutoff):
                     continue
                 seen.add(arxiv_id)
                 candidates.append(candidate)
+                kept += 1
+                if kept >= limit:
+                    break
         if not candidates and report["search_failures"]:
             raise RuntimeError("全部 arXiv 检索均失败")
         return candidates
+
+    def _years_cutoff(self, years_limit: int) -> datetime | None:
+        if years_limit == 0:
+            return None
+        now = self.today or datetime.now(UTC)
+        return now - timedelta(days=years_limit * DAYS_PER_YEAR)
+
+    @staticmethod
+    def _within_years(candidate: Candidate, cutoff: datetime | None) -> bool:
+        if cutoff is None:
+            return True
+        timestamp = _published_timestamp(candidate.published_at)
+        # 发布日缺失或不可解析时保留：宁可多给候选，也不因元数据缺失静默吞掉。
+        return timestamp == float("-inf") or timestamp >= cutoff.timestamp()
+
+    @staticmethod
+    def _resolve_years_limit(explicit: int | None, profile_value: int | None) -> int:
+        for label, value in (("显式参数", explicit), ("档案 years_limit", profile_value)):
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"非法 years_limit（{label}）：{value!r}，必须是不小于 0 的整数，0 表示不限年份")
+            return value
+        return DEFAULT_YEARS_LIMIT
 
     def _existing_arxiv_ids(self) -> set[str]:
         # QED-071 B-W3（D2/D14）：去重索引由 qt_selections.downloads 派生；

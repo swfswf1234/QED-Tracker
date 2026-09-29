@@ -89,6 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
     paper_recommend.add_argument("--profile", default="llm-engineering", help="内置档案名或 JSON 路径")
     paper_recommend.add_argument("--category", action="append", dest="categories", default=[])
     paper_recommend.add_argument("--top", type=int, default=10, help="最多推荐数量")
+    paper_recommend.add_argument(
+        "--years-limit", type=int, default=None, help="只看近 N 年（0=不限；缺省按档案或默认 3）"
+    )
     _add_limit(paper_recommend)
     paper_profiles = paper_commands.add_parser("profiles", help="查看论文目标档案")
     paper_profile_commands = paper_profiles.add_subparsers(dest="profiles_command", required=True)
@@ -421,7 +424,12 @@ def _papers(args, settings: Settings) -> int:
         if args.papers_command == "recommend":
             profile = load_paper_profile(args.profile)
             report = service.recommend(
-                profile, goal=args.goal, categories=args.categories, limit=args.limit, top=args.top
+                profile,
+                goal=args.goal,
+                categories=args.categories,
+                limit=args.limit,
+                top=args.top,
+                years_limit=args.years_limit,
             )
             _print(report, True) if args.json else _display_selection(report)
             return 0 if report["status"] == "ranked" else 3

@@ -12,6 +12,8 @@ def test_cli_exposes_focused_commands():
     assert parser.parse_args(["papers", "get", "2401.00001"]).papers_command == "get"
     recommend = parser.parse_args(["papers", "recommend", "RAG", "--profile", "llm-engineering", "--top", "5"])
     assert recommend.papers_command == "recommend" and recommend.top == 5
+    assert recommend.years_limit is None
+    assert parser.parse_args(["papers", "recommend", "RAG", "--years-limit", "0"]).years_limit == 0
     selection = parser.parse_args(["papers", "selections", "download", "sel-20260730T000000Z-12345678", "--pick", "1"])
     assert selection.selections_command == "download" and selection.pick == [1]
     assert parser.parse_args(["catalog", "show", "math-qe"]).catalog_command == "show"
@@ -196,6 +198,8 @@ def test_production_package_has_no_removed_runtime_dependencies():
     # scripts/ 自 QED-032（2026-08-17）起为正式生命周期脚本目录；
     # 只允许本仓库声明的脚本，新增脚本需同步本守卫（防旧布局无声明残留）。
     # apply_table_comments.py 已随 v0.1 数据库重构退役（ADR 0006：注释由 ORM comment= 建表即带）。
+    # qed067_gateway_smoke.py = QED-067-1 人工冒烟件（默认测试不触网，见 code-map 登记）。
     assert set((root / "scripts").rglob("*.py")) == {
         root / "scripts" / "qed_tracker_service.py",
+        root / "scripts" / "qed067_gateway_smoke.py",
     }

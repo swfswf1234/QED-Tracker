@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import httpx
 import pytest
 
@@ -14,11 +16,11 @@ class FakeArxiv:
         self.candidates = candidates
         self.searches = []
 
-    def search_terms(self, terms, *, category, limit=10):
-        self.searches.append((terms, category, limit))
+    def search_terms(self, terms, *, category, limit=10, sort_by="date", overfetch=False):
+        self.searches.append({"terms": terms, "category": category, "limit": limit, "sort_by": sort_by, "overfetch": overfetch})
         return list(self.candidates)
 
-    def search(self, query="", *, category="", author="", limit=10):
+    def search(self, query="", *, category="", author="", limit=10, sort_by="date"):
         return list(self.candidates)
 
     def get(self, identifier):
@@ -26,6 +28,16 @@ class FakeArxiv:
 
     def close(self):
         return None
+
+
+class GroupedArxiv(FakeArxiv):
+    def __init__(self, by_terms):
+        super().__init__([])
+        self.by_terms = by_terms
+
+    def search_terms(self, terms, *, category, limit=10, sort_by="date", overfetch=False):
+        self.searches.append({"terms": terms, "category": category, "limit": limit, "sort_by": sort_by, "overfetch": overfetch})
+        return list(self.by_terms.get(tuple(terms), []))
 
 
 class FakeAdvisor:
@@ -47,6 +59,14 @@ class FakeAdvisor:
         return None
 
 
+class TwoGroupAdvisor(FakeAdvisor):
+    def plan(self, profile, goal, allowed_categories):
+        return [
+            PaperSearch(("group one",), allowed_categories[0], "第一组"),
+            PaperSearch(("group two",), allowed_categories[0], "第二组"),
+        ]
+
+
 def _candidate(identifier: str, score_date: str, title: str) -> Candidate:
     return Candidate(
         "arxiv", identifier, title, ("Ada",), "en", "2026",
@@ -57,8 +77,11 @@ def _candidate(identifier: str, score_date: str, title: str) -> Candidate:
     )
 
 
-def _profile() -> PaperProfile:
-    return PaperProfile("test", "Test", "Test profile", "Developers", ("RAG",), ("retrieval",), ("cs.CL",), ())
+def _profile(years_limit: int | None = None) -> PaperProfile:
+    return PaperProfile(
+        "test", "Test", "Test profile", "Developers", ("RAG",), ("retrieval",), ("cs.CL",), (),
+        years_limit=years_limit,
+    )
 
 
 def test_recommendation_is_audited_and_download_requires_saved_pick(tmp_path, pdf_bytes):
@@ -152,4 +175,124 @@ def test_failed_recommendation_is_saved_for_audit(tmp_path):
     report = service.get_selection(captured.value.selection_id)
     assert report["status"] == "failed"
     assert report["error"] == "advisor unavailable"
+    service.close()
+
+
+# ---------- QED-068-1（S1b）检索参数接线与年份窗口 ----------
+
+_TODAY = datetime(2026, 6, 1, tzinfo=UTC)
+
+
+def _service(tmp_path, provider, advisor, *, today=_TODAY):
+    return PaperService(
+        provider,
+        ResourceService(tmp_path, DownloadManager(retries=1)),
+        advisor=advisor,
+        today=today,
+    )
+
+
+def test_recommend_requests_relevance_and_overfetch(tmp_path):
+    candidate = _candidate("2601.00001", "2026-01-03T00:00:00+00:00", "Strong RAG")
+    provider = FakeArxiv([candidate])
+    service = _service(tmp_path, provider, FakeAdvisor({candidate.provider_id: (5, 5, 5)}))
+
+    service.recommend(_profile(), limit=7, top=5)
+
+    assert provider.searches[0]["sort_by"] == "relevance"
+    assert provider.searches[0]["overfetch"] is True
+    assert provider.searches[0]["limit"] == 7
+    service.close()
+
+
+def test_overfetch_truncates_per_group(tmp_path):
+    group_one = [_candidate(f"2601.0001{i}", "2026-01-03T00:00:00+00:00", f"One {i}") for i in range(6)]
+    group_two = [_candidate(f"2601.0002{i}", "2026-01-03T00:00:00+00:00", f"Two {i}") for i in range(6)]
+    provider = GroupedArxiv({("group one",): group_one, ("group two",): group_two})
+    scores = {item.provider_id: (5, 5, 5) for item in group_one + group_two}
+    service = _service(tmp_path, provider, TwoGroupAdvisor(scores))
+
+    report = service.recommend(_profile(), limit=4, top=4)
+
+    kept = [item["candidate"]["provider_id"] for item in report["assessments"]]
+    assert len(kept) == 8
+    assert set(kept) == {item.provider_id for item in group_one[:4] + group_two[:4]}
+    service.close()
+
+
+def test_years_limit_default_three_filters_old_papers(tmp_path):
+    recent = _candidate("2601.00001", "2024-01-01T00:00:00+00:00", "Recent")
+    old = _candidate("2001.00001", "2020-01-01T00:00:00+00:00", "Old")
+    provider = FakeArxiv([recent, old])
+    scores = {item.provider_id: (5, 5, 5) for item in (recent, old)}
+    service = _service(tmp_path, provider, FakeAdvisor(scores))
+
+    report = service.recommend(_profile(), top=5)
+
+    assert report["years_limit"] == 3
+    assert [item["provider_id"] for item in report["candidates"]] == [recent.provider_id]
+    service.close()
+
+
+def test_years_limit_zero_means_unlimited(tmp_path):
+    recent = _candidate("2601.00001", "2024-01-01T00:00:00+00:00", "Recent")
+    old = _candidate("2001.00001", "2020-01-01T00:00:00+00:00", "Old")
+    provider = FakeArxiv([recent, old])
+    scores = {item.provider_id: (5, 5, 5) for item in (recent, old)}
+    service = _service(tmp_path, provider, FakeAdvisor(scores))
+
+    report = service.recommend(_profile(), years_limit=0, top=5)
+
+    assert report["years_limit"] == 0
+    assert len(report["candidates"]) == 2
+    service.close()
+
+
+def test_years_limit_profile_applies_without_explicit(tmp_path):
+    profile = _profile(years_limit=1)
+    recent = _candidate("2601.00001", "2026-01-01T00:00:00+00:00", "Within one year")
+    older = _candidate("2401.00001", "2024-01-01T00:00:00+00:00", "Outside one year")
+    provider = FakeArxiv([recent, older])
+    scores = {item.provider_id: (5, 5, 5) for item in (recent, older)}
+    service = _service(tmp_path, provider, FakeAdvisor(scores))
+
+    report = service.recommend(profile, top=5)
+
+    assert report["years_limit"] == 1
+    assert [item["provider_id"] for item in report["candidates"]] == [recent.provider_id]
+    service.close()
+
+
+def test_explicit_years_limit_overrides_profile(tmp_path):
+    profile = _profile(years_limit=1)
+    recent = _candidate("2601.00001", "2026-01-01T00:00:00+00:00", "Within one year")
+    older = _candidate("2401.00001", "2024-01-01T00:00:00+00:00", "Outside one year")
+    provider = FakeArxiv([recent, older])
+    scores = {item.provider_id: (5, 5, 5) for item in (recent, older)}
+    service = _service(tmp_path, provider, FakeAdvisor(scores))
+
+    report = service.recommend(profile, years_limit=5, top=5)
+
+    assert report["years_limit"] == 5
+    assert len(report["candidates"]) == 2
+    service.close()
+
+
+@pytest.mark.parametrize("value", [-1, "3", 1.5, True])
+def test_invalid_years_limit_is_rejected(tmp_path, value):
+    candidate = _candidate("2601.00001", "2026-01-01T00:00:00+00:00", "Any")
+    service = _service(tmp_path, FakeArxiv([candidate]), FakeAdvisor({candidate.provider_id: (5, 5, 5)}))
+
+    with pytest.raises(ValueError, match="years_limit"):
+        service.recommend(_profile(), years_limit=value)
+    service.close()
+
+
+def test_undated_candidate_survives_years_window(tmp_path):
+    undated = _candidate("2601.00001", "", "Undated")
+    service = _service(tmp_path, FakeArxiv([undated]), FakeAdvisor({undated.provider_id: (5, 5, 5)}))
+
+    report = service.recommend(_profile(), top=5)
+
+    assert [item["provider_id"] for item in report["candidates"]] == [undated.provider_id]
     service.close()

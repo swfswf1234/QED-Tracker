@@ -2,20 +2,21 @@
 
 状态：Draft
 任务类型：Plan
-最后更新：2026-09-24
+最后更新：2026-09-29
 需求方：用户
 目标项目：QED-Tracker
 评审方：用户
 关联设计：[论文发现设计](../design/paper-discovery.md)、[探索管线设计](../design/exploration-pipeline.md)、[下载管线设计](../design/download-pipeline.md)
 关联调研：[DeepTutor 机制调研](2026-09-21-deeptutor-survey.md)（借鉴点 #1/#2/#9/#3/#5 已消化进本计划）
 关联 Tracker：QED-068
+排期裁决（2026-09-29）：068-2 后置于 QED-072 W-3~W-5，已裁并采纳；执行序列见「小步快跑执行序列」节；同日 D-7 裁决的**论文项已由 QED-074（LLM 双链路口径与 prompt 资产台账，2026-09-29 立项） W-2 改判作废**：`paper-plan` 两条内联 prompt 不再删除，改为**迁入注册表并在册改写 `plan@v2`/`assess@v2`**（W-8 步骤 4 落地当日回退），`papers recommend` 不再有模型面空窗；QED-074 W-2 待用户「开始执行」
 归档判定：待关闭时按 [ADR 0009](../history/adr/0009-closed-plan-archival.md) 做 Retain/Delete 两态判定
 
 ## 目标与成功标准
 
 参照 DeepTutor 调研稿中已核实的确定性机制（arXiv 检索参数、查询收窄与 fallback、下载安全件），
 形成贴合本仓的详细整合方案（子任务 QED-068-1~5）+ 总体性优化收口（068-4）。
-**本计划评审通过后另行排期实施，本轮不实现。**
+**方案已评审（2026-09-21 细化 + 同日裁决），2026-09-29 起按「小步快跑执行序列」实施。**
 
 成功标准：每个子任务的改动面、契约字段、失败语义、测试用例清单与验收命令可逐条执行；
 「模型不写资源事实」「不自动下载」「默认测试零网络」「TLS 默认开启」边界保持不变。
@@ -67,6 +68,43 @@
 dry-run→确认→采纳的**语义**论文链路已同构存在（recommend 不写资源事实、download 必须引用
 固定报告 + 显式 pick），差异在**入口形态与编排治理**，不引入 `exploration_stage` 状态机。
 
+## DeepTutor 论文下载链路深读（2026-09-29 复核，逐文件佐证）
+
+调研稿 I 部分的全链路重读，四环各自落点：
+
+1. **检索参数环**（`tools/paper_search_tool.py`）：`sort_by` relevance/date（L67~70）；
+   过量抓取 `fetch_count = min(max_results*2, 30)` 先抓后截（L72、L137~138）；
+   `years_limit` 默认 3 按发表年过滤（L39、L116~118）；429 单退避重试、其余异常吞成空列表
+   （L94~110，不照搬——本仓要求失败可见）；`arxiv_id` 用 `split("v")[0]` 剥版本，对含 `v`
+   的老式 ID（`math/0501001v1`）有隐患（L119~121）。
+   → **落点：068-1 全部承接**（排序/过量/年份窗口的参数形状即 068-1 节所设）。
+2. **查询计划环**（`tools/knowledge_frontier.py` + `prompting/hints/en/paper_search.yaml`）：
+   LLM 出 `{"queries":[...]}` → 正则抠首个 JSON 数组（L157~169）→ 确定性清洗 `_clean_queries`
+   （单行化、≤200 字符、≥2 词、大小写去重、截 3 条，L188~198）→ 失败走 seed fallback
+   （`[seed, recent advances seed, open challenges seed]`，L172~185）；逐查询执行打
+   `source_query` 溯源、按 `(arxiv_id, title)` 小写去重（L218~236）；产出只读报告，
+   页脚声明「推荐 ≠ 入库内容」（L302~308）。提示纪律：≤3 英文词、禁整句、
+   0 结果不得反复改写（paper_search.yaml L3~4）。
+   → **落点：068-2 + 068-3**（清洗与 fallback 已吸收进 068-2；`source_query` 溯源对应
+   068-3 `plan_index`/`plan_coverage`；本仓 `providers/arxiv.py` 的 `search_terms`
+   已部分实现确定性清洗，068-2 把纪律与清洗口径补全）。
+3. **e-print 源码下载环**（`tools/tex_downloader.py`）：`https://arxiv.org/e-print/{id}`
+   直 `requests.get` 写 workspace（L79~92）——**绕过其自身 ingestion 链**（`queue_url` 只分
+   WEB/YOUTUBE/BILIBILI 三类，L177~199）；无哈希/大小上限/限速（反面）；TarSlip 检查用
+   `os.path.commonprefix` 字符串级比较（L161~165，有缺陷），zip 分支无路径防护（L177~180）；
+   可借鉴：tar→zip→单 tex 容器嗅探顺序（L98~104）与主 tex 三级启发（L182~215）。
+   → **落点：不照搬、存档观察**（现产品形态为论文 PDF，无 TeX 源码消费需求；且其直写通道
+   违反本仓「来源适配器只给 URL，写入必须走通用下载服务」约束——复刻时绝不引入）。
+4. **摄取状态机环**（`reading/ingestion.py`）：URL 归一→sha 前置判重（抓取前判重）、
+   QUEUED→PROCESSING→DONE/FAILED、依赖注入全可注桩——调研稿 §3 已盘点，论文链不直连此环。
+   → **落点：068-4 逐跳复检与字节硬顶的参照 + QED-069 评估面（调研稿 #3/#4/#7 待裁项）**。
+
+**复刻结论**：DeepTutor 论文「下载」= 查询计划 + 过量检索 + e-print 直写三段；前两段以
+068-1/2/3 吸收，第三段为本仓约束的反面样本。我们的复刻形态 = `recommend → selections
+报告 → 显式 pick 走通用下载器`，把检索参数与计划纪律向 DeepTutor 对齐、把下载安全件
+（逐跳复检/字节硬顶，068-4）向其 web_fetch 环对齐，落盘坚持走 `ResourceService` 统一管线。
+
+
 ## 行为变化登记
 
 | 变化 | 现状 | 目标 | 影响面 |
@@ -110,8 +148,9 @@ dry-run→确认→采纳的**语义**论文链路已同构存在（recommend �
 
 ## QED-068-2 查询纪律与确定性 fallback（plan@v2）
 
-**改动文件**：`src/qed_tracker/providers/bailian.py`、`src/qed_tracker/prompt_lab/templates.py`
-（注册 `paper-plan/plan@v2`）、`src/qed_tracker/application/papers.py`（fallback 编排）。
+**改动文件**：`src/qed_tracker/prompt_lab/templates.py` 家族（`paper-plan/plan@v2` 与 `assess@v2` 经 QED-074 W-2 迁入后在册改写）、
+`src/qed_tracker/application/papers.py`（fallback 编排）、顾问类本体（形态随 QED-074 W-2 改判：
+`BailianPaperAdvisor` **不删除**，文案迁入注册表后该类改走 `get_template`）。
 
 1. **提示纪律**（plan prompt v2 文本，来源调研稿 §1.3）：每个 term 为 1~3 个英文词、
    禁整句、禁堆叠名词短语；一次成型——不得为「结果太少」重写计划（重写=用户显式重新 recommend）。
@@ -128,8 +167,11 @@ dry-run→确认→采纳的**语义**论文链路已同构存在（recommend �
 4. **审计字段**：报告新增 `plan_source: "llm" | "fallback"`；fallback 时
    `search_plan` 记录的是实际执行的兜底计划；`model` 段保留失败摘要（现有 metadata 机制）。
    预算口径：失败的 plan+repair 消耗照记；fallback 不再新增调用。
-5. **模板注册**：`templates.py` 登记 `paper-plan/plan@v2`（含 plan 与 assess 两段基础 prompt 文本，
-   `assess@v1` 内容原样、本轮不升版）；`BailianPaperAdvisor.plan_template_id` 改引 v2。
+5. **模板注册（2026-09-29 QED-074 W-2 改判）**：注册表登记 `paper-plan/plan@v2` 与 `assess@v2`，
+   **v1 文案先迁入注册表、再在册改写**（原 D-7「直接删除、从零写」已由 QED-074 作废）——
+   改写文本按本节纪律条目，`validate_for` 工厂承载 `allowed_categories` 白名单与
+   期望 ID 全集校验（QED-072 W-8 目标形态 1）。
+6. 运行参数（`max_tokens` 等）引用 QED-072 预算表定稿，不在本计划写死（见「QED-072 接口轮与排期口径」）。
 
 **测试用例清单**（`tests/test_bailian_advisor.py`、`tests/test_paper_application.py`，
 假顾问 / `httpx.MockTransport`）：
@@ -221,11 +263,61 @@ dry-run→确认→采纳的**语义**论文链路已同构存在（recommend �
 - `test_same_name_conflict_reported`（不自动覆盖）。
 - `test_documentation.py` 全绿（文档收口后）。
 
+## 小步快跑执行序列（2026-09-29 定稿）
+
+复刻目标口径：DeepTutor 论文链取其**确定性零件**（检索参数、查询纪律与 fallback、溯源与
+coverage），落盘坚持走本仓 `ResourceService` 统一管线；其 e-print 直写环为反面样本，不引入。
+交付终态 = 068-1~5 全量收口 + B-1~B-5 落设计文档。
+
+| 步 | 内容 | 子任务 | 提交点 | 状态（2026-09-29） |
+| --- | --- | --- | --- | --- |
+| S1a | `arxiv.py` 增 `sort_by`/`overfetch` 参数（默认 `date`，CLI 行为不变） | 068-1 | 单一提交 | **已交付**（定向 12 passed + ruff clean） |
+| S1b | `recommend` 接线 relevance+overfetch、每组截回 limit；`years_limit` 解析序（显式 > profile > 3）+ 窗口过滤；`PaperProfile.years_limit`；CLI `--years-limit` | 068-1 | 收口 068-1（B-1/B-2 生效） | **已交付（2026-09-29）** |
+| S2 | 报告 schema v2：`plan_index` + `plan_coverage`（fetched/kept，0 命中组显式）+ v1 可读可下载 | 068-3 | 无模型依赖 | 待做 |
+| G1 | **QED-072 闸门**：W-3~W-5（书籍/主线契约、窗口边界、预算表定稿）+ W-8（prompt 注册表收口；论文两条改由 QED-074 W-2 迁入注册表，「删论文模型面」裁决作废）收口 | 072 | — | 外部前置 |
+| S3 | `plan@v2`/`assess@v2` 在册改写（QED-074 W-2：v1 文案先迁入注册表再改，不删除）+ 提示纪律 + 确定性清洗 + seed fallback + `plan_source`（B-3） | 068-2 | 依赖 G1；**无 `papers recommend` 模型面空窗**（Q72-f 已作废） | 待做 |
+| S4 | 8901 任务化 `paper_recommend`/`paper_download` + selections 即时端点 + CLI 转 HTTP（B-5） | 068-5 | 依赖 S1~S3 签名 | 待做 |
+| S5 | downloader 逐跳复检 + 字节硬顶、重复双报、四份文档收口（B-1~B-5 落文档） | 068-4 | 最后 | 待做 |
+
+主线①（QED-072/073）与主线②并行：S1/S2 不依赖本地 9B，可先行；S3 之后必须由 G1 解锁。
+
+**S1 交付记录（2026-09-29）**：B-1/B-2 已在代码生效，并同步[论文发现设计](../design/paper-discovery.md)
+「检索与评分」与档案/报告字段节（完整 v2 契约叙述仍归 068-4 收口轮）。实现中的两处偏离登记：
+① 过量抓取的**截断点由 provider 移到调用方**（S1a 曾在 provider 内截断，会使年份过滤只剩
+`limit` 条、过量抓取失效；provider 现返回整池，`recommend` 在去重+年份过滤后按组截回
+`limit`）；② **发布日缺失或不可解析的候选保留**（不采纳 DeepTutor 按发表年直接过滤的口径，
+避免元数据缺失被窗口静默吞掉；与既有「无日期排末」用例一致）。全量门禁
+`pytest tests -q` = 552 passed + 1 skipped + 1 failed（唯一红为并行 WIP，见下）。
+
+**门禁口径（2026-09-29 用户裁决）**：每步跑「论文链定向测试 + ruff」为硬门禁；全量
+`pytest tests -q` 每次照跑，但**并行会话未跟踪 WIP 造成的红单独归因登记、不计入本任务失败**
+（当前已知：`tests/test_orchestration.py::test_evidence_packer_trims_deterministically_and_records_budget_omissions`，
+属 QED-073/067 编排线 WIP，本任务不触碰）。真实冒烟（公网 arXiv / 8900 网关）集中在 S1、S3、S4
+各一次，由用户执行或明确授权后驱动。
+
 ## 依赖与顺序
 
 068-1 → 068-2 → 068-3 顺序实施（2 依赖 1 的 `sort_by`/`years` 参数形状，3 依赖 1/2 的报告字段）；
 068-5 依赖 1~3 定稿的 `recommend` 签名；068-4 最后收口。
-每子任务一个提交，TDD 先红后绿；实施排期由用户在方案评审通过后指定。
+**068-2 另依赖 QED-072**（本地 9B 单通路 + 预算表定稿），口径见下节。
+
+## QED-072 接口轮与排期口径（2026-09-29 登记，已裁）
+
+2026-09-28 用户裁决（QED-072）：百炼退役、本地链路独占，论文评分/书籍检索词不得再到
+云端 `qwen-plus`；`bailian.py` 现默认走 `qed-engine` 模式 → 8900 网关 → 本地 `qwen/qwen3.5-9b`。
+QED-072 W-0 已实测论文 `plan`/`assess` 两契约在 9000 输出预算下**一次通过、零 repair**
+（留痕 id=31~37），故 068-2 的本地可行性证据已具备。
+
+1. 068-2 的 `plan@v2` 提示词与清洗/fallback 逻辑落在本地 9B 单通路上（模板名与模块名沿用
+   现 `paper-plan/*` 口径，改名归 QED-072 命名同步面 W-6）。
+2. `max_tokens` 等运行参数一律引用 QED-072 预算表定稿（W-5），本计划不写死数值，避免
+   9B 吐空正文故障模式（Q67-a：≤256 必空、1024 硬下限）。
+3. **排期口径（2026-09-29 用户裁决采纳）**：068-1 无模型依赖先行；068-2 排在 QED-072
+   W-3~W-5 收口之后（否则 plan@v2 需云端/本地各验证一遍，重复烧预算且口径易漂移）；
+   068-3/068-5 无模型依赖。
+4. 068-4 收口轮真实冒烟同样只在本地通路执行（8900 网关在线时）。
+
+每子任务一个提交，TDD 先红后绿。
 
 ## 边界与非目标
 
