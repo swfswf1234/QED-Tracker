@@ -38,7 +38,7 @@ def _validate_profile(raw: object) -> PaperProfile:
     unknown = set(raw) - PROFILE_FIELDS
     if unknown:
         raise ValueError(f"论文目标档案包含未知字段：{', '.join(sorted(unknown))}")
-    required = PROFILE_FIELDS - {"exclude"}
+    required = PROFILE_FIELDS - {"exclude", "years_limit"}
     missing = [name for name in sorted(required) if not raw.get(name)]
     if missing:
         raise ValueError(f"论文目标档案缺少字段：{', '.join(missing)}")
@@ -59,4 +59,5 @@ def _validate_profile(raw: object) -> PaperProfile:
         topics=tuple(raw["topics"]),
         allowed_categories=categories,
         exclude=tuple(raw.get("exclude", [])),
+        years_limit=raw.get("years_limit"),
     )

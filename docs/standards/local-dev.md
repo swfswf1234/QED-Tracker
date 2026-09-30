@@ -2,8 +2,8 @@
 
 状态：Current
 确认状态：已确认
-最后更新：2026-08-31
-治理对象：本地机器标识、环境依赖、构建命令与开发约定（仅机器绑定事实）
+最后更新：2026-09-30
+治理对象：本地机器标识、环境依赖、构建命令与开发约定（机器绑定事实）及开发产物落位（仓库通用规则，[ADR 0011](../adr/0011-artifact-placement-hygiene.md)）
 依据：QED-Engine 根仓库 `docs/standards/local-dev.md` 治理模式，适配单仓库规模
 关联测试：无
 
@@ -13,7 +13,7 @@
 探索与误判。本文档仅在 UUID 为 `2C6ECD2C-BBEE-11ED-8A95-F0D4154ABBA8` 的机器上生效；
 其他环境需复制并修改。
 
-**本地 vs 可移植边界**：本文只登记机器绑定事实（机器标识、绝对路径、conda 环境名）；
+**本地 vs 可移植边界**：本文登记机器绑定事实（机器标识、绝对路径、conda 环境名）与「开发产物落位」仓库通用规则（决定与理由见 [ADR 0011](../adr/0011-artifact-placement-hygiene.md)，本文只承接规则）；
 可移植配置以仓库内文件为唯一事实源——Python 版本与依赖看 `pyproject.toml`，数据库
 schema 自愈看 `src/qed_tracker/db/schema.py`（ADR 0006：Alembic 已退役，无 `alembic.ini`），
 服务配置看根 `.env` 的 `QED_*` 变量（`src/qed_tracker/config.py` 直读）。
@@ -60,6 +60,18 @@ conda run -n qed_env <命令>
 | QED-Engine 后端 | 8900 | 根仓库（本仓库只链接不复制其细节） |
 | Axiom-Flow | 8902 | 子仓库（8000 旧端口兼容保留） |
 | QED-Engine 前端 | 8903 | 根仓库 |
+
+## 开发产物落位
+
+三类产物唯一落位（决定与理由见 [ADR 0011](../adr/0011-artifact-placement-hygiene.md)，此处只列可执行规则）：
+
+| 产物类别 | 唯一落位 | 约束 |
+| --- | --- | --- |
+| 服务运行产物（pid / mode / stderr / 应用日志） | 仓库 `logs/` | 仅此一类；开发临时与取证文件禁止入内 |
+| 开发临时文件（探针脚本、捕获输出、一次性编辑脚本） | 仓库 `tmp/`（已 gitignore） | 证据结论与索引落 `docs/plans/`；`tmp/` 不充当长期证据库 |
+| 重要过程数据（用户输入件、真实模型试运行产物、回填举证） | `QED_DATA_ROOT` 的 `tmp/qed-tracker/` 分桶 | 按根仓库 dataset 契约：tmp→raw 原子落盘、`raw/` 不可变；根契约正文只链接不复制 |
+
+本机 `QED_DATA_ROOT` 现指向 `D:\coding\QED-Engine\dataset`（见[运维指南](../guides/operations.md)）；其他机器以本机 `.env` 为准。
 
 ## 常见误判注记
 

@@ -86,3 +86,12 @@ class SelectionStore:
                 sa.select(QtSelection).order_by(QtSelection.created_at.desc())
             ).scalars().all()
             return [row.to_dict() for row in rows]
+
+    def downloaded_arxiv_ids(self) -> set[str]:
+        """QED-071 B-W3（D2/D14）：论文去重从 qt_selections.downloads 派生，资源岛不再是数据源。"""
+        ids: set[str] = set()
+        for report in self.list():
+            for entry in report.get("downloads") or []:
+                if entry.get("status") == "downloaded" and entry.get("arxiv_id"):
+                    ids.add(str(entry["arxiv_id"]))
+        return ids

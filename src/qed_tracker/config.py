@@ -61,11 +61,6 @@ class Settings:
     db_password: str = ""
 
     @property
-    def state_dir(self) -> Path:
-        # ARCH-019 统一数据根：私有状态区固定 <data_root>/qed-tracker/meta（raw/tmp 为共享布局）。
-        return self.data_root / "qed-tracker" / "meta"
-
-    @property
     def db_configured(self) -> bool:
         return bool(self.db_password)
 

@@ -22,6 +22,7 @@ class ArxivProvider:
         category: str = "",
         author: str = "",
         limit: int = 10,
+        sort_by: str = "date",
     ) -> list[Candidate]:
         terms = []
         if query:
@@ -32,22 +33,34 @@ class ArxivProvider:
             terms.append(f'au:"{author}"')
         if not terms:
             raise ValueError("至少需要关键词、分类或作者之一")
-        return self._run_search(" AND ".join(terms), limit)
+        return self._run_search(" AND ".join(terms), limit, sort_by=sort_by)
 
-    def search_terms(self, terms: tuple[str, ...], *, category: str, limit: int = 10) -> list[Candidate]:
+    def search_terms(
+        self,
+        terms: tuple[str, ...],
+        *,
+        category: str,
+        limit: int = 10,
+        sort_by: str = "date",
+        overfetch: bool = False,
+    ) -> list[Candidate]:
         cleaned = tuple(dict.fromkeys(" ".join(term.replace('"', " ").split()) for term in terms if term.strip()))
         if not cleaned:
             raise ValueError("论文检索计划必须包含关键词")
         query = "(" + " OR ".join(f'all:"{term}"' for term in cleaned) + ")"
         if category:
             query += f" AND cat:{category}"
-        return self._run_search(query, limit)
+        return self._run_search(query, limit, sort_by=sort_by, overfetch=overfetch)
 
-    def _run_search(self, query: str, limit: int) -> list[Candidate]:
+    def _run_search(
+        self, query: str, limit: int, *, sort_by: str = "date", overfetch: bool = False
+    ) -> list[Candidate]:
+        if sort_by not in {"date", "relevance"}:
+            raise ValueError("sort_by 只支持 date 或 relevance")
         search = arxiv.Search(
             query=query,
-            max_results=limit,
-            sort_by=arxiv.SortCriterion.SubmittedDate,
+            max_results=min(limit * 2, 30) if overfetch else limit,
+            sort_by=arxiv.SortCriterion.Relevance if sort_by == "relevance" else arxiv.SortCriterion.SubmittedDate,
             sort_order=arxiv.SortOrder.Descending,
         )
         return [self._candidate(item) for item in self.client.results(search)]

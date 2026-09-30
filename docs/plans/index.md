@@ -1,7 +1,7 @@
 # 计划索引
 
 状态：Current
-最后更新：2026-09-24
+最后更新：2026-09-30
 
 本目录只保存尚未关闭的跨模块实施计划。任务状态以[待办列表](../trackers/todo.md)为准；计划完成后将关闭证据写入 completed，正文默认归档至 [历史基线](../history/index.md)（[ADR 0009](../history/adr/0009-closed-plan-archival.md)；Delete 仅限内容已完全并入固定文档且无独立查阅价值、或用户明确指示）。
 
@@ -47,9 +47,24 @@
 
 - [v1.0 后续任务链条梳理](2026-09-24-v1-task-chain.md)（2026-09-24 初稿 + 同日口径裁决，对照根仓库 ARCH-024 三线）：**v1.0 = 三主线全部交付 + ARCH-024 三线优化收口**；三主线交付口径与风险表、批次顺序（0 裁决轮 → A~D → E 收口轮 → 滚动项）、跨项目接口（网关 task/step REQ、8901 任务化衔接、根壳登记表回填、REQ-020② 回执）与集中待裁决项（调研稿 #4/#7、#11~#18）；只梳理登记，不实现。
 
-- [缺陷修复台账](2026-09-14-bugfix-ledger.md)（2026-09-14，QED-070）：v1.0 滚动缺陷登记与修复跟踪。
+
+
+
+
+- [百炼退役与本地链路独占](2026-09-28-bailian-retire-local-only.md)（2026-09-28 用户裁决立项，QED-072）：全部 LLM 调用收敛到 `qed-engine` → 8900 网关 → 本地 `qwen/qwen3.5-9b` 单通路并淘汰 dashscope 直连；含 W-0 取证结论（`max_tokens` ≤256 必吐空、1024 为硬下限、9000 预算下论文 `plan`/`assess` 契约一次通过零 repair、留痕 id=31~37 索引）、8196 旧预算表作废后的预算重设计口径、direct 分支移除顺序与命名同步面、待裁项 Q72-a~e；实现未开始，待用户评审。**2026-09-29 口径改判**：「通路唯一 / 完全屏蔽百炼」作废，改判为「默认本地 + API 备用」，逐条影响面见 [LLM 双链路口径与 prompt 资产台账](2026-09-29-llm-dual-link-prompt-ledger.md)。
+- [探索链本地化](2026-09-28-exploration-pipeline-local.md)（2026-09-28 用户裁决立项，QED-073）：三条探索 prompt 链（`domain@v4`/`courses@v8`/`tutorials@v2`）改由本地 `qwen3.5-9b` 承载的设计草案：留痕负载表与九项勘察结论（本地零留痕、`name_check` 改判断链、`max_tokens≥16384` 硬下限与窗口冲突）、`domain@v5` system/user 全文草案与逐条改动理由、courses/tutorials 结构改造要点、链 A（单发 priors）与链 B1（LCEL + fixture 证据）A/B 判据与 S-1~S-4 试运行方案、待裁项 Q73-a~e；只落文档，代码未改。
+- [LLM 双链路口径与 prompt 资产台账](2026-09-29-llm-dual-link-prompt-ledger.md)（2026-09-29 用户改判立项，QED-074）：把「LLM 从哪来」与「LLM 说什么」一次理清——① 改判 QED-072 的 D-1/D-3/D-7（由「百炼退役 + 本地独占」改为「v1.0 及之前默认本地 + API 备用链路可用」，DL-1~DL-6 六条守则）；② 全仓 prompt 资产台账（注册表在册 6 条 × 调用点 × 上游入口 × 可达链路、未入册 5 编号、修复重试骨架与注入面、死码与文档漂移四条）；③ 本地 vs API 同 payload 双跑的对比取证口径；④ 2.4 节登记「W-8 步骤 4 删除已落地又撤回」的工作树实况证据；待裁项 Q74-a~f。只落文档，代码未改。
+
+- [缺陷修复台账](2026-09-14-bugfix-ledger.md)（2026-09-14，QED-070；2026-09-30 用户裁决移入 todo 普通任务轮滚动承载）：滚动缺陷登记与修复跟踪。
+
 
 ## 已完成计划
+
+- [todo 任务管理治理轮](../history/baselines/2026-09-30-todo-governance-round.md)（2026-09-30 立项 + 同日关闭，QED-075）：todo 新增「普通任务轮」节 + v1.0 表逐行重审后冻结成功标准 + QED-070 移入普通任务轮滚动承载 + 三类产物落位规范（ADR 0011 + 既有标准扩写、不新增目录）+ logs/tmp 存量清扫；成功标准 1~7 全达成。**已按 ADR 0009 Retain 归档至 history/baselines/**。
+
+- [存储链路治理实施计划（QED-071 拆岛 + staging 生命周期）](../history/baselines/2026-09-24-storage-json-island-retirement.md)（2026-09-24 立项 + 同日 A 轮收口，2026-09-26 B 轮执行完毕并关闭）：`qt_books` 内容身份三列手工迁移落 `qed_test`（D17 放宽为普通索引）+ 读路径全切 DB（M4 无岛回退）+ 资源岛停写退役、`Inventory` 类删除 + 全局反岛守护 + CLI 契约变更（D10/D11/D15/D16）；裁决 D1~D17、红线顺序与两轮举证全部留在正文。**已按 ADR 0009 Retain 归档至 history/baselines/**。
+
+- [存储链路治理请求包（根仓库 ARCH-032 / ADR 0018）](../history/baselines/2026-09-24-storage-json-island-retirement-request.md)（2026-09-24 承接讨论稿，2026-09-26 随 QED-071 关闭）：R1/R2/R3 承接结论与勘误 C1~C4、遗漏 M3/M4 留档（M1/M2 原文从未落盘）。**已按 ADR 0009 Retain 归档至 history/baselines/**。
 
 - [服务稳定性优化（REQ-017②③ + REQ-019）](../history/baselines/2026-09-service-hardening.md)（2026-09-14，QED-066）：重启后 orphaned running/queued → failed（dedup 解除）+ `verify_content` 下载内容校验（首页文本 vs 登记标题，软信号写入 qt_sources.note）+ 进度上报评估。**已按 ADR 0009 归档至 history/baselines/**。
 

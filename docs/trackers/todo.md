@@ -1,7 +1,7 @@
 # 待办列表
 
 状态：Current
-最后更新：2026-09-24
+最后更新：2026-09-30
 
 ## 上一期计划（全链路跑通，已收口 2026-09-11）
 
@@ -27,12 +27,20 @@ QED-014 验证最终效果，以及阶段三重复下载链路验证（QED-011�
 
 | ID | 类型 | 状态 | 事项 | 成功标准 | 关联计划 |
 | --- | --- | --- | --- | --- | --- |
-| QED-067 | Plan | 进行中 | 本地 LLM 模型对接 + LangChain 编排（v1.0 主线，子任务 QED-067-1~5 承载于同一计划）：经 8900 网关（`qed-engine` 模式）接入 QED-Engine 本地 qwen3.5 9B；prompt/pipeline 以 LangChain(LCEL) + 声明式配置（pipeline YAML/skill/MCP 只读工具白名单）编排；示例链=领域探索（维基百科定义检索 → MIT/Stanford/清华课程编排 → 综合报告） | 计划设计章节评审通过（2026-09-21 已细化）；v1.0 口径：067-1~5 全交付（外部 REQ 降级须用户裁决） | [2026-09-14-local-llm-langchain.md](../plans/2026-09-14-local-llm-langchain.md)、[DeepTutor 调研稿](../plans/2026-09-21-deeptutor-survey.md) |
-| QED-068 | Plan | 进行中 | 论文探索与下载链路整合：2026-09-21 升级为贴合本仓的详细方案（参照 [DeepTutor 调研稿](../plans/2026-09-21-deeptutor-survey.md) I 部分）——arXiv 检索参数（相关度排序/过量抓取/年份窗口）、查询纪律与确定性 fallback（plan@v2）、报告溯源与 coverage（schema v2）、8901 任务化、总体性优化收口（downloader 安全件/重复双报/文档收口）；子任务 QED-068-1~5 承载于同一计划，本轮不实现 | 计划详细方案评审通过（2026-09-21 细化 + 裁决：fallback 接受、years_limit 默认 3）；v1.0 口径：068-1~5 全交付并收口（B-1~B-5 落设计文档） | [2026-09-14-paper-pipeline-alignment.md](../plans/2026-09-14-paper-pipeline-alignment.md) |
-| QED-069 | Plan | 待开始 | 下载链路评估落地：`qt_sources` 渠道表现状说明 + 数据利用简要计划（本轮只说明+简要计划） | 现状文档 + 简要计划评审通过；v1.0 口径：细化轮 + 统计口径落地 + 基线采集回填矩阵 + REQ-020② 回执 | [2026-09-14-download-channel-evaluation.md](../plans/2026-09-14-download-channel-evaluation.md) |
-| QED-070 | Defect | 进行中 | 缺陷修复台账：后续发现问题/bug 集中登记与修复跟踪 | 台账建立，条目持续闭环；v1.0 末期条目全部闭环或经用户裁决移交下期 | [2026-09-14-bugfix-ledger.md](../plans/2026-09-14-bugfix-ledger.md) |
+| QED-067 | Plan | 进行中 | 本地 LLM 对接 + LangChain 编排（v1.0 主线）：067-1 网关端到端冒烟；067-2 `langchain-core` 依赖 + `LlmChatModel` 适配层；067-3 声明式配置加载器（pipeline YAML schema/校验、`register()` 版本语义、预算守护）；067-4 领域探索示例链 mock 全链（wiki→课程→综合报告）；067-5 真实 MCP 只读工具 + 人工冒烟 + A/B 对照评审 | 067-1~5 全量交付（067-5 含真实冒烟与 A/B 对照；外部 REQ 届期未回填时降级须用户裁决，不得静默砍项）；每步真实 LLM 调用落 `qed_llm_calls` 且按 `prompt_template` 可回读 | [2026-09-14-local-llm-langchain.md](../plans/2026-09-14-local-llm-langchain.md)、[DeepTutor 调研稿](../plans/2026-09-21-deeptutor-survey.md) |
+| QED-068 | Plan | 进行中 | 论文探索与下载链路整合（子任务 068-1~5）：068-1 arXiv 检索参数（相关度排序/过量抓取/年份窗口/`--years-limit`）；068-2 查询纪律与确定性 fallback（`plan@v2` 在册改写）；068-3 报告溯源与 coverage（schema v2）；068-4 downloader 安全件（逐跳复检/字节硬顶）+ 重复双报 + 文档收口；068-5 8901 任务化 | 068-1~5 全量交付并收口（B-1~B-5 落设计文档）；默认测试零公网（`MockTransport`） | [2026-09-14-paper-pipeline-alignment.md](../plans/2026-09-14-paper-pipeline-alignment.md) |
+| QED-069 | Plan | 待开始 | 下载链路评估落地：`qt_sources` 渠道表现状细化评审 → 找得率/渠道成功率统计口径落地 → 基线首批采集回填来源评估矩阵 → REQ-020② 根侧回执 | 细化轮评审通过 + 统计口径成文落地 + 基线回填矩阵完成 + REQ-020② 回执交付 | [2026-09-14-download-channel-evaluation.md](../plans/2026-09-14-download-channel-evaluation.md) |
+| QED-072 | Plan | 进行中 | 本地链路收敛 + prompt 集中注册表收口：W-1 书籍/主线三契约本地实测；W-2 窗口边界实测；W-3 预算表重设计（≥1024 硬下限）；W-4 通路收敛改造清单（默认钉本地 + 网关截断检测）；W-5 命名与文档同步面；W-6 guides 本地模型能力说明；W-7 根侧 REQ；W-8 prompt 注册表收口 | W-1~W-8 各交付物落地（契约通过/失败表、窗口真值、新预算表、同步清单、指南说明、REQ 文本、注册表唯一事实源 + 守护测试绿）；通路口径以 QED-074 成文守则为准；完整门禁绿 | [2026-09-28-bailian-retire-local-only.md](../plans/2026-09-28-bailian-retire-local-only.md) |
+| QED-073 | Plan | 进行中 | 探索链本地化（domain/courses/tutorials 三 prompt 链 × 本地 9B）：W-1 `domain@v5` 草案评审；W-2 链 A × 链 B1 的 S-1~S-4 本地试运行与结论；W-3 据结论细化 `courses@v9`/`tutorials@v3`；W-4 模板注册 + 管线 `max_tokens` 改造 + 测试/设计同步；W-5 B 链升级 B2 裁决 | W-1~W-4 交付且 W-5 裁决完成；试运行结论回写计划并作为下一轮优化方向依据 | [2026-09-28-exploration-pipeline-local.md](../plans/2026-09-28-exploration-pipeline-local.md) |
+| QED-074 | Plan | 待开始 | LLM 双链路口径 + prompt 资产台账：W-1 默认口径成文（默认本地 + API 备用，同步 `AGENTS.md`/设计文档/code-map）；W-2 论文 prompt 迁入注册表并在册改写；W-3 本地×API 同 payload 双跑对比冒烟脚本 + 留痕回读报告；W-4 死码与文档漂移清扫；W-5 根侧 REQ | DL-1~DL-6 六条守则成文落地；全仓 prompt 台账可机器证明（在册 × 调用点 × 上游入口 × 可达链路）；默认本地不变 + 备用链路可用；W-1~W-5 交付且门禁绿 | [2026-09-29-llm-dual-link-prompt-ledger.md](../plans/2026-09-29-llm-dual-link-prompt-ledger.md) |
 
-> 下一阶段主线（v1.0）已立项：本地 LLM 模型替换 + 论文探索，见上表 QED-067~070。
+---
+
+## 普通任务轮
+
+| ID | 类型 | 状态 | 事项 | 成功标准 | 关联计划 |
+| --- | --- | --- | --- | --- | --- |
+| QED-070 | Defect | 进行中 | 滚动缺陷台账：后续发现问题/bug 集中登记与修复跟踪 | 每条缺陷闭环＝根因+修复+定向门禁证据；条目持续闭环，未闭环条目随台账滚动 | [2026-09-14-bugfix-ledger.md](../plans/2026-09-14-bugfix-ledger.md) |
 
 ---
 
@@ -51,11 +59,12 @@ QED-014 验证最终效果，以及阶段三重复下载链路验证（QED-011�
 
 - 任务按类型分类（Plan / Defect / Validation / Candidate），状态只允许 `待开始 / 进行中 / 已完成 / 阻塞`；阻塞必须声明证据、恢复条件和责任位置。
 - 任务关闭时从本表移除并追加到[完成台账](completed.md)。
-- **本期计划**任务按阶段分组，关联 plans/ 文档；**长期任务**只列清单，不绑定 plans/ 文档。
+- **任务分层**：**本期计划**表承载绑定 plans/ 主线的任务；**普通任务轮**承载一行一事、可长期滚动的小额事项（含滚动台账类），不建专项计划、可关联滚动台账文档；**长期任务**只列清单。
+- **成功标准冻结**：任务行的事项与成功标准一经用户评审确立即冻结，不得改写；口径变化只能新建子任务或普通任务轮行承载新口径，并在关联计划/台账登记改判理由；过程与细节更新一律写入 plans/，不进表。
 - **子任务拆分**：一个目标任务可按阶段/契约拆为子任务（如 `QED-050-A~E`、`QED-067-1~5`），
   子任务在本表随目标任务登记或注记；计划承载体默认是目标任务的一份主计划（子任务作工作项
   分节跟踪，不逐子任务建计划文件），仅当子任务需独立评审口径时才建专表计划并在本表关联
   （守护 `test_documentation.py` 强制 plans/ 每个文件被 todo 引用）。
-- **小 bug 不入任务表**：修复级小 bug 登记进本期缺陷台账（当前为 QED-070
-  [缺陷修复台账](../plans/2026-09-14-bugfix-ledger.md)）作子项闭环，不单独立项、不建独立
-  计划；涉及契约/架构变更或需独立评审的缺陷才升格为本表任务。
+- **小 bug 承接**：修复级小 bug 登记进普通任务轮滚动缺陷台账（当前为 QED-070
+  [缺陷修复台账](../plans/2026-09-14-bugfix-ledger.md)）作子项闭环，不另起任务行、不建独立
+  计划；涉及契约/架构变更或需独立评审的缺陷才升格为本期计划任务。

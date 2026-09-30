@@ -42,9 +42,11 @@ qed-tracker papers get 2401.00001
 qed-tracker papers recommend "可靠的 RAG 评测方法" --profile llm-engineering --top 5
 qed-tracker papers selections download <selection-id> --pick 1
 
-# 登记和校验数据根目录内已有的 PDF
-qed-tracker inventory scan E:/qed/dataset
+# 查看与校验 DB 书目（qt_books 内容身份三列 vs 磁盘重算）
+qed-tracker inventory list
 qed-tracker inventory verify
+# 磁盘重算回填/对账三列（QED-071 B 轮，需数据库）
+qed-tracker inventory reconcile
 
 # 主链路：课程梳理与教材条目（课程学习主流程，与 evaluate 平行；需要 qed 库连接）
 qed-tracker courses list
@@ -64,33 +66,31 @@ qed-tracker knowledge import docs/knowledge/math-advanced/math_analysis.json
 # 手动下载导入（外部 PDF → 校验 → 拷入数据根 raw/ → mark_owned 登记 owned）
 qed-tracker books import <book_id> "C:/downloads/textbook.pdf" --target "raw/math-advanced/math_analysis/斯图尔特微积分.pdf"
 
-# 默认只上传；显式 --parse 才创建 Axiom 解析任务
-qed-tracker axiom push sha256:<digest>
-qed-tracker axiom push sha256:<digest> --parse --page-start 1 --page-end 20
+# 默认只上传；显式 --parse 才创建 Axiom 解析任务（仅接受 book_id，需 holding=owned 且文件在位）
+qed-tracker axiom push <book_id>
+qed-tracker axiom push <book_id> --parse --page-start 1 --page-end 20
 ```
 
 全局选项必须放在一级命令之前，例如 `qed-tracker --json inventory list`。
 
 ## 数据位置
 
+数据根为共享树 `<QED_DATA_ROOT>`（默认根仓库 `dataset/`，ARCH-019；根仓 ADR 0018 顶层白名单
+`raw/ parsed/ tmp/ backups/`）：
+
 ```text
 <data-root>/
-├── raw/
-│   ├── books/{inbox,math-qe/<course-id>}/   # 教材
-│   ├── exercises/inbox/                     # 习题集
-│   └── papers/<year>/                       # 论文
-├── meta/
-│   ├── resources/<sha256>.json              # 单资源事实源
-│   ├── selections/<selection-id>.json       # 论文选择报告
-│   ├── transfers/axiom/<sha256>.json        # Axiom 传输记录
-│   └── tasks/<task-id>.json                 # 后台任务状态
-└── tmp/downloads/<task-id>.part             # 下载临时区
+├── raw/<domain-id>/<course-id>/             # 教材/习题成品（唯一被外部读取区）
+│   └── _general/                            # 领域通用桶：手动下载、论文 papers/<year>/
+└── tmp/qed-tracker/downloads/               # 下载中间态 *.download / *.download.part（终态不保留）
 ```
 
-默认数据根为 `dataset/qed-tracker/`。`inventory scan` 只登记数据根目录内的 PDF，不移动或删除
-原文件。自动取书先写入 `.part`，通过机器验收（PDF 结构/页数/大小硬门槛）后才原子落盘 `raw/`
-并经 `mark_owned` 登记（随后双写 MySQL 查询索引）；旧 `meta/main-line/` JSON 条目已退役
-（教程/书行落 `qt_knowledge`/`qt_books`）。
+内容身份（sha256/size_bytes/page_count）只存 MySQL `qt_books` 三列（QED-071 B 轮，
+`qed-tracker/meta/resources/` 资源 JSON 岛已退役，不再落盘）；后台任务与选择报告同样在
+MySQL（`qt_tasks`/`qt_selections`）。本地 PDF 转正走 `books import <book_id> <file>`，
+批量回填/对账走 `inventory reconcile`（不再有原地批量扫描登记命令，也不隐式扫描用户 PDF）。
+自动取书先写入中间态，通过机器验收（PDF 结构/页数/大小硬门槛）后才原子落盘 `raw/`
+并经 `mark_owned` 登记（同一提交写内容身份三列）。
 
 内置教材来源为 Internet Archive、Open Library、Google Books 与 libgen_li（libgen_li 仅发现与
 提供人工下载方案，不自动写文件）；不依赖旧配置。

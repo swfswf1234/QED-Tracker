@@ -86,7 +86,7 @@ flowchart LR
 | 现有体系 | 与主链路关系 |
 | --- | --- |
 | `catalog/evaluate` 任务 | 已退役（QED-030）；渠道评估职责由教材搜索/下载路径承接。 |
-| `meta/resources/` + 五层表（qt_knowledge/qt_books/qt_sources） | 资源登记链路保留（下载文件校验/哈希/登记，旧三表已退役）；QED-050-D 书库化后主链路条目即 `qt_knowledge`/`qt_books` 行，登记统一走 `mark_owned`。 |
+| 五层表（qt_knowledge/qt_books/qt_sources） | 资源登记链路保留（下载文件校验/哈希/登记，旧三表已退役；`meta/resources/` 资源岛已于 QED-071 B 轮退役，内容身份改由 `qt_books` 三列承载）；QED-050-D 书库化后主链路条目即 `qt_knowledge`/`qt_books` 行，登记统一走 `mark_owned`。 |
 | `catalogs/math-qe.json` | 现有 13 门课程目录（研究生 QE 方向）保留；主链路课程体系与之并行，`course_id` 命名对齐（同一课程不同名称由用户审理映射，如「线性代数/高等代数」）。 |
 | 来源适配器 / 通用下载器 | 复用：主链路下载仍走 providers → 通用下载器 → 校验/哈希，不新建下载实现。 |
 | 8903 前端 | 课程知识链路与评审台经 `/courses` API 与主链路端点消费（数据源切换 REQ-035）。 |
@@ -103,6 +103,8 @@ flowchart LR
    **人工验收通过后复制 + 登记同步移交根仓库 `dataset/qed-tracker/`**（临时区副本保留留痕）。
    （**QED-050-D 后失效**：`raw/` 即下载与人工导入共用成品区，`mark_owned` 登记 owned 即
    完成，无「复制移交」步骤。）
+   （**QED-071 A/B 轮后**：数据根为根仓库共享 `dataset/` 下的 `raw/<domain_id>/<course_id>/`，
+   本仓顶层 `qed-tracker/` 岛区已消失，tmp 侧只余 `tmp/qed-tracker/downloads/`。）
 4. **渠道有效性 = 运行时记录 + 文档矩阵互补**：主链路条目记录实际尝试（自动），
    来源评估矩阵记录人工评估结论（文档）；两者共同支撑渠道决策。
 5. **乱码修复与存量清理**：解析/登记链路强制 UTF-8；存量乱码（任务/资源 JSON、

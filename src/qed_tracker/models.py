@@ -92,6 +92,7 @@ class PaperProfile:
     topics: tuple[str, ...]
     allowed_categories: tuple[str, ...]
     exclude: tuple[str, ...] = ()
+    years_limit: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,16 +114,6 @@ class PaperAssessment:
     @property
     def score(self) -> int:
         return self.goal_fit * 10 + self.foundational_value * 6 + self.readability * 4
-
-
-@dataclass(frozen=True, slots=True)
-class BookAssessment:
-    """教材候选评估（QED-013）：LLM 只生成可审阅评分，不写资源事实。"""
-
-    provider_id: str
-    score: int  # 0-100
-    verdict: str  # recommend | uncertain
-    summary: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +170,8 @@ class MatchResult:
 
 @dataclass(slots=True)
 class ResourceRecord:
+    """内存资源 DTO（QED-071 D12）：岛退役后不再落盘，由 DB 行 + 现场校验拼装。"""
+
     resource_id: str
     kind: str
     title: str
@@ -188,9 +181,8 @@ class ResourceRecord:
     identifiers: dict[str, str]
     source: dict[str, Any]
     file: dict[str, Any]
-    catalog_ref: dict[str, str] | None = None
     roles: list[str] | None = None
-    """书籍角色（方案 A，多值）：从 catalog target 继承；空时按 kind 推导。资源 JSON schema 保持 v1（可选字段向后兼容）。"""
+    """书籍角色（方案 A，多值）：从 qt_books.roles 继承；空时按 kind 推导。"""
     schema_version: int = 1
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 

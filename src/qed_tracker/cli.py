@@ -18,15 +18,16 @@ if TYPE_CHECKING:
 import uvicorn
 
 from qed_tracker import __version__
-from qed_tracker.application import BookService, ResourceService, attempts_markdown
+from qed_tracker.application import BookService, ResourceService
 from qed_tracker.application.papers import PaperService
+from qed_tracker.application.reconcile import UNRECONCILED_STATUSES, reconcile_content_identity
 from qed_tracker.axiom import AxiomClient
 from qed_tracker.catalog import list_catalogs, load_catalog
 from qed_tracker.config import Settings, llm_api_key, load_settings
 from qed_tracker.courses import Curriculum
 from qed_tracker.db.schema import ensure_schema
-from qed_tracker.downloader import DownloadManager
-from qed_tracker.inventory import Inventory, raw_general_dir
+from qed_tracker.downloader import DownloadManager, inspect_pdf
+from qed_tracker.inventory import raw_general_dir
 from qed_tracker.models import Availability, Candidate, ResourceKind
 from qed_tracker.profiles import list_paper_profiles, load_paper_profile
 from qed_tracker.providers import ArxivProvider, BailianPaperAdvisor, create_book_providers
@@ -88,6 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
     paper_recommend.add_argument("--profile", default="llm-engineering", help="内置档案名或 JSON 路径")
     paper_recommend.add_argument("--category", action="append", dest="categories", default=[])
     paper_recommend.add_argument("--top", type=int, default=10, help="最多推荐数量")
+    paper_recommend.add_argument(
+        "--years-limit", type=int, default=None, help="只看近 N 年（0=不限；缺省按档案或默认 3）"
+    )
     _add_limit(paper_recommend)
     paper_profiles = paper_commands.add_parser("profiles", help="查看论文目标档案")
     paper_profile_commands = paper_profiles.add_subparsers(dest="profiles_command", required=True)
@@ -103,30 +107,28 @@ def build_parser() -> argparse.ArgumentParser:
     paper_selection_download.add_argument("selection_id")
     paper_selection_download.add_argument("--pick", type=int, action="append", required=True)
 
-    catalog = commands.add_parser("catalog", help="冻结下载目录")
+    catalog = commands.add_parser("catalog", help="冻结下载目录（只读查看，历史资料）")
     catalog_commands = catalog.add_subparsers(dest="catalog_command", required=True)
     catalog_commands.add_parser("list", help="列出内置目录")
     catalog_show = catalog_commands.add_parser("show", help="显示目录目标")
     catalog_show.add_argument("catalog_id")
-    catalog_run = catalog_commands.add_parser("run", help="严格匹配目录目标")
-    catalog_run.add_argument("catalog_id")
-    catalog_run.add_argument("--course", default="", help="按语义 course_id 精确过滤（如 math_analysis）")
-    catalog_run.add_argument("--download", action="store_true", help="下载严格匹配项；默认只预览")
-    catalog_run.add_argument("--report", type=Path)
-    _add_limit(catalog_run, 8)
+    # QED-071 D11（2026-09-26）：`catalog run` 冻结目录批处理退役——自动取书唯一正源
+    # 是 qt_books 驱动的五阶段编排（mainline download / books fetch）。
 
-    inventory = commands.add_parser("inventory", help="本地 PDF 清单")
+    inventory = commands.add_parser("inventory", help="DB 书目视图与内容身份校验")
     inventory_commands = inventory.add_subparsers(dest="inventory_command", required=True)
-    inventory_scan = inventory_commands.add_parser("scan", help="原地登记数据根内已有 PDF")
-    inventory_scan.add_argument("roots", type=Path, nargs="*")
-    inventory_list = inventory_commands.add_parser("list", help="列出资源")
-    inventory_list.add_argument("--kind", choices=[kind.value for kind in ResourceKind])
-    inventory_commands.add_parser("verify", help="校验文件与清单")
+    # QED-071 D16（2026-09-26）：`inventory scan`（原地批量登记）删除——批量回填走
+    # reconcile；`inventory list` 改读 qt_books（--kind 参数随之删除）。
+    inventory_commands.add_parser("list", help="列出 DB 书目（qt_books：book_id/title/holding/file_path/sha8）")
+    inventory_commands.add_parser("verify", help="重算磁盘文件并比对 qt_books 内容身份三列")
+    inventory_commands.add_parser(
+        "reconcile", help="磁盘重算内容身份并回填/对账 qt_books 三列（QED-071 B 轮，需数据库）"
+    )
 
     axiom = commands.add_parser("axiom", help="交付给 Axiom-Flow")
     axiom_commands = axiom.add_subparsers(dest="axiom_command", required=True)
-    axiom_push = axiom_commands.add_parser("push", help="显式上传一个已登记 PDF")
-    axiom_push.add_argument("resource")
+    axiom_push = axiom_commands.add_parser("push", help="显式上传一本已登记书（仅 book_id，D15）")
+    axiom_push.add_argument("book_id", help="书籍标识（qt_books.book_id，holding=owned 且文件在位）")
     axiom_push.add_argument("--url", dest="axiom_url")
     axiom_push.add_argument("--parse", action="store_true")
     axiom_push.add_argument("--page-start", type=int)
@@ -258,7 +260,8 @@ def _book_service(settings: Settings, names: tuple[str, ...] | None = None) -> B
     downloader = DownloadManager(
         proxy=settings.proxy, timeout=settings.timeout_seconds, retries=settings.retries, tls_verify=settings.tls_verify
     )
-    return BookService(providers, ResourceService(Inventory(settings.data_root), downloader))
+    # B 轮（M4）：教材下载去重走 qt_books；DB 未配置时搜索仍可用，下载显式报错。
+    return BookService(providers, ResourceService(settings.data_root, downloader, books=_curriculum_repository(settings)))
 
 
 def _books_import(args, settings: Settings) -> int:
@@ -292,7 +295,7 @@ def _paper_service(settings: Settings, *, with_advisor: bool = False) -> PaperSe
         retries=settings.retries,
         tls_verify=settings.tls_verify,
     )
-    resources = ResourceService(Inventory(settings.data_root), manager)
+    resources = ResourceService(settings.data_root, manager)
     advisor = None
     if with_advisor:
         advisor = BailianPaperAdvisor(
@@ -320,7 +323,6 @@ def _display_selection(report: dict) -> None:
 
 
 def _books(args, settings: Settings) -> int:
-    inventory = Inventory(settings.data_root)
     if args.books_command == "import":
         return _books_import(args, settings)
     if args.books_command == "fetch":
@@ -332,7 +334,8 @@ def _books(args, settings: Settings) -> int:
             retries=settings.retries,
             tls_verify=settings.tls_verify,
         )
-        resources = ResourceService(inventory, manager)
+        # fetch-url 是手动通道：习题落通用桶、不占 qt_books 行（DB 登记走 books import/fetch）。
+        resources = ResourceService(settings.data_root, manager)
         try:
             candidate = Candidate(
                 "url", args.url, args.title, tuple(args.author), args.language, page_url=args.url, download_url=args.url
@@ -421,7 +424,12 @@ def _papers(args, settings: Settings) -> int:
         if args.papers_command == "recommend":
             profile = load_paper_profile(args.profile)
             report = service.recommend(
-                profile, goal=args.goal, categories=args.categories, limit=args.limit, top=args.top
+                profile,
+                goal=args.goal,
+                categories=args.categories,
+                limit=args.limit,
+                top=args.top,
+                years_limit=args.years_limit,
             )
             _print(report, True) if args.json else _display_selection(report)
             return 0 if report["status"] == "ranked" else 3
@@ -470,63 +478,104 @@ def _catalog(args, settings: Settings) -> int:
             )
         )
         return 0
-    try:
-        service = _book_service(settings)
-    except ValueError as exc:
-        _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
-    try:
-        attempts = service.run_catalog(catalog, course=args.course, download=args.download, limit=args.limit)
-        if args.report:
-            args.report.parent.mkdir(parents=True, exist_ok=True)
-            args.report.write_text(attempts_markdown(catalog, attempts), encoding="utf-8")
-        if args.json:
-            _print(
-                [
-                    {
-                        "target": asdict(item.target),
-                        "status": item.status,
-                        "reason": item.reason,
-                        "resource": item.record.to_dict() if item.record else None,
-                    }
-                    for item in attempts
-                ],
-                True,
-            )
-        else:
-            for item in attempts:
-                print(f"[{item.status}] {item.target.id} | {item.target.title} | {item.reason}")
-        return 4 if any(item.status == "FAILED" for item in attempts) else 0
-    finally:
-        service.close()
+    raise ValueError(f"未知 catalog 命令：{args.catalog_command}")
 
 
 def _inventory(args, settings: Settings) -> int:
-    inventory = Inventory(settings.data_root)
+    if args.inventory_command == "reconcile":
+        return _inventory_reconcile(args, settings)
+    # QED-071 D16：list/verify 均读 qt_books（岛已退役）；DB 未配置时显式报错，
+    # 绝不静默回退读岛（裁决 M4）。
+    repo = _curriculum_repository(settings)
+    if repo is None:
+        message = f"数据库未配置：inventory {args.inventory_command} 需读取 qt_books"
+        _print({"error": message}, True) if args.json else print(f"ERROR: {message}", file=sys.stderr)
+        return 2
     if args.inventory_command == "list":
-        records = inventory.list(args.kind)
-        _print([record.to_dict() for record in records], args.json) if args.json else print(
+        books = repo.list_books()
+        _print(
+            [
+                {
+                    "book_id": book.book_id,
+                    "title": book.title,
+                    "holding": book.holding,
+                    "file_path": book.file_path,
+                    "sha256": book.sha256,
+                }
+                for book in books
+            ],
+            True,
+        ) if args.json else print(
             "\n".join(
-                f"{record.resource_id} | {record.kind} | {record.title} | {record.file['relative_path']}"
-                for record in records
+                f"{book.book_id} | {book.title} | {book.holding} | {book.file_path or '-'} | "
+                f"{(book.sha256 or '')[:8]}"
+                for book in books
             )
+            or "（qt_books 为空）"
         )
         return 0
-    if args.inventory_command == "scan":
-        roots = args.roots or [settings.data_root]
-        records, errors = inventory.scan(roots)
-        value = {"registered": len(records), "errors": [{"path": str(path), "error": error} for path, error in errors]}
-        _print(value, args.json)
-        return 4 if errors else 0
     if args.inventory_command == "verify":
-        results = inventory.verify()
-        _print(
-            [{"resource_id": record.resource_id, "status": status} for record, status in results], True
-        ) if args.json else print(
-            "\n".join(f"[{status}] {record.resource_id} {record.title}" for record, status in results)
-        )
-        return 4 if any(status != "ok" for _, status in results) else 0
+        return _inventory_verify(args, settings, repo)
     raise ValueError(f"未知 inventory 命令：{args.inventory_command}")
+
+
+def _inventory_verify(args, settings: Settings, repo: KnowledgeRepository) -> int:
+    """QED-071 D10：verify = 磁盘 inspect_pdf 重算 vs qt_books 内容身份三列。"""
+    rows = [book for book in repo.list_books() if book.file_path]
+    results: list[dict] = []
+    for book in rows:
+        path = settings.data_root / book.file_path
+        if not path.is_file():
+            results.append({"book_id": book.book_id, "title": book.title, "status": "missing"})
+            continue
+        try:
+            sha256, size, pages = inspect_pdf(path)
+        except Exception as exc:
+            results.append({"book_id": book.book_id, "title": book.title, "status": f"invalid: {exc}"})
+            continue
+        if not book.sha256:
+            results.append({"book_id": book.book_id, "title": book.title, "status": "unfilled"})
+            continue
+        status = (
+            "ok"
+            if sha256 == book.sha256 and size == book.size_bytes and pages == book.page_count
+            else "changed"
+        )
+        results.append({"book_id": book.book_id, "title": book.title, "status": status})
+    _print(results, True) if args.json else print(
+        "\n".join(f"[{item['status']}] {item['book_id']} {item['title']}" for item in results)
+        or "（无带 file_path 的书目行）"
+    )
+    return 4 if any(item["status"] != "ok" for item in results) else 0
+
+
+def _inventory_reconcile(args, settings: Settings) -> int:
+    """QED-071 B-W2：磁盘重算内容身份并回填/对账 qt_books 三列（B-W3 校验读路径的前置输入）。"""
+    repo = _curriculum_repository(settings)
+    if repo is None:
+        message = "数据库未配置：inventory reconcile 需 qt_books 内容身份列"
+        _print({"error": message}, True) if args.json else print(f"ERROR: {message}", file=sys.stderr)
+        return 2
+    report = reconcile_content_identity(repo, settings.data_root)
+    if args.json:
+        _print(report, True)
+    else:
+        for item in report["items"]:
+            extras = []
+            if item.get("recorded_sha8"):
+                extras.append(f"记录 sha8={item['recorded_sha8']}")
+            if item.get("sha256"):
+                extras.append(f"重算 sha8={item['sha256'][:8]}")
+            if item.get("detail"):
+                extras.append(item["detail"])
+            suffix = f"（{'；'.join(extras)}）" if extras else ""
+            print(f"[{item['status']}] {item['book_id']} {item['file_path']}{suffix}")
+        summary = report["summary"]
+        print(
+            "对账小结：total={total} filled={filled} ok={ok} missing={missing} "
+            "invalid={invalid} mismatch={mismatch} conflict={conflict} unattributed={unattributed}".format(**summary)
+        )
+    return 4 if any(item["status"] in UNRECONCILED_STATUSES for item in report["items"]) else 0
 
 
 def _axiom(args, settings: Settings) -> int:
@@ -536,18 +585,40 @@ def _axiom(args, settings: Settings) -> int:
         raise ValueError("--page-start 必须大于等于 1")
     if args.page_end is not None and args.page_start is not None and args.page_end < args.page_start:
         raise ValueError("--page-end 不能小于 --page-start")
-    inventory = Inventory(settings.data_root)
-    resource = inventory.get(args.resource)
-    if resource is None:
-        path = Path(args.resource)
-        if not path.is_absolute():
-            path = settings.data_root / path
-        resource = inventory.register(path, kind=ResourceKind.BOOK, title=path.stem)
+    # QED-071 D15：push 只接受 book_id（qt_books 行 + holding=owned + 文件在位）；
+    # 裸路径与 sha 查岛通道已删除。上传用现场重算的内容身份，与 DB 记录不一致即拒绝。
+    repo = _curriculum_repository(settings)
+    if repo is None:
+        message = "数据库未配置：axiom push 需读取 qt_books（仅接受 book_id）"
+        _print({"error": message}, True) if args.json else print(f"ERROR: {message}", file=sys.stderr)
+        return 2
+    book = repo.get_book(args.book_id)
+    if book is None:
+        raise ValueError(f"书籍不存在：{args.book_id}")
+    if book.holding != "owned" or not book.file_path:
+        raise ValueError(f"仅 holding=owned 且已落盘的书可上传：{args.book_id}（当前 holding={book.holding}）")
+    path = settings.data_root / book.file_path
+    if not path.is_file():
+        raise ValueError(f"登记文件不在位（先 inventory verify/reconcile）：{book.file_path}")
+    sha256, size, pages = inspect_pdf(path)
+    if book.sha256 and sha256 != book.sha256:
+        raise ValueError(
+            f"磁盘内容与 qt_books 记录不一致（changed），拒绝上传：{args.book_id}"
+            f"（记录 sha8={book.sha256[:8]}，重算 sha8={sha256[:8]}）"
+        )
+    resource = ResourceService.record_from_book(book)
+    resource.file = {
+        "relative_path": book.file_path,
+        "sha256": sha256,
+        "size_bytes": size,
+        "mime_type": "application/pdf",
+        "page_count": pages,
+    }
     client = AxiomClient(
         args.axiom_url or settings.axiom_url, timeout=max(settings.timeout_seconds, 120), tls_verify=settings.tls_verify
     )
     try:
-        result = client.push(resource, inventory, parse=args.parse, page_start=args.page_start, page_end=args.page_end)
+        result = client.push(resource, settings.data_root, parse=args.parse, page_start=args.page_start, page_end=args.page_end)
         _print(result, True if args.json else False)
         return 0
     finally:

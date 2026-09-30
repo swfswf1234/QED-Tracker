@@ -118,11 +118,17 @@ def test_qed_domain_explore_full_roundtrip(session) -> None:
 
 
 def test_qt_books_unique_constraints() -> None:
-    """书库化后 qt_books 无 knowledge_id/sha256 列，仅 book_id 主键；不再有旧唯一约束。"""
+    """B 轮（QED-071）后口径：内容身份三列 + sha256 **普通**索引 ix_qt_books_sha256
+    （D17：唯一键与「同内容多书 N:1 共用」冲突，放宽为索引），仅 book_id 主键。"""
     table = QtBook.__table__
     names = {c.name for c in table.constraints}
     assert "uq_qt_books_knowledge_title_part" not in names
-    assert "uq_qt_books_sha256" not in names
+    assert "uk_qt_books_sha256" not in names
+    assert "ix_qt_books_sha256" in {idx.name for idx in table.indexes}
+    assert all("sha256" not in [c.name for c in getattr(constraint, "columns", [])]
+               for constraint in table.constraints)
+    columns = {c.name for c in table.columns}
+    assert {"sha256", "size_bytes", "page_count"} <= columns
     assert table.primary_key.columns.keys() == ["book_id"]
 
 

@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -21,6 +22,24 @@ def test_builtin_profiles_are_valid_and_listed():
     assert list_paper_profiles() == ("llm-engineering", "math-research")
     assert "cs.CL" in load_paper_profile("llm-engineering").allowed_categories
     assert "math.FA" in load_paper_profile("math-research").allowed_categories
+    assert load_paper_profile("llm-engineering").years_limit is None
+
+
+def test_profile_years_limit_is_optional(tmp_path):
+    legacy = {
+        "id": "legacy",
+        "name": "Legacy",
+        "description": "Legacy profile",
+        "audience": "Researchers",
+        "goals": ["goal"],
+        "topics": ["topic"],
+        "allowed_categories": ["cs.CL"],
+    }
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    assert load_paper_profile(path).years_limit is None
+    path.write_text(json.dumps({**legacy, "years_limit": 5}), encoding="utf-8")
+    assert load_paper_profile(path).years_limit == 5
 
 
 def test_custom_profile_rejects_unknown_fields(tmp_path):

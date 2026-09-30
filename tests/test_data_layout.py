@@ -1,20 +1,29 @@
 """数据布局契约（ARCH-019 统一数据根）：
 - 共享树 <QED_DATA_ROOT>/：raw/<domain>/<course>/ 原始区、tmp/qed-tracker/downloads/ 下载临时区；
-- 私有状态区 <QED_DATA_ROOT>/qed-tracker/meta/（resources JSON / selections / tasks）;
-- `<slug>_<sha256前8>.pdf` 文件名规则与 md5 内容校验回归。
+- `<slug>_<sha256前8>.pdf` 文件名规则与 md5 内容校验回归；
+- QED-071 B 轮全局反岛守护：下载/清扫全链路不得生成 `<data_root>/qed-tracker/`
+  顶层目录（资源 JSON 岛与 Axiom 传输留痕均已退役，根仓 ADR 0018）。
+
+kind=BOOK 链路需 qt_books（M4）——DB 去重与登记语义见 tests/test_services.py，
+真实 repo 的取书落盘见 tests/test_book_fetch.py；本文件用 exercise/paper 通道
+验证与 DB 无关的文件名/落盘/staging 契约。
 """
 
 import hashlib
+import os
+import time
+from pathlib import Path
 
 import httpx
 import pytest
 
-from qed_tracker.application import BookService, ResourceService
+from qed_tracker.application import ResourceService
 from qed_tracker.application.papers import PaperService
-from qed_tracker.catalog import Catalog, load_catalog
 from qed_tracker.downloader import DownloadError, DownloadManager
-from qed_tracker.inventory import Inventory, downloads_tmp_dir, raw_course_dir, raw_general_dir
+from qed_tracker.inventory import downloads_tmp_dir, raw_course_dir, raw_general_dir, sweep_downloads
 from qed_tracker.models import Candidate, ResourceKind
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _manager_with(pdf_bytes: bytes) -> DownloadManager:
@@ -26,27 +35,22 @@ def _manager_with(pdf_bytes: bytes) -> DownloadManager:
     return manager
 
 
-class FakeProvider:
-    name = "fake"
-
-    def __init__(self, candidate):
-        self.candidate = candidate
-
-    def search(self, query, limit=10):
-        return [self.candidate]
-
-    def resolve(self, candidate):
-        return candidate
-
-    def close(self):
-        return None
-
-
 def _candidate(title: str = "Topology 2nd Edition", identifiers: dict | None = None) -> Candidate:
     return Candidate(
         "fake", "munkres", title, ("James Munkres",), "English",
         identifiers=identifiers or {}, download_url="https://example.test/topology.pdf",
     )
+
+
+def _download(pdf: bytes, destination: Path, *, data_root: Path, candidate: Candidate | None = None,
+              kind: ResourceKind = ResourceKind.EXERCISE, staging_tag: str = ""):
+    service = ResourceService(data_root, _manager_with(pdf))
+    try:
+        return service.download_candidate(
+            candidate or _candidate(), kind=kind, destination_dir=destination, staging_tag=staging_tag
+        )
+    finally:
+        service.close()
 
 
 def test_layout_helpers_follow_shared_tree(tmp_path):
@@ -56,21 +60,12 @@ def test_layout_helpers_follow_shared_tree(tmp_path):
     assert downloads_tmp_dir(tmp_path) == tmp_path / "tmp" / "qed-tracker" / "downloads"
 
 
-def test_inventory_state_lives_under_private_meta(tmp_path, pdf_bytes):
-    path = tmp_path / "book.pdf"
-    path.write_bytes(pdf_bytes)
-    inventory = Inventory(tmp_path)
-    record = inventory.register(path, kind=ResourceKind.BOOK, title="Book")
-    assert (tmp_path / "qed-tracker" / "meta" / "resources" / f"{record.sha256}.json").exists()
-    assert not (tmp_path / "meta").exists()
-
-
-def test_downloaded_book_uses_sha256_filename_rule(tmp_path, pdf_bytes):
+def test_downloaded_file_uses_sha256_filename_rule(tmp_path, pdf_bytes):
     manager = _manager_with(pdf_bytes)
-    service = ResourceService(Inventory(tmp_path), manager)
+    service = ResourceService(tmp_path, manager)
     try:
         record = service.download_candidate(
-            _candidate(), kind=ResourceKind.BOOK, destination_dir=raw_general_dir(tmp_path)
+            _candidate(), kind=ResourceKind.EXERCISE, destination_dir=raw_general_dir(tmp_path)
         )
     finally:
         service.close()
@@ -81,13 +76,13 @@ def test_downloaded_book_uses_sha256_filename_rule(tmp_path, pdf_bytes):
 
 def test_staging_and_part_files_live_in_shared_tmp_zone(tmp_path, pdf_bytes):
     """"tmp 先写后原子落盘 raw"：.download/.part 中间态只在 tmp/qed-tracker/downloads/，
-    成品直接原子替换进 raw；完成后临时区无残留。"""
+    成品直接原子替换进 raw；完成后临时区无残留、不生成岛目录。"""
 
     manager = _manager_with(pdf_bytes)
-    service = ResourceService(Inventory(tmp_path), manager)
+    service = ResourceService(tmp_path, manager)
     try:
         record = service.download_candidate(
-            _candidate(), kind=ResourceKind.BOOK, destination_dir=raw_general_dir(tmp_path)
+            _candidate(), kind=ResourceKind.EXERCISE, destination_dir=raw_general_dir(tmp_path)
         )
     finally:
         service.close()
@@ -95,6 +90,8 @@ def test_staging_and_part_files_live_in_shared_tmp_zone(tmp_path, pdf_bytes):
     assert record.file["sha256"]
     assert not list(tmp_zone.glob("*")), "下载完成后临时区应无残留"
     assert not list(raw_general_dir(tmp_path).glob("*.download")), "raw 区不得有中间态文件"
+    # QED-071 B 轮全局反岛守护（D12/ADR 0018）：下载链路不得生成 <data_root>/qed-tracker/
+    assert not (tmp_path / "qed-tracker").exists()
 
 
 def test_download_rejects_mismatched_declared_md5(tmp_path, pdf_bytes):
@@ -102,10 +99,10 @@ def test_download_rejects_mismatched_declared_md5(tmp_path, pdf_bytes):
 
     manager = _manager_with(pdf_bytes)
     candidate = _candidate(identifiers={"md5": "0" * 32})
-    service = ResourceService(Inventory(tmp_path), manager)
+    service = ResourceService(tmp_path, manager)
     try:
         with pytest.raises(DownloadError, match="内容完整性校验失败"):
-            service.download_candidate(candidate, kind=ResourceKind.BOOK, destination_dir=raw_general_dir(tmp_path))
+            service.download_candidate(candidate, kind=ResourceKind.EXERCISE, destination_dir=raw_general_dir(tmp_path))
     finally:
         service.close()
     assert not list(downloads_tmp_dir(tmp_path).glob("*.download")), "staging 文件应被清理"
@@ -116,49 +113,15 @@ def test_download_accepts_matching_declared_md5(tmp_path, pdf_bytes):
 
     declared = hashlib.md5(pdf_bytes).hexdigest()
     manager = _manager_with(pdf_bytes)
-    service = ResourceService(Inventory(tmp_path), manager)
+    service = ResourceService(tmp_path, manager)
     try:
         record = service.download_candidate(
-            _candidate(identifiers={"md5": declared}), kind=ResourceKind.BOOK, destination_dir=raw_general_dir(tmp_path)
+            _candidate(identifiers={"md5": declared}), kind=ResourceKind.EXERCISE,
+            destination_dir=raw_general_dir(tmp_path),
         )
     finally:
         service.close()
     assert record.file["sha256"]
-
-
-def test_run_catalog_course_filter_matches_semantic_course_id(tmp_path, pdf_bytes):
-    """QED-062：catalog run 的 course 过滤按语义 course_id 精确匹配（不再用编号前缀）。"""
-    catalog = load_catalog("math-qe")
-    manager = _manager_with(pdf_bytes)
-    service = BookService([FakeProvider(_candidate())], ResourceService(Inventory(tmp_path), manager))
-    try:
-        attempts = service.run_catalog(catalog, course="math_analysis")
-    finally:
-        service.close()
-    assert len(attempts) == 13
-    assert {attempt.target.course_id for attempt in attempts} == {"math_analysis"}
-
-    manager = _manager_with(pdf_bytes)
-    service = BookService([FakeProvider(_candidate())], ResourceService(Inventory(tmp_path), manager))
-    try:
-        none_attempts = service.run_catalog(catalog, course="math")
-    finally:
-        service.close()
-    assert none_attempts == []
-
-
-def test_catalog_book_lands_in_raw_domain_course_bucket(tmp_path, pdf_bytes):
-    target = next(target for target in load_catalog("math-qe").targets if target.id == "03-munkres")
-    catalog = Catalog("math-qe", "Math", "", "frozen", (target,))
-    manager = _manager_with(pdf_bytes)
-    candidate = _candidate()
-    service = BookService([FakeProvider(candidate)], ResourceService(Inventory(tmp_path), manager))
-    try:
-        attempt = service.run_catalog(catalog, download=True)[0]
-    finally:
-        service.close()
-    assert attempt.status == "DOWNLOADED"
-    assert raw_course_dir(tmp_path, "topology").exists()
 
 
 def test_paper_service_lands_in_general_papers_by_year(tmp_path, pdf_bytes):
@@ -177,13 +140,14 @@ def test_paper_service_lands_in_general_papers_by_year(tmp_path, pdf_bytes):
         identifiers={"arxiv": "2401.00001"}, download_url="https://example.test/paper.pdf",
     )
     manager = _manager_with(pdf_bytes)
-    service = PaperService(FakeArxiv(), ResourceService(Inventory(tmp_path), manager))
+    service = PaperService(FakeArxiv(), ResourceService(tmp_path, manager))
     try:
         record = service.download(candidate)
     finally:
         service.close()
     expected = raw_general_dir(tmp_path) / "papers" / "2024" / f"2401.00001_{record.sha256[:8]}.pdf"
     assert expected.exists()
+    assert not (tmp_path / "qed-tracker").exists()
 
 
 def test_paper_download_uses_arxiv_id_filename_rule(tmp_path, pdf_bytes):
@@ -192,7 +156,7 @@ def test_paper_download_uses_arxiv_id_filename_rule(tmp_path, pdf_bytes):
         download_url="https://example.test/paper.pdf",
     )
     manager = _manager_with(pdf_bytes)
-    service = ResourceService(Inventory(tmp_path), manager)
+    service = ResourceService(tmp_path, manager)
     try:
         record = service.download_candidate(
             candidate, kind=ResourceKind.PAPER,
@@ -204,15 +168,14 @@ def test_paper_download_uses_arxiv_id_filename_rule(tmp_path, pdf_bytes):
     assert expected.exists()
 
 
-def test_same_title_different_targets_get_distinct_filenames(tmp_path, pdf_bytes):
-    """2026-08-09 回归：同条目多目标 title 相同（陈纪修上/下/答案），
-    catalog_target.id 前缀保证 staging/final 不互相冲突（原并发写同名 WinError 32）。"""
+def test_same_title_different_content_get_distinct_filenames(tmp_path, pdf_bytes):
+    """2026-08-09 回归（B 轮改写）：同标题不同内容 → 文件名以 sha8 区分（原
+    catalog_target 前缀随 D11 退役）；并发同名冲突由 staging_tag 覆盖，
+    成品名保持内容指纹确定性。"""
 
     from io import BytesIO
 
     from pypdf import PdfWriter
-
-    from qed_tracker.models import CatalogTarget
 
     writer = PdfWriter()
     writer.add_blank_page(width=100, height=200)
@@ -220,46 +183,63 @@ def test_same_title_different_targets_get_distinct_filenames(tmp_path, pdf_bytes
     writer.write(stream)
     other_pdf = stream.getvalue()
 
-    targets = [
-        CatalogTarget("01-chenjixiu-v1", "01_math_analysis", "数学分析", ResourceKind.BOOK, "数学分析", ("陈纪修",), "zh", file_hint="第三版 上"),
-        CatalogTarget("01-chenjixiu-v2", "01_math_analysis", "数学分析", ResourceKind.BOOK, "数学分析", ("陈纪修",), "zh", file_hint="第三版 下"),
-    ]
     destination = raw_course_dir(tmp_path, "01_math_analysis")
-    service = ResourceService(Inventory(tmp_path), _manager_with(pdf_bytes))
-    try:
-        service.download_candidate(
-            _candidate(title="数学分析 陈纪修 第三版 课本及答案"),
-            kind=ResourceKind.BOOK,
-            destination_dir=destination,
-            catalog_target=targets[0],
-        )
-    finally:
-        service.close()
-    service = ResourceService(Inventory(tmp_path), _manager_with(other_pdf))
-    try:
-        service.download_candidate(
-            _candidate(title="数学分析 陈纪修 第三版 课本及答案"),
-            kind=ResourceKind.BOOK,
-            destination_dir=destination,
-            catalog_target=targets[1],
-        )
-    finally:
-        service.close()
+    title = "数学分析 陈纪修 第三版 课本及答案"
+    first = _download(pdf_bytes, destination, candidate=_candidate(title=title), staging_tag="t1", data_root=tmp_path)
+    second = _download(other_pdf, destination, candidate=_candidate(title=title), staging_tag="t2", data_root=tmp_path)
     names = sorted(p.name for p in destination.glob("*.pdf"))
-    assert names[0].startswith("01-chenjixiu-v1_")
-    assert names[1].startswith("01-chenjixiu-v2_")
+    assert len(names) == 2
+    assert names == sorted(
+        [Path(first.file["relative_path"]).name, Path(second.file["relative_path"]).name]
+    )
     assert names[0] != names[1]
+    assert all(name.startswith("数学分析_陈纪修_第三版_课本及答案_") for name in names)
+    assert not (tmp_path / "qed-tracker").exists()
 
 
-def test_exercise_download_lands_in_general_bucket(tmp_path, pdf_bytes):
-    target = next(target for target in load_catalog("math-qe").targets if target.id == "01-demidovich")
-    catalog = Catalog("math-qe", "Math", "", "frozen", (target,))
-    manager = _manager_with(pdf_bytes)
-    candidate = Candidate("fake", "demidovich", "吉米多维奇数学分析习题集", ("吉米多维奇",), "zh", download_url="https://example.test/book.pdf")
-    service = BookService([FakeProvider(candidate)], ResourceService(Inventory(tmp_path), manager))
-    try:
-        attempt = service.run_catalog(catalog, download=True)[0]
-    finally:
-        service.close()
-    assert attempt.status == "DOWNLOADED"
-    assert raw_general_dir(tmp_path).exists()
+# ---- QED-071 反岛守护（A-W4 局部 + B 轮全局） ----
+
+
+def test_source_never_writes_axiom_transfer_island():
+    """① src/ 全仓不出现 meta/transfers 字符串——Axiom 传输留痕已判废（D3），
+    任何新增写入路径都会重建野生区，违反根仓 ADR 0018。"""
+    offenders = [
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in sorted((REPO_ROOT / "src").rglob("*.py"))
+        if "meta/transfers" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
+
+
+def test_source_never_writes_resources_island():
+    """①′ src/ 全仓不出现岛目录路径字面量（`"qed-tracker" / "meta" / "resources"` 的
+    带引号构件）——资源 JSON 岛已退役（QED-071 B 轮），内容身份只存 qt_books 三列；
+    docstring 里的历史说明不带引号，不会误伤。"""
+    offenders = [
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in sorted((REPO_ROOT / "src").rglob("*.py"))
+        if '"resources"' in path.read_text(encoding="utf-8") or '"meta"' in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
+
+
+def test_sweep_and_download_never_create_island_dir(tmp_path, pdf_bytes):
+    """② 跑完整下载 + A-W2 清扫：`<data_root>/qed-tracker/` 顶层目录不生成，
+    tmp/qed-tracker/downloads/ 终态符合预期（超龄清掉、新鲜保留）。"""
+    _download(pdf_bytes, raw_general_dir(tmp_path), data_root=tmp_path)
+
+    staging = downloads_tmp_dir(tmp_path)
+    staging.mkdir(parents=True, exist_ok=True)
+    stale = staging / "Orphan_deadbeef.download"
+    stale.write_bytes(b"stale")
+    stamp = time.time() - 24 * 3600
+    os.utime(stale, (stamp, stamp))
+    fresh = staging / "InFlight_01234567.download"
+    fresh.write_bytes(b"fresh")
+
+    removed = sweep_downloads(staging, max_age_seconds=6 * 3600)
+
+    assert not (tmp_path / "qed-tracker").exists()
+    assert removed == [stale]
+    assert not stale.exists()
+    assert fresh.exists()

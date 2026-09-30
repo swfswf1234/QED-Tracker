@@ -49,6 +49,7 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/adr/0001-tracker-service-architecture.md"),
     Path("docs/adr/0006-database-model-as-schema-rebuild.md"),
     Path("docs/adr/0010-absorbed-adr-archival.md"),
+    Path("docs/adr/0011-artifact-placement-hygiene.md"),
     Path("docs/guides/index.md"),
     Path("docs/guides/operations.md"),
     Path("docs/guides/development.md"),
@@ -60,6 +61,9 @@ REQUIRED_CURRENT_DOCS = {
     Path("docs/plans/2026-09-14-download-channel-evaluation.md"),
     Path("docs/plans/2026-09-14-bugfix-ledger.md"),
     Path("docs/plans/2026-09-24-v1-task-chain.md"),
+    Path("docs/plans/2026-09-28-bailian-retire-local-only.md"),
+    Path("docs/plans/2026-09-28-exploration-pipeline-local.md"),
+    Path("docs/plans/2026-09-29-llm-dual-link-prompt-ledger.md"),
     Path("docs/trackers/index.md"),
     Path("docs/trackers/todo.md"),
     Path("docs/trackers/completed.md"),
@@ -90,6 +94,9 @@ REQUIRED_HISTORY_DOCS = {
     Path("docs/history/baselines/2026-09-11-exploration-contract-alignment.md"),
     Path("docs/history/baselines/2026-09-doc-cleanup-leftovers.md"),
     Path("docs/history/baselines/2026-09-service-hardening.md"),
+    Path("docs/history/baselines/2026-09-24-storage-json-island-retirement-request.md"),
+    Path("docs/history/baselines/2026-09-24-storage-json-island-retirement.md"),
+    Path("docs/history/baselines/2026-09-30-todo-governance-round.md"),
     Path("docs/history/qed-030-retire-qt_resources/index.md"),
     Path("docs/history/qed-036-tutorial-naming/index.md"),
     Path("docs/history/three-table-schema.md"),
@@ -365,3 +372,35 @@ def test_tracker_ids_and_active_plan_are_governed():
     for plan in (ROOT / "docs/plans").glob("*.md"):
         if plan.name != "index.md":
             assert f"../plans/{plan.name}" in todo
+
+
+def test_todo_tables_have_no_process_narrative():
+    """守护：任务表零过程叙述（成功标准冻结规则的机器面）。
+
+    模块职责：确保 todo「本期计划」与「普通任务轮」表的「事项/成功标准」列不含
+    裁决史标记与日期化叙述（QED-075 规则：一经评审确立即冻结，过程更新只进 plans/）。
+
+    设计关联（DesignRef）：docs/standards/doc-governance.md（trackers 承载任务行、plans 承载过程事实）
+    实现状态：Implemented
+    被测代码：docs/trackers/todo.md
+    守护面：trackers（任务治理完整性）
+    失效后果：过程叙述回流任务表，开发进度口径反复漂移，成功标准被静默改写而无人察觉。
+    """
+    lines = (ROOT / "docs/trackers/todo.md").read_text(encoding="utf-8").split("\n")
+    assert "## 普通任务轮" in lines, "普通任务轮节标题必须纯净存在"
+    header = "| ID | 类型 | 状态 | 事项 | 成功标准 | 关联计划 |"
+    forbidden = re.compile("口径变更|改判|作废|已解|待裁|已裁")
+    dated = re.compile(r"20\d\d-\d\d-\d\d")
+    tables = 0
+    for idx, ln in enumerate(lines):
+        if ln == header and idx + 1 < len(lines) and lines[idx + 1].startswith("| ---"):
+            tables += 1
+            j = idx + 2
+            while j < len(lines) and lines[j].startswith("|"):
+                cells = [c.strip() for c in lines[j].split("|")]
+                assert len(cells) == 8, lines[j][:80]
+                for cell in (cells[4], cells[5]):
+                    assert not forbidden.search(cell), f"过程叙述混入: {cell[:60]}"
+                    assert not dated.search(cell), f"日期化叙述混入: {cell[:60]}"
+                j += 1
+    assert tables >= 2, "本期计划与普通任务轮两张表必须存在"

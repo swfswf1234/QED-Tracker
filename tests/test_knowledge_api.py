@@ -470,7 +470,6 @@ def _fetch_client(tmp_path, repo, candidate, pdf: bytes):
     from qed_tracker.application.books import BookService
     from qed_tracker.application.resources import ResourceService
     from qed_tracker.downloader import DownloadManager
-    from qed_tracker.inventory import Inventory
 
     def factory():
         manager = DownloadManager(retries=1)
@@ -478,7 +477,7 @@ def _fetch_client(tmp_path, repo, candidate, pdf: bytes):
         manager.client = _httpx.Client(transport=_httpx.MockTransport(
             lambda request: _httpx.Response(200, content=pdf, request=request)
         ))
-        return BookService([_FetchFakeProvider(candidate)], ResourceService(Inventory(tmp_path), manager))
+        return BookService([_FetchFakeProvider(candidate)], ResourceService(tmp_path, manager, books=repo))
 
     from dataclasses import replace as _replace
 

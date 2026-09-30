@@ -21,6 +21,7 @@ from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from qed_tracker.db.engine import utc_now
@@ -866,6 +867,53 @@ class KnowledgeRepository:
             row.updated_at = utc_now()
             session.commit()
             return row
+
+    def owned_books_with_files(self) -> list[QtBook]:
+        """reconcile 输入（QED-071 B-W2）：holding=owned 且 file_path 非空的书目行。"""
+        with self._session_factory() as session:
+            statement = (
+                select(QtBook)
+                .where(QtBook.holding == "owned", QtBook.file_path.is_not(None), QtBook.file_path != "")
+                .order_by(QtBook.created_at, QtBook.book_id)
+            )
+            return list(session.scalars(statement))
+
+    def set_content_identity(self, book_id: str, *, sha256: str, size_bytes: int, page_count: int) -> QtBook:
+        """写内容身份三列（QED-071 B 轮；下载/登记链路 reconcile 回填唯一写点）。
+
+        幂等：三列已相同直接返回。sha256 为普通索引（D17：同内容多书各行写各行，
+        N:1 共用）；仅当磁盘库仍带旧唯一键等异常时抛 ValueError（调用方归入
+        conflict），不静默跳过。
+        """
+        with self._session_factory() as session:
+            row = session.get(QtBook, book_id)
+            if row is None:
+                raise KeyError(f"书籍不存在：{book_id}")
+            if (row.sha256, row.size_bytes, row.page_count) == (sha256, size_bytes, page_count):
+                return row
+            row.sha256 = sha256
+            row.size_bytes = size_bytes
+            row.page_count = page_count
+            row.updated_at = utc_now()
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                session.rollback()
+                raise ValueError(f"内容身份写入被磁盘库约束拒绝（未放宽唯一键？D17）：{book_id}") from exc
+            return row
+
+    def find_owned_by_sha256(self, sha256: str) -> QtBook | None:
+        """DB 去重查询（QED-071 B-W3，ix_qt_books_sha256 普通索引，D17）：
+        内容身份命中且仍持有文件的书；同内容多行时按登记先后取首行（确定性）。"""
+        if not sha256:
+            return None
+        with self._session_factory() as session:
+            return session.scalar(
+                select(QtBook)
+                .where(QtBook.sha256 == sha256, QtBook.holding == "owned", QtBook.file_path.is_not(None))
+                .order_by(QtBook.created_at, QtBook.book_id)
+                .limit(1)
+            )
 
     def start_download(self, book_id: str) -> QtBook:
         """decided → downloading（开始下载）。"""

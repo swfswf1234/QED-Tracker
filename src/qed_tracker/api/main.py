@@ -55,7 +55,7 @@ from qed_tracker.db.knowledge_repository import (
 from qed_tracker.db.models import BookStatus, QedDomain
 from qed_tracker.db.tasks_repository import ActiveTaskExists, TaskStore
 from qed_tracker.downloader import DownloadManager, inspect_pdf, safe_filename
-from qed_tracker.inventory import Inventory, downloads_tmp_dir, raw_course_dir
+from qed_tracker.inventory import downloads_tmp_dir, raw_course_dir, staging_max_age_seconds, sweep_downloads
 from qed_tracker.models import Candidate
 from qed_tracker.prompt_lab.pipeline import (
     CoursePipeline,
@@ -89,14 +89,21 @@ class Application:
         knowledge_repository=None,
     ):
         self.settings = settings
-        inventory = Inventory(settings.data_root)
+        # QED-071 R2：服务构造即清扫超龄孤儿 staging（08-28 50MB .download 残留类；
+        # 阈值见 staging_max_age_seconds，失败只告警不阻断启动）。
+        sweep_downloads(
+            downloads_tmp_dir(settings.data_root),
+            max_age_seconds=staging_max_age_seconds(settings.timeout_seconds, settings.retries),
+        )
         downloader = downloader or DownloadManager(
             proxy=settings.proxy,
             timeout=settings.timeout_seconds,
             retries=settings.retries,
             tls_verify=settings.tls_verify,
         )
-        self.resources = ResourceService(inventory, downloader)
+        # QED-071 B 轮：资源岛退役——书侧去重/内容身份全经 qt_books（books repo 注入；
+        # DB 未配置时教材下载显式报错，论文/习题不依赖 repo）。Inventory 已删除。
+        self.resources = ResourceService(settings.data_root, downloader, books=None)
         providers = (
             book_providers
             if book_providers is not None
@@ -118,6 +125,8 @@ class Application:
             factory = session_factory(self._db_engine)
             self._knowledge_repository = KnowledgeRepository(factory)
         self._session_factory = factory
+        # B 轮（M4）：自建 repo 后回填资源服务——服务端教材下载去重必须走 qt_books。
+        self.resources.books = self._knowledge_repository
         # REQ-032：PaperService 需要 session_factory 创建 SelectionStore
         self.papers = PaperService(
             papers_provider or ArxivProvider(retries=settings.retries),
@@ -188,8 +197,11 @@ def create_app(
             engine=app._db_engine,
         )
 
-    # 测试注入假工厂（不得访问公网）；默认每次任务经 build_book_service 新建独立服务。
-    service_factory = book_service_factory or (lambda: build_book_service(settings))
+    # 测试注入假工厂（不得访问公网）；默认每次任务经 build_book_service 新建独立服务
+    # （B 轮：必带 qt_books repo——教材下载/登记无岛可退，M4 显式依赖 DB）。
+    service_factory = book_service_factory or (
+        lambda: build_book_service(settings, books=app._knowledge_repository)
+    )
 
     def _book_advisor():
         """每次 fetch 新建书级 advisor 实例（L6 裁决：budget 隔离；预算 = QED_BOOK_LLM_BUDGET）。"""
@@ -223,11 +235,19 @@ def create_app(
             advisor_factory=_book_advisor,
         )
 
+    def _sweep_staging() -> None:
+        """取书任务入口清扫：兜底非服务构造期产生的超龄 staging（失败只告警，不阻断任务）。"""
+        sweep_downloads(
+            downloads_tmp_dir(settings.data_root),
+            max_age_seconds=staging_max_age_seconds(settings.timeout_seconds, settings.retries),
+        )
+
     def _book_download_handler(params: dict[str, Any], progress) -> dict[str, Any]:
         """book_download 后台任务：书级五阶段取书（检索→确认→预算下载→staging 验收→登记）。"""
         book_id = str(params.get("book_id", "")).strip()
         if not book_id:
             raise ValueError("book_id 必填")
+        _sweep_staging()
         return _new_fetcher().fetch(book_id, progress=progress)
 
     def _tutorial_fetch_handler(params: dict[str, Any], progress) -> dict[str, Any]:
@@ -236,6 +256,7 @@ def create_app(
         if not knowledge_id:
             raise ValueError("knowledge_id 必填")
         include_parallel = params.get("include_parallel") is True
+        _sweep_staging()
         return _new_fetcher().fetch_tutorial(
             knowledge_id, include_parallel=include_parallel, progress=progress
         )
@@ -1202,22 +1223,28 @@ def create_app(
 
     @fastapi_app.post("/api/v1/books/{book_id}/register")
     def book_register(book_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, Any]:
-        """数据根内已有文件原地登记（QED-050 人工路径）：完整性校验 → mark_owned 唯一写入口。"""
+        """数据根内已有文件原地登记（QED-050 人工路径）：完整性校验 → mark_owned 唯一写入口
+        → 内容身份三列同步（QED-071 B 轮；两轨与自动取书首次登记即一致）。"""
         repo = _kn(app)
         if repo.get_book(book_id) is None:
             raise api_error(404, "BOOK_NOT_FOUND", f"书籍不存在：{book_id}")
         relative = str(payload.get("relative_path", "")).strip()
         if not relative:
             raise api_error(422, "INVALID_PARAMS", "必须提供数据根内相对路径（relative_path）")
-        path = (app.resources.inventory.data_root / relative).resolve()
+        data_root = app.settings.data_root
+        path = (data_root / relative).resolve()
         try:
-            path.relative_to(app.resources.inventory.data_root)
+            path.relative_to(data_root)
         except ValueError as exc:
             raise api_error(400, "INVALID_PARAMS", "路径必须在数据根目录内") from exc
         if not path.is_file():
             raise api_error(404, "FILE_NOT_FOUND", f"文件不存在：{relative}")
         digest, size, pages = _inspect_local_pdf(path)
-        repo.mark_owned(book_id, file_path=path.relative_to(app.resources.inventory.data_root).as_posix(), status="downloaded")
+        repo.mark_owned(book_id, file_path=path.relative_to(data_root).as_posix(), status="downloaded")
+        try:
+            repo.set_content_identity(book_id, sha256=digest, size_bytes=size, page_count=pages)
+        except ValueError as exc:
+            raise api_error(409, "CONTENT_IDENTITY_CONFLICT", str(exc)) from exc
         repo.add_source(book_id, channel="local_import", ok=True, download_url=relative,
                         note=f"原地登记（{size} bytes，{pages} 页，sha256 {digest[:8]}）")
         return repo.get_book(book_id).to_dict()
@@ -1245,7 +1272,7 @@ def create_app(
             raise api_error(404, "FILE_NOT_FOUND", f"文件不存在：{file_path}")
         digest, size, pages = _inspect_local_pdf(source)
 
-        data_root = app.resources.inventory.data_root
+        data_root = app.settings.data_root
         raw_target = str(payload.get("target_path", "")).strip()
         if raw_target:
             target = (data_root / raw_target).resolve()
@@ -1289,6 +1316,10 @@ def create_app(
             if not cv.passed:
                 content_note = f"；内容校验警告：{cv.message}"
         repo.mark_owned(book_id, file_path=relative, status="downloaded")
+        try:
+            repo.set_content_identity(book_id, sha256=digest, size_bytes=size, page_count=pages)
+        except ValueError as exc:
+            raise api_error(409, "CONTENT_IDENTITY_CONFLICT", str(exc)) from exc
         repo.add_source(book_id, channel="local_import", ok=True, download_url=str(source),
                         note=f"手工导入（{size} bytes，{pages} 页，sha256 {digest[:8]}；跳过初筛门槛）{content_note}")
         return repo.get_book(book_id).to_dict()
