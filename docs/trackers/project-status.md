@@ -2,7 +2,7 @@
 
 设计状态：Accepted
 实现状态：Implemented
-最后更新：2026-09-26
+最后更新：2026-09-30
 关联代码：无（状态快照，不映射具体模块）
 关联测试：无
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -48,6 +48,7 @@
   `ix_qt_books_sha256`。**生产 `qed` 库未动**：上线新模型前须先执行完整 ALTER
   （三列 + 普通索引，红线顺序「先 ALTER 后改模型」）。REQ-093 终态回执待交根仓，
   M1/M2 定义从未落盘，待用户补录或裁掉（未移交 QED-070）。六项人工/治理面遗留登记在[完成台账](completed.md) QED-071 行；执行计划与根仓请求包已按 ADR 0009 Retain 归档至 [历史基线](../history/baselines/2026-09-24-storage-json-island-retirement.md)。
+- **todo 任务管理治理轮关闭（2026-09-30，QED-075）**：todo 三层分工成文（本期计划 / 普通任务轮 / 长期任务），v1.0 表逐行重审后冻结、成功标准一经评审确立不得改写（过程更新只进 plans/，守护测试机器核验）；QED-070 缺陷台账移入普通任务轮滚动承载；三类产物落位规范成文（[ADR 0011](../adr/0011-artifact-placement-hygiene.md)：`logs/` 仅服务运行产物、`tmp/` 开发临时区、重要过程数据归 `QED_DATA_ROOT`）并完成 logs/tmp 存量清扫。见[完成台账](completed.md)。
 - **长期任务**：prompt 优化模块（QED-043）、来源探索与评估（QED-054，含 REQ-020①② 找得率基线
   持续采集与回执）；见[待办列表](todo.md)。
 

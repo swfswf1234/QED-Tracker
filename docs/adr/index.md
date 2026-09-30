@@ -1,7 +1,7 @@
 # ADR 索引
 
 状态：Current
-最后更新：2026-09-21
+最后更新：2026-09-30
 当前版本：v1.0
 
 本目录登记影响长期约束的架构决策：决定、理由、后果和取代关系。规则见
@@ -15,8 +15,9 @@
 | [0001](0001-tracker-service-architecture.md) | 服务化与统一配置接入（8901 API + 后台任务轮询 + 根 .env 直读 + dataset/qed-tracker 布局） | API 与任务 | v0.6 | Accepted | — |
 | [0006](0006-database-model-as-schema-rebuild.md) | v0.1 数据库策略：模型即 schema + 重建式自愈（Alembic 链退役；ensure_schema 缺表补建/不一致重建含共享表；qed_llm_calls 增量化自愈不 DROP；db/ 集中管理；JSON 标准答案备份基准） | 数据与持久化 | v0.1 | Accepted | — |
 | [0010](0010-absorbed-adr-archival.md) | 已承接 ADR 的归档机制（新增 Absorbed 状态，归档至 history/adr/；判定需用户确认且逐条决定有承接落点） | 工程治理 | v1.0 | Accepted | — |
+| [0011](0011-artifact-placement-hygiene.md) | 仓库产物三类落位（`logs/` 运行专用 / `tmp/` 开发临时 / 重要过程数据入 `QED_DATA_ROOT` 分桶；历史引用不改写） | 工程治理 | v1.0 | Accepted | — |
 
-下一个可用编号：0011
+下一个可用编号：0012
 
 ## 已承接归档（Absorbed）
 

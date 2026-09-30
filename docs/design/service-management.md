@@ -3,14 +3,14 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：暂定
-最后更新：2026-09-21
+最后更新：2026-09-30
 需求方：QED-Engine（根仓库 REQ-017①「仓库内提供正式启动入口」；QED-037/REQ-043「模型模式与密钥分置」扩展 `--mode`；ADR 0008 职责重划合并立项）
 关联代码：`scripts/qed_tracker_service.py`、`src/qed_tracker/config.py`、`src/qed_tracker/llm_client.py`、
 `src/qed_tracker/cli.py`（serve 命令）、`src/qed_tracker/api/main.py`（CORS）、自身 `.env`
 关联测试：`tests/test_service_scripts.py`、`tests/test_llm_client.py`、
 `tests/test_config_catalog_matching.py`（`.env` 优先级与密钥唯一变量）、`tests/test_bailian_advisor.py`、
 `tests/test_main_line_advisor.py`（gateway 路由）
-关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0008](../history/adr/0008-design-doc-scope-reshuffle.md)
+关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0008](../history/adr/0008-design-doc-scope-reshuffle.md)、[ADR 0011](../adr/0011-artifact-placement-hygiene.md)
 
 > 本文档是**服务运行面唯一设计事实源**（ADR 0008）：由原 `service-lifecycle.md`（生命周期脚本）
 > 与 `model-mode-config.md`（模型模式与密钥分置）合并，并新增多项目约定导航节。职责边界：
@@ -88,6 +88,8 @@ QED-Tracker/
     ├── qed-tracker-serve.log        # 子进程 stdout/stderr（uvicorn 访问与未捕获异常）
     └── qed-tracker.log              # 应用级日志（serve 双通道 FileHandler，不受脚本影响）
 ```
+
+`logs/` 以上述运行产物为专用面（[ADR 0011](../adr/0011-artifact-placement-hygiene.md) D-1）：开发临时文件落仓库 `tmp/`，重要过程数据落 `QED_DATA_ROOT` 的 `tmp/qed-tracker/` 分桶。
 
 子进程命令 = `sys.executable -m qed_tracker.cli serve`，工作目录为仓库根；`serve` 自身完成
 `.env` 查找、MySQL 模型自愈（`ensure_schema()`）与双通道日志（stderr + `logs/qed-tracker.log`），

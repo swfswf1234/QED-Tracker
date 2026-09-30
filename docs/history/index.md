@@ -1,7 +1,7 @@
 # 历史索引
 
 状态：Historical
-最后更新：2026-09-26
+最后更新：2026-09-30
 
 本目录只保存无法由当前代码和文档替代的历史基线。内容中的路径、命令、库存和状态可能已经失效，不得作为当前操作或实现依据。
 
@@ -26,6 +26,7 @@
 - [服务稳定性优化计划归档](baselines/2026-09-service-hardening.md)：QED-066（REQ-017②③ + REQ-019）服务重启后 orphaned 任务恢复 + 下载后内容校验（2026-09-14 归档，ADR 0009）：`verify_content` 首页文本 vs 登记标题（软信号写入 qt_sources.note）+ 进度上报评估。
 - [存储链路治理实施计划归档](baselines/2026-09-24-storage-json-island-retirement.md)：QED-071 A/B 两轮（2026-09-26 归档，ADR 0009 Retain）：`qt_books` 内容身份三列 + 资源 JSON 岛退役 + `Inventory` 删除 + staging 年龄清扫；裁决 D1~D17、红线顺序、门禁 533 passed 与 REQ-093 回执草稿留档。
 - [存储链路治理请求包归档](baselines/2026-09-24-storage-json-island-retirement-request.md)：根仓库 ARCH-032 / ADR 0018 承接讨论稿（2026-09-26 随 QED-071 关闭归档）：勘误 C1~C4 与遗漏 M3/M4 评审原文（M1/M2 从未落盘）。
+- [todo 任务管理治理轮归档](baselines/2026-09-30-todo-governance-round.md)：QED-075（2026-09-30 归档，ADR 0009 Retain）：todo 任务分层与过程叙述分离（普通任务轮节 + v1.0 六行冻结 + 冻结规则成文）+ 三类产物落位规范（ADR 0011 D-1~D-5）+ logs/tmp 存量清扫；全量 556 passed（唯一失败为台账在册并发会话项）。
 
 ## 已承接归档 ADR（adr/，2026-09-21，[ADR 0010](../adr/0010-absorbed-adr-archival.md)）
 
