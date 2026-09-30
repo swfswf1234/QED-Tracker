@@ -1,0 +1,6 @@
+name: domain-exploration
+pipeline: domain-exploration
+requires:
+  tools: [wikipedia.search, university.search]
+  network: false
+max_payload_tokens: 5388

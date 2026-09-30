@@ -1,0 +1,56 @@
+{
+  "schema_version": "evidence-bundle-fixture-v1",
+  "marker": "fixture",
+  "note": "QED-067-1 网关冒烟用冻结样本：正文为手写占位摘录，非真实抓取结果；真实取证属 067-5。",
+  "domain_name": "高等数学",
+  "sources": [
+    {
+      "source_id": "wiki-01",
+      "family": "wikipedia",
+      "institution": null,
+      "title": " calculus",
+      "canonical_url": "https://en.wikipedia.org/wiki/Calculus",
+      "retrieved_at": "2026-09-26T00:00:00Z",
+      "excerpt": "微积分研究极限、导数、积分与无穷级数，是现代科学和工程的数学基础。高等数学通常指面向非数学专业的微积分与常微分方程课程序列。",
+      "locator": "section-1/para-0",
+      "claims": ["definition"],
+      "priority": 0
+    },
+    {
+      "source_id": "mit-01",
+      "family": "university",
+      "institution": "MIT",
+      "title": "18.01 Single Variable Calculus",
+      "canonical_url": "https://student.mit.edu/catalog/m18a.html",
+      "retrieved_at": "2026-09-26T00:00:01Z",
+      "excerpt": "18.01 单变量微积分覆盖极限、求导、积分定理与级数；18.02 多变量微积分以 18.01 为前置，18.03 常微分方程以 18.02 为前置。",
+      "locator": "course-18.01/paragraph-0",
+      "claims": ["course_title", "ordering", "prerequisite"],
+      "priority": 1
+    },
+    {
+      "source_id": "stanford-01",
+      "family": "university",
+      "institution": "Stanford",
+      "title": "Math 19, 20, 21 Calculus Series",
+      "canonical_url": "https://explorecourses.stanford.edu/",
+      "retrieved_at": "2026-09-26T00:00:02Z",
+      "excerpt": "Math 19 微分学、Math 20 积分学、Math 21 微积分应用构成序列，Math 51 线性代数与多元微积分为进阶课程。",
+      "locator": "section-calculus/paragraph-0",
+      "claims": ["course_title", "ordering"],
+      "priority": 2
+    },
+    {
+      "source_id": "tsinghua-01",
+      "family": "university",
+      "institution": "Tsinghua",
+      "title": "微积分A(1)(2) 与线性代数",
+      "canonical_url": "https://www.tsinghua.edu.cn/jxky/kcjs.htm",
+      "retrieved_at": "2026-09-26T00:00:03Z",
+      "excerpt": "微积分A(1)、微积分A(2) 依次开设，后续安排常微分方程与线性代数；先修要求为高中数学。",
+      "locator": "heading-2/paragraph-0",
+      "claims": ["course_title", "ordering", "prerequisite"],
+      "priority": 3
+    }
+  ]
+}

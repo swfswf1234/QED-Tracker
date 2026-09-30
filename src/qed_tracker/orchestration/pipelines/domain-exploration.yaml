@@ -1,0 +1,14 @@
+name: domain-exploration
+version: 1
+task: domain_explore
+steps:
+  - id: wiki_lookup
+    kind: tool
+    tool: wikipedia.search
+  - id: university_lookup
+    kind: tool
+    tool: university.search
+  - id: domain_synthesis
+    kind: llm
+    template: domain-agentic@v1
+    tools: [wikipedia.search, university.search]
