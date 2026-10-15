@@ -3,7 +3,7 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-26
+最后更新：2026-10-15
 关联代码：`src/qed_tracker/application/book_fetch.py`（编排母本）、`src/qed_tracker/downloader.py`、`src/qed_tracker/application/resources.py`（登记服务，B 轮岛退役后内容身份只写 qt_books）、`src/qed_tracker/inventory.py`（数据根布局访问器 + staging 清扫；`Inventory` 类已退役）、`src/qed_tracker/catalog.py`（math-qe 冻结书单只读）、`src/qed_tracker/matching.py`（严格匹配）、`src/qed_tracker/catalogs/math-qe.json`（math-qe 冻结书单）、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/providers/books.py`、`src/qed_tracker/providers/book_advisor.py`、`src/qed_tracker/api/main.py`（书籍组端点）、`src/qed_tracker/cli.py`（mainline/books/catalog/inventory 命令）
 关联测试：`tests/test_book_providers.py`、`tests/test_book_fetch.py`、`tests/test_book_llm_advisor.py`、`tests/test_book_acceptance.py`、`tests/test_book_api.py`、`tests/test_download_inventory.py`、`tests/test_services.py`、`tests/test_data_layout.py`、`tests/test_reconcile.py`、`tests/test_config_catalog_matching.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)、[ADR 0003](../history/adr/0003-pending-design-location.md)、[ADR 0008](../history/adr/0008-design-doc-scope-reshuffle.md)
@@ -316,6 +316,24 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
   `/cancel`（downloading→decided，仅 downloading 可取消）；非法迁移统一 **409
   `INVALID_TRANSITION`**（全局处理器）。课程闭环仍是**查询口径**而非状态迁移（不写任何表）。
 
+## 查重双报（same_content / same_name）
+
+**判据只有一处**（QED-068 C 步 / 068-4）：`ResourceService.duplicate_check(sha256=, title=, exclude_book_id=)`（`src/qed_tracker/application/resources.py`）是**只读原语**——不写行、不删文件、不改状态，返回两个互相独立的清单：
+
+| 桶 | 命中条件 | 处置（**均不自动覆盖**） |
+| --- | --- | --- |
+| `same_content` | 本次 SHA-256 命中 `qt_books` `holding=owned`、`file_path` 在位的他行（`find_owned_by_sha256`，同内容多行按登记先后取首行，D17） | 幂等复用既有记录：`promote_staged` 删除本次 staging 成品、不落第二份文件，清单给出被复用行 |
+| `same_name` | 本次标题 `casefold` 命中他行 `title`/`original_title`，且该行 owned、**已填内容身份**、SHA-256 与本次不同 | 只出冲突清单交人工裁决：既有行与既有文件一律不动，本次成品按内容指纹 `<slug>_<sha8>.pdf` 独立命名落盘（不同内容天然不同名，覆盖不了） |
+
+- `same_content` 的**复用**发生在登记原语内且仅限 `ResourceKind.BOOK`（`promote_staged`）；`kind=paper` 取书分叉以 `ResourceKind.PAPER` 落盘（D2/D14：论文不进 qt_books 复用链），故论文面 `same_content` **只报不复用**——命中行照报清单，本次成品按自己的内容指纹独立落盘。
+- 条目形状两桶一致：`{book_id, title, kind, status, file_path, sha256, size_bytes, page_count}`（命中行的摘要，非本次下载的镜像）。
+- 标题命中但内容身份未填（`sha256 IS NULL`，即已登记未下载）**不算冲突**：那是同一本书的正常推进路径；「已采纳未下载再推荐」仍是观察项（见[论文发现设计](paper-discovery.md)）。
+- 自身书行由 `exclude_book_id` 剔除：同一本书重放 fetch 不会把自己报成冲突。
+- `same_name` 的标题比对在 Python 侧 `casefold` 完成（不依赖 MySQL `LOWER` 折叠），查询面 `find_owned_by_titles` 扫 owned 且已填身份的行（书库规模百量级，与 `first_course_for_book` 全扫 QtKnowledge 同法）。
+- 提交面：`book_download` 与 `tutorial_fetch` 任务结果带 `duplicates`（书本分支与 `kind=paper` 分叉同构）；papers 推荐面按同口径出 `duplicates`，`excluded_existing` 保持 ID 字符串列表不变（见[论文发现设计](paper-discovery.md)）。
+- DB 未配置（`books=None`，如 CLI 单条直写通路）时两桶恒空——双报是**书库派生的可见性**，不是落盘前置条件，不因缺库而拒绝下载。
+- 人工登记面不加新字段：`POST /books/{id}/import` 已有「目标已存在不同内容 → 409 不覆盖用户文件」硬门（QED-050 D3），双报只补自动链路的响应可见性。
+
 ## 双入口与教程级批处理
 
 | 入口 | 范围 | 语义 |
@@ -395,6 +413,8 @@ LLM 辅助评估（书单筛选，`POST /tasks/catalog/evaluate` 按课程批量
 4. 计算完整内容的 SHA-256、字节数和页数。
 5. 只在全部检查通过后用原子替换生成正式文件；最终失败时移除临时文件。
 
+**下载安全件（QED-068 C 步 / 068-4，2026-10-15）**：重定向由下载器**手动逐跳**处理（httpx 客户端 `follow_redirects=False`，上限 5 跳），每一跳在**发起连接前**复检：scheme 限 http/https；主机解析出的每个 IP 必须公网可路由（private/loopback/link-local/multicast/reserved/unspecified 任一命中即拒），解析失败或无结果同样拒绝（fail-closed，不存在「解析不了就放行」的回落）。流式写盘累计超 `QED_MAX_DOWNLOAD_BYTES`（默认 512 MiB；现库最大成品 PDF 约 121.5 MiB）即中断并删除 `.part`。上述安全/预算拒绝（`DownloadBlockedError`）是**终止性**失败，不进入重试循环（重试只会重复同一风险连接）；错误文案含跳数、主机与上限三要素，供 `qt_sources.note` 与 task error 诊断。`tls_verify=False` 的显式配置口径不变；内网代理等白名单场景走显式配置直连 URL，不因重定向而放行。
+
 资源服务把下载器已经计算的 SHA-256、大小和页数交给登记原语：书侧同批写入
 `qt_books` 内容身份三列（`set_content_identity`），不重复解析 PDF。相同 SHA-256 已有
 `holding=owned` 行且文件在位时复用该行、移除本次新产生的重复文件
@@ -434,7 +454,7 @@ Axiom 传输留痕（原 `meta/transfers/` 写入）已于 A 轮判废删除（D
 
 - **幂等保证**：sha256 身份 + `qt_books` 去重（同文件复用既有 owned 行，D17）；文件名
   `<safe_name>_<sha8>.pdf` 内容指纹确定性；qt_sources 按尝试追加留痕；已 owned 书重复
-  fetch → no-op；教程级重跑自动跳过已完成书。
+  fetch → no-op；教程级重跑自动跳过已完成书；同标题不同内容的冲突不静默合并——提交面 `duplicates.same_name` 双报交人工（见「查重双报」节）。
 - **状态复位与重试**（2026-09-11 QED-060）：书级失败置 `status=failed`（holding 仍 missing）；
   重试 = 再次提交 fetch（`failed → downloading`，幂等重放）；卡死的 `downloading` 经
   `POST /books/{id}/cancel` 复位到 `decided`（`cancel` 仅允许 downloading 态）。教程级

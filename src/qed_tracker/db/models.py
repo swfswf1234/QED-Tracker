@@ -53,6 +53,16 @@ class BookStatus(StrEnum):
     FAILED = "failed"
 
 
+class BookKind(StrEnum):
+    """qt_books 书目类别（QED-068 A 步）：book=书本；paper=发现论文（书本化采纳）。
+
+    与 roles（textbook/exercises/solutions）正交；blog 为裁决预留值，未实现不进值域。
+    """
+
+    BOOK = "book"
+    PAPER = "paper"
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -203,6 +213,10 @@ class QtBook(Base):
         JSON, nullable=False, default=list,
         comment='书籍角色：textbook/exercises/solutions',
     )
+    kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=BookKind.BOOK.value,
+        index=True, comment="书目类别：book=教材/习题集/题解等书本；paper=发现论文（QED-068 068-6b 书本化采纳）",
+    )
     status: Mapped[str] = mapped_column(
         String(24), nullable=False, default=BookStatus.CANDIDATE.value,
         index=True, comment="选用状态：decided/parallel/candidate/retired",
@@ -225,6 +239,10 @@ class QtBook(Base):
     priority: Mapped[int | None] = mapped_column(Integer(), nullable=True, index=True, comment="补书优先级：0=P0/1=P1/2=P2/NULL")
     notes: Mapped[str | None] = mapped_column(Text(), nullable=True, comment="备注")
     domain_id: Mapped[str] = mapped_column(String(32), nullable=False, default="", index=True, comment="所属领域标识")
+    course_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="",
+        index=True, comment="落位课程标识：空串=领域级（归属见 domain_id）；论文 pick 逐条落位（QED-068 068-6b）",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="最后更新时间")
 

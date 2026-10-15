@@ -142,7 +142,7 @@ def test_paper_service_lands_in_general_papers_by_year(tmp_path, pdf_bytes):
     manager = _manager_with(pdf_bytes)
     service = PaperService(FakeArxiv(), ResourceService(tmp_path, manager))
     try:
-        record = service.download(candidate)
+        record = service.download(candidate, domain_id="math")
     finally:
         service.close()
     expected = raw_general_dir(tmp_path) / "papers" / "2024" / f"2401.00001_{record.sha256[:8]}.pdf"

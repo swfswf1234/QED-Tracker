@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -29,8 +30,9 @@ from qed_tracker.db.schema import ensure_schema
 from qed_tracker.downloader import DownloadManager, inspect_pdf
 from qed_tracker.inventory import raw_general_dir
 from qed_tracker.models import Availability, Candidate, ResourceKind
+from qed_tracker.paper_recipes import RECIPES
 from qed_tracker.profiles import list_paper_profiles, load_paper_profile
-from qed_tracker.providers import ArxivProvider, BailianPaperAdvisor, create_book_providers
+from qed_tracker.providers import ArxivProvider, create_book_providers
 
 
 def _add_limit(parser: argparse.ArgumentParser, default: int = 10) -> None:
@@ -81,31 +83,63 @@ def build_parser() -> argparse.ArgumentParser:
     paper_search.add_argument("--category", default="")
     paper_search.add_argument("--author", default="")
     paper_search.add_argument("--download", type=int, action="append", default=[], metavar="INDEX")
+    paper_search.add_argument("--domain", default="", help="落盘领域桶（论文无默认桶，必填且须为已存在领域，raw/<domain>/_general/papers/）")
     _add_limit(paper_search)
     paper_get = paper_commands.add_parser("get", help="按 arXiv ID 或 URL 下载")
     paper_get.add_argument("identifiers", nargs="+")
-    paper_recommend = paper_commands.add_parser("recommend", help="用百炼规划检索并生成论文选择报告")
-    paper_recommend.add_argument("goal", nargs="?", default="", help="本次临时研究目标")
-    paper_recommend.add_argument("--profile", default="llm-engineering", help="内置档案名或 JSON 路径")
-    paper_recommend.add_argument("--category", action="append", dest="categories", default=[])
-    paper_recommend.add_argument("--top", type=int, default=10, help="最多推荐数量")
-    paper_recommend.add_argument(
-        "--years-limit", type=int, default=None, help="只看近 N 年（0=不限；缺省按档案或默认 3）"
+    paper_get.add_argument("--domain", default="", help="落盘领域桶（论文无默认桶，必填且须为已存在领域，raw/<domain>/_general/papers/）")
+    paper_recommend = paper_commands.add_parser(
+        "recommend", help="领域级论文探索（经 8901 后台任务：配方规划→检索→评分→选择报告）"
     )
-    _add_limit(paper_recommend)
+    paper_recommend.add_argument("goal", nargs="?", default="", help="本次临时研究目标")
+    paper_recommend.add_argument(
+        "--domain", default="", help="探索领域（必填，须为 qed_domain 已登记领域；论文没有默认桶）"
+    )
+    paper_recommend.add_argument(
+        "--recipe", choices=sorted(RECIPES), default="frontier",
+        help="探索配方：frontier=近年前沿 / core=核心文献（年窗与数量随配方）",
+    )
+    paper_recommend.add_argument(
+        "--category", action="append", dest="categories", default=[],
+        help="显式 arXiv 分类（领域名/描述映射不到分类时必填，可重复）",
+    )
+    paper_recommend.add_argument("--top", type=int, default=None, help="最多推荐数量（缺省按配方）")
+    paper_recommend.add_argument(
+        "--years-limit", type=int, default=None, help="只看近 N 年（0=不限；缺省按配方）"
+    )
+    paper_recommend.add_argument("--limit", type=int, default=None, help="每组检索抓取量（缺省按配方）")
+    paper_recommend.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+    paper_recommend.add_argument("--timeout", type=float, default=900.0, help="任务轮询超时秒数（默认 900）")
     paper_profiles = paper_commands.add_parser("profiles", help="查看论文目标档案")
     paper_profile_commands = paper_profiles.add_subparsers(dest="profiles_command", required=True)
     paper_profile_commands.add_parser("list", help="列出内置档案")
     paper_profile_show = paper_profile_commands.add_parser("show", help="显示档案")
     paper_profile_show.add_argument("profile")
-    paper_selections = paper_commands.add_parser("selections", help="查看选择报告或显式下载")
+    paper_selections = paper_commands.add_parser("selections", help="查看选择报告或按报告逐条落位采纳")
     paper_selection_commands = paper_selections.add_subparsers(dest="selections_command", required=True)
-    paper_selection_commands.add_parser("list", help="列出选择报告")
-    paper_selection_show = paper_selection_commands.add_parser("show", help="显示选择报告")
+    paper_selection_list = paper_selection_commands.add_parser("list", help="列出选择报告（经 8901）")
+    paper_selection_list.add_argument("--domain", default="", help="按探索领域过滤")
+    paper_selection_list.add_argument("--recipe", choices=sorted(RECIPES), default="", help="按配方过滤")
+    paper_selection_list.add_argument("--limit", type=int, default=0, help="最多返回条数（0=全量）")
+    paper_selection_list.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+    paper_selection_show = paper_selection_commands.add_parser("show", help="显示选择报告（经 8901）")
     paper_selection_show.add_argument("selection_id")
-    paper_selection_download = paper_selection_commands.add_parser("download", help="从固定选择报告下载推荐论文")
-    paper_selection_download.add_argument("selection_id")
-    paper_selection_download.add_argument("--pick", type=int, action="append", required=True)
+    paper_selection_show.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+    # QED-068 B 步：`selections download`（论文直写落盘面）退役——采纳只产书行，
+    # 下载唯一路径是 `books fetch <book_id>`（裁决 5＝不自动链式下载）。
+    paper_selection_adopt = paper_selection_commands.add_parser(
+        "adopt", help="把报告中的推荐逐条落位为 kind=paper 书行（不触发下载）"
+    )
+    paper_selection_adopt.add_argument("selection_id")
+    paper_selection_adopt.add_argument("--pick", type=int, action="append", required=True, help="推荐序号（可重复）")
+    paper_selection_adopt.add_argument(
+        "--domain", default="", help="落位领域（必填，须为 qed_domain 已登记领域）"
+    )
+    paper_selection_adopt.add_argument(
+        "--course", default="", help="落位课程（留空=领域级；课程只是逻辑分组，不改物理目录）"
+    )
+    paper_selection_adopt.add_argument("--url", dest="tracker_url", help="覆盖 8901 地址（默认取配置 tracker_url）")
+    paper_selection_adopt.add_argument("--timeout", type=float, default=600.0, help="任务轮询超时秒数（默认 600）")
 
     catalog = commands.add_parser("catalog", help="冻结下载目录（只读查看，历史资料）")
     catalog_commands = catalog.add_subparsers(dest="catalog_command", required=True)
@@ -258,7 +292,8 @@ def _book_service(settings: Settings, names: tuple[str, ...] | None = None) -> B
         tls_verify=settings.tls_verify,
     )
     downloader = DownloadManager(
-        proxy=settings.proxy, timeout=settings.timeout_seconds, retries=settings.retries, tls_verify=settings.tls_verify
+        proxy=settings.proxy, timeout=settings.timeout_seconds, retries=settings.retries,
+        tls_verify=settings.tls_verify, max_bytes=settings.max_download_bytes,
     )
     # B 轮（M4）：教材下载去重走 qt_books；DB 未配置时搜索仍可用，下载显式报错。
     return BookService(providers, ResourceService(settings.data_root, downloader, books=_curriculum_repository(settings)))
@@ -287,29 +322,41 @@ def _books_import(args, settings: Settings) -> int:
     return 0
 
 
-def _paper_service(settings: Settings, *, with_advisor: bool = False) -> PaperService:
+def _paper_domain_checker(books: KnowledgeRepository) -> Callable[[str], bool]:
+    """F9 裁定（2026-10-01）：论文落盘领域必须已在 qed_domain 登记，未登记即拒绝落盘。"""
+    return lambda domain_id: books.get_domain(domain_id) is not None
+
+
+def _paper_service(settings: Settings) -> PaperService:
     provider = ArxivProvider(retries=settings.retries)
     manager = DownloadManager(
         proxy=settings.proxy,
         timeout=max(settings.timeout_seconds, 120),
         retries=settings.retries,
         tls_verify=settings.tls_verify,
+        max_bytes=settings.max_download_bytes,
     )
     resources = ResourceService(settings.data_root, manager)
-    advisor = None
-    if with_advisor:
-        advisor = BailianPaperAdvisor(
-            api_key=llm_api_key(),
-            model=settings.llm_model,
-            base_url=settings.llm_base_url,
-            timeout=settings.llm_timeout_seconds,
-            call_budget=settings.llm_call_budget,
-            max_tokens=settings.llm_max_tokens,
-            api_select=settings.api_select,
-            gateway_url=settings.llm_gateway_url,
-            engine=_llm_call_engine(settings),
-        )
-    return PaperService(provider, resources, advisor=advisor)
+    # QED-068 A 步（F3）：配置了数据库就必须把真实 session_factory 交给 PaperService，
+    # 否则选择报告落 in-memory SQLite、进程退出即丢（qt_selections 恒空）。
+    # B 步起 CLI 不再本地跑推荐（`papers recommend` 转 8901），故不建顾问。
+    engine = None
+    factory = None
+    domain_exists: Callable[[str], bool] | None = None
+    if settings.db_configured:
+        from qed_tracker.db.engine import create_engine_for, session_factory
+        from qed_tracker.db.knowledge_repository import KnowledgeRepository
+
+        engine = create_engine_for(settings)
+        factory = session_factory(engine)
+        domain_exists = _paper_domain_checker(KnowledgeRepository(factory))
+    return PaperService(
+        provider,
+        resources,
+        session_factory=factory,
+        db_engine=engine,
+        domain_exists=domain_exists,
+    )
 
 
 def _display_selection(report: dict) -> None:
@@ -333,6 +380,7 @@ def _books(args, settings: Settings) -> int:
             timeout=settings.timeout_seconds,
             retries=settings.retries,
             tls_verify=settings.tls_verify,
+            max_bytes=settings.max_download_bytes,
         )
         # fetch-url 是手动通道：习题落通用桶、不占 qt_books 行（DB 登记走 books import/fetch）。
         resources = ResourceService(settings.data_root, manager)
@@ -381,6 +429,10 @@ def _books(args, settings: Settings) -> int:
 
 
 def _papers(args, settings: Settings) -> int:
+    if args.papers_command == "recommend":
+        return _papers_recommend(args, settings)
+    if args.papers_command == "selections":
+        return _papers_selections(args, settings)
     if args.papers_command == "profiles":
         try:
             if args.profiles_command == "list":
@@ -394,45 +446,15 @@ def _papers(args, settings: Settings) -> int:
         except ValueError as exc:
             _print({"error": str(exc)}, True) if args.json else print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-    service = _paper_service(settings, with_advisor=args.papers_command == "recommend")
+    # F9 裁定（2026-10-01）：论文没有默认桶——单条直写通道必须显式给 --domain，否则不触发下载。
+    landing = args.papers_command == "get" or (
+        args.papers_command == "search" and bool(args.download)
+    )
+    if landing and not (getattr(args, "domain", "") or "").strip():
+        print("ERROR: 论文落盘需要显式 --domain（无默认桶，且须为 qed_domain 已登记领域）", file=sys.stderr)
+        return 2
+    service = _paper_service(settings)
     try:
-        if args.papers_command == "selections":
-            if args.selections_command == "list":
-                reports = service.list_selections()
-                summaries = [
-                    {
-                        "selection_id": item["selection_id"],
-                        "status": item["status"],
-                        "created_at": item["created_at"],
-                        "profile": item["profile"]["id"],
-                    }
-                    for item in reports
-                ]
-                _print(summaries, args.json) if args.json else print(
-                    "\n".join(f"{item['selection_id']} | {item['status']} | {item['profile']}" for item in summaries)
-                )
-                return 0
-            if args.selections_command == "show":
-                report = service.get_selection(args.selection_id)
-                _print(report, True) if args.json else _display_selection(report)
-                return 0
-            report, failures = service.download_selection(args.selection_id, args.pick)
-            _print(report, True) if args.json else _display_selection(report)
-            if failures == len(set(args.pick)):
-                return 5
-            return 4 if failures else 0
-        if args.papers_command == "recommend":
-            profile = load_paper_profile(args.profile)
-            report = service.recommend(
-                profile,
-                goal=args.goal,
-                categories=args.categories,
-                limit=args.limit,
-                top=args.top,
-                years_limit=args.years_limit,
-            )
-            _print(report, True) if args.json else _display_selection(report)
-            return 0 if report["status"] == "ranked" else 3
         if args.papers_command == "get":
             candidates = service.get(args.identifiers)
             picks = range(len(candidates))
@@ -447,7 +469,7 @@ def _papers(args, settings: Settings) -> int:
         for index in picks:
             if index < 0 or index >= len(candidates):
                 raise ValueError(f"论文序号超出范围：{index + 1}")
-            records.append(service.download(candidates[index]))
+            records.append(service.download(candidates[index], domain_id=args.domain))
         if records:
             _print([record.to_dict() for record in records], args.json)
         return 0 if candidates else 3
@@ -456,6 +478,97 @@ def _papers(args, settings: Settings) -> int:
         return 2
     finally:
         service.close()
+
+
+def _paper_get_via_api(args, settings: Settings, path: str, params: dict | None = None) -> tuple[int, dict]:
+    """论文读面：GET 8901 同步端点。返回 (exit_code, payload)：0 正常 / 2 请求错误 / 6 服务不可达。"""
+    import httpx
+
+    base_url = (args.tracker_url or settings.tracker_url).rstrip("/")
+
+    def _fail(code: int, message: str) -> tuple[int, dict]:
+        _print({"error": message}, True) if args.json else print(f"ERROR: {message}", file=sys.stderr)
+        return code, {}
+
+    try:
+        response = httpx.get(f"{base_url}{path}", params=params or {}, timeout=30.0)
+    except httpx.HTTPError as exc:
+        return _fail(6, f"8901 服务不可达（{base_url}）：{exc}；请先启动 qed-tracker serve")
+    if response.status_code >= 400:
+        return _fail(2, str(response.json().get("detail", response.text)))
+    return 0, response.json()
+
+
+def _papers_recommend(args, settings: Settings) -> int:
+    """领域级论文探索：提交 `paper_recommend` 后台任务→轮询→读回报告展示（检索/评分在 8901）。"""
+    domain_id = (args.domain or "").strip()
+    if not domain_id:
+        print("ERROR: papers recommend 需要 --domain（论文没有默认桶，须先登记领域）", file=sys.stderr)
+        return 2
+    payload: dict = {"domain_id": domain_id, "recipe": args.recipe, "goal": args.goal or "",
+                     "categories": list(args.categories)}
+    for key in ("top", "limit", "years_limit"):
+        value = getattr(args, key, None)
+        if value is not None:
+            payload[key] = value
+    code, result = _fetch_task_via_api(args, settings, "/api/v1/papers/recommend", payload,
+                                       label="论文探索任务")
+    if code != 0:
+        return code
+    selection_id = str(result.get("selection_id", ""))
+    if not selection_id:
+        print("ERROR: 任务结果缺少 selection_id", file=sys.stderr)
+        return 3
+    get_code, report = _paper_get_via_api(args, settings, f"/api/v1/papers/selections/{selection_id}")
+    if get_code != 0:
+        return get_code
+    _print(report, True) if args.json else _display_selection(report)
+    return 0 if report.get("status") == "ranked" else 3
+
+
+def _papers_selections(args, settings: Settings) -> int:
+    """选择报告读面与逐条落位采纳（全部经 8901，不再本地直调 PaperService）。"""
+    if args.selections_command == "list":
+        params = {"domain_id": args.domain or "", "recipe": args.recipe or "", "limit": args.limit or 0}
+        code, payload = _paper_get_via_api(args, settings, "/api/v1/papers/selections", params)
+        if code != 0:
+            return code
+        items = payload.get("selections", [])
+        if args.json:
+            _print(items, True)
+            return 0
+        if not items:
+            print("（暂无选择报告）")
+        for item in items:
+            print(f"{item['selection_id']} | {item['status']} | 领域 {item['domain_id'] or '-'} | "
+                  f"{item['recipe'] or '-'} | {item['recommendation_count']} 条推荐 | {item['created_at']}")
+        return 0
+    if args.selections_command == "show":
+        code, report = _paper_get_via_api(args, settings, f"/api/v1/papers/selections/{args.selection_id}")
+        if code != 0:
+            return code
+        _print(report, True) if args.json else _display_selection(report)
+        return 0
+    domain_id = (args.domain or "").strip()
+    if not domain_id:
+        print("ERROR: papers selections adopt 需要 --domain（论文没有默认桶）", file=sys.stderr)
+        return 2
+    picks = [{"rank": rank, "domain_id": domain_id, "course_id": (args.course or "").strip()}
+             for rank in args.pick]
+    code, result = _fetch_task_via_api(
+        args, settings, f"/api/v1/papers/selections/{args.selection_id}/adopt", {"picks": picks},
+        label="论文采纳任务",
+    )
+    if code != 0:
+        return code
+    if args.json:
+        _print(result, True)
+        return 0
+    for entry in result.get("adopted", []):
+        print(f"[{entry.get('status', '')}] rank {entry.get('rank')} {entry.get('arxiv_id', '')} "
+              f"→ {entry.get('book_id', '')}{('（' + entry['reason'] + '）') if entry.get('reason') else ''}")
+    print("下一步下载：qed-tracker books fetch <book_id>（采纳不自动下载）")
+    return 0
 
 
 def _catalog(args, settings: Settings) -> int:
@@ -1021,8 +1134,9 @@ def _mainline(args, settings: Settings) -> int:
         engine.dispose()
 
 
-def _fetch_task_via_api(args, settings: Settings, submit_path: str, payload: dict) -> tuple[int, dict]:
-    """取书任务提交与等待（书级/教程级共用）：POST submit_path → 轮询 GET /tasks/{id} 至终态。
+def _fetch_task_via_api(args, settings: Settings, submit_path: str, payload: dict, *,
+                        label: str = "取书任务") -> tuple[int, dict]:
+    """后台任务提交与等待（书级/教程级/论文探索与采纳共用）：POST submit_path → 轮询 GET /tasks/{id} 至终态。
 
     五阶段编排在服务端执行（D4：无离线直连）。返回 (exit_code, 任务 result)：
     0 = 任务 succeeded；2/3/6 = 请求错误 / 任务失败或轮询超时 / 服务不可达（错误已打印）。
@@ -1044,13 +1158,13 @@ def _fetch_task_via_api(args, settings: Settings, submit_path: str, payload: dic
         return _fail(2, str(detail))
     task_id = str(response.json().get("task_id", ""))
     if not task_id:
-        return _fail(2, f"取书任务提交异常：响应缺 task_id（{response.text[:200]}）")
+        return _fail(2, f"{label}提交异常：响应缺 task_id（{response.text[:200]}）")
 
     deadline = time.monotonic() + float(args.timeout)
     body: dict = {}
     while True:
         if time.monotonic() > deadline:
-            return _fail(3, f"取书任务轮询超时（{args.timeout}s）：task_id={task_id}，可稍后查询任务结果")
+            return _fail(3, f"{label}轮询超时（{args.timeout}s）：task_id={task_id}，可稍后查询任务结果")
         try:
             poll = httpx.get(f"{base_url}/api/v1/tasks/{task_id}", timeout=30.0)
         except httpx.HTTPError as exc:
@@ -1064,7 +1178,7 @@ def _fetch_task_via_api(args, settings: Settings, submit_path: str, payload: dic
         time.sleep(2.0)
 
     if body.get("status") == "failed":
-        return _fail(3, f"取书任务失败：{body.get('error', '')}（task_id={task_id}）")
+        return _fail(3, f"{label}失败：{body.get('error', '')}（task_id={task_id}）")
     return 0, body.get("result") or {}
 
 

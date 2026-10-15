@@ -3,7 +3,7 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：暂定
-最后更新：2026-09-30
+最后更新：2026-10-15
 需求方：QED-Engine（根仓库 REQ-017①「仓库内提供正式启动入口」；QED-037/REQ-043「模型模式与密钥分置」扩展 `--mode`；ADR 0008 职责重划合并立项）
 关联代码：`scripts/qed_tracker_service.py`、`src/qed_tracker/config.py`、`src/qed_tracker/llm_client.py`、
 `src/qed_tracker/cli.py`（serve 命令）、`src/qed_tracker/api/main.py`（CORS）、自身 `.env`
@@ -158,7 +158,7 @@ QED-Tracker/
 | `QED_DB_PASSWORD` | 空 | MySQL 密钥，只经环境读取，不入 `Settings` repr；**独立运行底线键留守** |
 | `QED_TRACKER_PORT` | `8901` | 服务端口 |
 
-### 全量键清单（代码事实源 `config.py` `_ENV_MAP`，27 键）
+### 全量键清单（代码事实源 `config.py` `_ENV_MAP`，28 键）
 
 `QED_MODEL`、`QED_AXIOM_URL`（默认 `http://127.0.0.1:8902`）、`QED_TRACKER_PORT`、
 `QED_TRACKER_URL`、`QED_DATA_ROOT`（数据根，见下文「多项目约定导航」）、
@@ -171,7 +171,7 @@ QED-Tracker/
 `QED_BOOK_QUERY_VARIANTS`（3）、`QED_BOOK_LLM_QUERY`（true）、`QED_BOOK_LLM_CONFIRM`（true）、
 `QED_BOOK_LLM_BUDGET`（8）、`QED_TLS_VERIFY`（true）、`QED_LLM_BASE_URL`
 （dashscope compatible-mode）、`QED_LLM_TIMEOUT`（300）、`QED_API_SELECT`、
-`QED_LLM_GATEWAY_URL`。
+`QED_LLM_GATEWAY_URL`、`QED_MAX_DOWNLOAD_BYTES`（512 MiB，下载字节硬顶）。
 
 - `QED_SOURCES`：特例处理（env 或文件，逗号分隔），默认
   `internet_archive, open_library, google_books, libgen_li`（libgen_li 为发现专用来源，

@@ -45,6 +45,7 @@ class Settings:
     sources: tuple[str, ...] = DEFAULT_SOURCES
     axiom_url: str = "http://127.0.0.1:8902"
     tls_verify: bool = True
+    max_download_bytes: int = 512 * 1024 * 1024  # 字节硬顶（QED-068 C 步）；同 downloader.DEFAULT_MAX_DOWNLOAD_BYTES
     llm_model: str = "qwen-plus"
     llm_base_url: str = _DASH_SCOPE_BASE_URL
     llm_timeout_seconds: float = 300.0  # REQ-061：原 60s 硬顶致长生成 ReadTimeout，与根仓库默认对齐
@@ -99,6 +100,7 @@ _ENV_MAP = {
     "QED_BOOK_LLM_CONFIRM": ("book_llm_confirm", _bool),
     "QED_BOOK_LLM_BUDGET": ("book_llm_budget", int),
     "QED_TLS_VERIFY": ("tls_verify", _bool),
+    "QED_MAX_DOWNLOAD_BYTES": ("max_download_bytes", int),
     "QED_LLM_BASE_URL": ("llm_base_url", str),
     "QED_LLM_TIMEOUT": ("llm_timeout_seconds", float),  # REQ-061 同步：根仓库同键名，原 60s 硬顶致长生成 ReadTimeout
     "QED_API_SELECT": ("api_select", str),

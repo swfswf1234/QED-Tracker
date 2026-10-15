@@ -11,7 +11,8 @@ direct 成功后写根仓库 `qed_llm_calls` 调用记录（`service=qed_tracker
 写表，本层不重复写。表结构契约以根仓库 llm-gateway-and-model-management.md 为准。
 
 业务调用方（bailian.py / book_advisor.py / main_line/advisor.py）统一经本层调用，
-对外 API 不变。
+对外 API 不变。自带客户端按模式定 `trust_env`：gateway＝False（8900 是本机回环，继承系统
+代理会被劫持并返回 502），direct＝默认（公网厂商可能需要代理）；注入客户端不覆盖。
 """
 
 from __future__ import annotations
@@ -86,7 +87,8 @@ class LlmClient:
         self.calls = 0
         self.last_usage: dict[str, Any] = {}
         self._owns_client = client is None
-        self.client = client or httpx.Client(timeout=timeout)
+        # gateway 只打 8900（本机回环）：默认 trust_env 会让系统代理劫持 loopback 返 502。
+        self.client = client or httpx.Client(timeout=timeout, trust_env=not self.is_gateway)
         self.engine = engine  # direct 模式调用记录写 qed_llm_calls 用（None=不落库）
 
     @property

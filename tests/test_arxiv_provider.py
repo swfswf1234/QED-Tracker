@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import arxiv
+import pytest
 
 from qed_tracker.providers.arxiv import ArxivProvider
 
@@ -103,3 +104,33 @@ def test_arxiv_result_is_normalized_to_candidate():
     assert candidate.identifiers == {"arxiv": "2401.00001"}
     assert candidate.subjects == ("cs.CL", "cs.LG")
     assert candidate.updated_at.startswith("2024-01-03")
+
+
+# ---------- QED-068-3（S2 并入项）arXiv ID 尾部版本剥离 ----------
+
+
+@pytest.mark.parametrize(
+    ("entry_id", "expected"),
+    [
+        ("https://arxiv.org/abs/2401.00001v3", "2401.00001"),
+        ("https://arxiv.org/abs/math/0501001v1", "0501001"),
+        ("https://arxiv.org/abs/cond-mat/0501234", "0501234"),
+        ("https://arxiv.org/abs/2401.00001", "2401.00001"),
+    ],
+)
+def test_candidate_strips_trailing_version(entry_id, expected):
+    item = SimpleNamespace(
+        entry_id=entry_id,
+        title="Versioned Paper",
+        authors=[SimpleNamespace(name="Ada")],
+        published=datetime(2024, 1, 2, tzinfo=UTC),
+        updated=datetime(2024, 1, 3, tzinfo=UTC),
+        categories=["cs.CL"],
+        pdf_url=f"{entry_id}.pdf",
+        summary="abstract",
+    )
+    candidate = ArxivProvider._candidate(item)
+    assert candidate.provider_id == expected
+    assert candidate.identifiers == {"arxiv": expected}
+    assert candidate.page_url == entry_id
+    assert candidate.download_url == f"{entry_id}.pdf"

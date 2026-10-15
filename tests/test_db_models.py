@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from qed_tracker.db.models import (
     Base,
+    BookKind,
     BookStatus,
     KnowledgeStatus,
     QedCourse,
@@ -130,6 +131,48 @@ def test_qt_books_unique_constraints() -> None:
     columns = {c.name for c in table.columns}
     assert {"sha256", "size_bytes", "page_count"} <= columns
     assert table.primary_key.columns.keys() == ["book_id"]
+
+
+def test_book_kind_enum() -> None:
+    """QED-068 A 步：书本化类别枚举（blog 预留未实现，不进值域）。"""
+    assert {k.value for k in BookKind} == {"book", "paper"}
+
+
+def test_qt_books_paper_columns(session) -> None:
+    """QED-068 A 步：kind + course_id（落位课程，空串=领域级）两列与两索引。"""
+    table = QtBook.__table__
+    columns = {c.name: c for c in table.columns}
+    assert {"kind", "course_id"} <= set(columns)
+    assert columns["kind"].nullable is False
+    assert columns["kind"].default.arg == BookKind.BOOK.value
+    assert columns["course_id"].nullable is False
+    assert columns["course_id"].default.arg == ""
+    assert {"ix_qt_books_kind", "ix_qt_books_course_id"} <= {idx.name for idx in table.indexes}
+
+    now = __import__("qed_tracker.db.engine", fromlist=["utc_now"]).utc_now()
+    book = QtBook(book_id="math-b99", title="论文默认类别", language="zh",
+                  domain_id="math", created_at=now, updated_at=now)
+    session.add(book)
+    session.commit()
+    session.expire_all()
+    row = session.get(QtBook, "math-b99")
+    assert row.kind == "book"
+    assert row.course_id == ""
+    assert row.to_dict()["kind"] == "book"
+    assert row.to_dict()["course_id"] == ""
+
+
+def test_qt_books_paper_row_landing(session) -> None:
+    """发现论文行：kind=paper + domain_id 必填 + course_id 空串=领域级、非空=课程级落位。"""
+    now = __import__("qed_tracker.db.engine", fromlist=["utc_now"]).utc_now()
+    session.add(QtBook(book_id="math-p01", title="领域级论文", language="en", kind="paper",
+                       domain_id="math", created_at=now, updated_at=now))
+    session.add(QtBook(book_id="math-p02", title="课程级论文", language="en", kind="paper",
+                       domain_id="math", course_id="01_math_analysis", created_at=now, updated_at=now))
+    session.commit()
+    session.expire_all()
+    assert session.get(QtBook, "math-p01").course_id == ""
+    assert session.get(QtBook, "math-p02").course_id == "01_math_analysis"
 
 
 def test_qt_sources_foreign_key_to_books() -> None:

@@ -9,7 +9,7 @@
 关联设计：[论文发现设计](../design/paper-discovery.md)、[下载管线设计](../design/download-pipeline.md)、
 [探索管线设计](../design/exploration-pipeline.md)、[服务管理设计](../design/service-management.md)
 关联 Tracker：QED-067 / QED-068 / QED-069 / QED-070（根侧对应 ARCH-024 滚动壳）
-关联计划：[QED-067 计划](2026-09-14-local-llm-langchain.md)、[QED-068 计划](2026-09-14-paper-pipeline-alignment.md)、
+关联计划：[QED-067 计划](2026-09-14-local-llm-langchain.md)、[QED-068 计划](../history/baselines/2026-09-14-paper-pipeline-alignment.md)、
 [QED-069 计划](2026-09-14-download-channel-evaluation.md)、[QED-070 台账](2026-09-14-bugfix-ledger.md)、
 [DeepTutor 调研稿](2026-09-21-deeptutor-survey.md)
 归档判定：待关闭时按 [ADR 0009](../history/adr/0009-closed-plan-archival.md) 做 Retain/Delete 两态判定

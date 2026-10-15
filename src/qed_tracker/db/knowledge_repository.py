@@ -25,7 +25,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from qed_tracker.db.engine import utc_now
-from qed_tracker.db.models import BookStatus, KnowledgeStatus, QedCourse, QedDomain, QtBook, QtKnowledge, QtSource
+from qed_tracker.db.models import (
+    BookKind,
+    BookStatus,
+    KnowledgeStatus,
+    QedCourse,
+    QedDomain,
+    QtBook,
+    QtKnowledge,
+    QtSource,
+)
 
 
 class InvalidTransition(RuntimeError):
@@ -90,6 +99,10 @@ _BOOK_ID_RE = re.compile(r"^[0-9a-z]+-b\d{2,}$")
 
 _COURSE_ABBR_MAX = 20
 """course_abbr 全名去下划线的长度上限；超过则用词首字母缩略（QED-062）。"""
+
+_ARXIV_SOURCE_CHANNEL = "arxiv"
+"""论文内容身份渠道取值（QED-068 B 步）：adopt 建 `kind=paper` 书行时写
+`qt_sources(channel=arxiv, provider_id=<arXiv ID>)`，查重即以该行为准。"""
 
 
 def _course_abbr(course_id: str) -> str:
@@ -769,6 +782,8 @@ class KnowledgeRepository:
         roles: list[str] | None = None,
         status: str = BookStatus.CANDIDATE.value,
         domain_id: str = "",
+        kind: str = BookKind.BOOK.value,
+        course_id: str = "",
         notes: str | None = None,
     ) -> QtBook:
         """幂等插入：book_id 由调用者传入（服务端生成 {abbr}-b{NN}，域内递增）。"""
@@ -787,7 +802,9 @@ class KnowledgeRepository:
                     language=language,
                     roles=roles or [],
                     status=status,
+                    kind=kind,
                     domain_id=domain_id,
+                    course_id=course_id,
                 )
                 if notes:
                     row.notes = notes
@@ -796,10 +813,131 @@ class KnowledgeRepository:
             session.commit()
             return row
 
-    def list_books(self, knowledge_id: str | None = None) -> list[QtBook]:
+    @staticmethod
+    def _paper_abbr(domain_id: str) -> str:
+        """论文书行缩写（待裁项 #2 裁决＝领域 abbr）：领域 id 去非 [0-9a-z] 字符，>20 用分段首字母。"""
+        segments = [part for part in re.split(r"[^0-9a-z]+", (domain_id or "").lower()) if part]
+        if not segments:
+            raise ValueError(f"领域标识无法生成 book_id 缩写：{domain_id}")
+        abbr = "".join(segments)
+        if len(abbr) > _COURSE_ABBR_MAX:
+            abbr = "".join(part[0] for part in segments)
+        return abbr
+
+    def find_paper_by_arxiv(self, arxiv_id: str) -> QtBook | None:
+        """论文内容身份查重：`qt_sources(channel=arxiv)` 的 provider_id 命中即复用其书行。"""
+        key = (arxiv_id or "").strip()
+        if not key:
+            return None
+        with self._session_factory() as session:
+            source = session.scalars(
+                select(QtSource).where(QtSource.channel == _ARXIV_SOURCE_CHANNEL, QtSource.provider_id == key)
+            ).first()
+            if source is None:
+                return None
+            return session.get(QtBook, source.book_id)
+
+    def adopt_paper(
+        self,
+        *,
+        domain_id: str,
+        arxiv_id: str,
+        title: str,
+        course_id: str = "",
+        authors: list[str] | None = None,
+        year: int | None = None,
+        page_url: str = "",
+        download_url: str = "",
+        language: str = "en",
+    ) -> dict[str, Any]:
+        """论文采纳（QED-068 B 步）：单事务建 `kind=paper` 书行 + arXiv 内容身份。
+
+        幂等键=arXiv ID（`qt_sources(channel=arxiv)`）——同 id 二次采纳复用既有行返回
+        duplicated，不重复建行。落位＝`domain_id` 必填且须已登记（⑤′ 论文无默认桶），
+        `course_id` 非空时须属于该领域（课程=逻辑分组，物理仍落领域通用桶）。书行停在
+        candidate 态：下载由调用方显式走 `POST /books/{book_id}/fetch`（不自动下载）。
+        """
+        bucket = (domain_id or "").strip()
+        identifier = (arxiv_id or "").strip()
+        book_title = (title or "").strip()
+        if not bucket:
+            raise ValueError("论文采纳需要显式落位领域（无默认桶）")
+        if not identifier:
+            raise ValueError("论文采纳需要 arXiv ID（内容身份）")
+        if not book_title:
+            raise ValueError("论文采纳需要标题")
+        with self._session_factory() as session:
+            if session.get(QedDomain, bucket) is None:
+                raise ValueError(f"论文落位领域不存在：{bucket}")
+            placement = (course_id or "").strip()
+            if placement:
+                course = session.get(QedCourse, placement)
+                if course is None:
+                    raise ValueError(f"论文落位课程不存在：{placement}")
+                if course.domain_id != bucket:
+                    raise ValueError(f"课程 {placement} 不属于落位领域 {bucket}")
+            existing = session.scalars(
+                select(QtSource).where(QtSource.channel == _ARXIV_SOURCE_CHANNEL,
+                                       QtSource.provider_id == identifier)
+            ).first()
+            if existing is not None and session.get(QtBook, existing.book_id) is not None:
+                return {"book_id": existing.book_id, "status": "duplicated", "arxiv_id": identifier}
+            abbr = self._paper_abbr(bucket)
+            max_nn = 0
+            for book in session.scalars(select(QtBook).where(QtBook.domain_id == bucket)):
+                match = re.search(r"-b(\d+)$", book.book_id)
+                if match:
+                    max_nn = max(max_nn, int(match.group(1)))
+            book_id = f"{abbr}-b{max_nn + 1:02d}"
+            if not _BOOK_ID_RE.fullmatch(book_id) or len(book_id) > 32:
+                raise ValueError(f"论文 book_id 生成不合法：{book_id}")
+            row = QtBook(
+                book_id=book_id,
+                title=book_title,
+                part="",
+                original_title=None,
+                authors=[{"name": name, "role": "author"} for name in (authors or []) if name],
+                publisher="arXiv",
+                edition="",
+                year=year,
+                language=language,
+                roles=[],
+                status=BookStatus.CANDIDATE.value,
+                kind=BookKind.PAPER.value,
+                domain_id=bucket,
+                course_id=placement,
+            )
+            _touch(row, created=True)
+            session.add(row)
+            session.add(QtSource(
+                source_id=_id("src", book_id, _ARXIV_SOURCE_CHANNEL, identifier, uuid.uuid4().hex[:8]),
+                book_id=book_id,
+                channel=_ARXIV_SOURCE_CHANNEL,
+                provider_id=identifier,
+                page_url=page_url,
+                download_url=download_url,
+                ok=False,
+                note="adopt 登记（arXiv 内容身份，未下载）",
+                attempted_at=utc_now(),
+            ))
+            session.commit()
+            return {"book_id": book_id, "status": "created", "arxiv_id": identifier}
+
+    def list_books(
+        self,
+        knowledge_id: str | None = None,
+        *,
+        kind: str | None = None,
+        domain_id: str | None = None,
+        course_id: str | None = None,
+    ) -> list[QtBook]:
         """列书库行：无 knowledge_id → 域级书库全量；给定 → 该教程 refs 聚合的书
         （textbook_ref/exercise_ref/parallel_ref 的 book_id 去重；书库化多对多，
-        归属由 refs 承载，QtBook 无 knowledge_id 列）。"""
+        归属由 refs 承载，QtBook 无 knowledge_id 列）。
+
+        kind/domain_id/course_id 为 AND 过滤（QED-068 A 步书库枚举）：空串/None 不过滤；
+        course_id 精确匹配，领域级行（course_id=''）不命中非空过滤。
+        """
         with self._session_factory() as session:
             statement = select(QtBook).order_by(QtBook.created_at)
             if knowledge_id:
@@ -810,6 +948,12 @@ class KnowledgeRepository:
                 if not book_ids:
                     return []
                 statement = statement.where(QtBook.book_id.in_(book_ids))
+            if kind:
+                statement = statement.where(QtBook.kind == kind)
+            if domain_id:
+                statement = statement.where(QtBook.domain_id == domain_id)
+            if course_id:
+                statement = statement.where(QtBook.course_id == course_id)
             return list(session.scalars(statement))
 
     def get_book(self, book_id: str) -> QtBook | None:
@@ -914,6 +1058,37 @@ class KnowledgeRepository:
                 .order_by(QtBook.created_at, QtBook.book_id)
                 .limit(1)
             )
+
+    def find_owned_by_titles(
+        self, titles: Iterable[str], *, exclude_book_ids: Iterable[str] = ()
+    ) -> list[QtBook]:
+        """查重双报的标题查询面（QED-068 C 步 / 068-4）：owned 且已填内容身份、标题命中的行。
+
+        比对在 Python 侧 `casefold` 完成（不采用 MySQL `LOWER` 的折叠口径）；内容身份未填的
+        行（已登记未下载）不算冲突对象。按 created_at, book_id 定序保证多次调用同结果，
+        与 `first_course_for_book` 全扫同法（书库规模百量级）。
+        """
+        wanted = {str(item).strip().casefold() for item in titles if str(item).strip()}
+        if not wanted:
+            return []
+        excluded = {str(item) for item in exclude_book_ids if str(item)}
+        with self._session_factory() as session:
+            rows = session.scalars(
+                select(QtBook)
+                .where(QtBook.holding == "owned", QtBook.sha256.is_not(None), QtBook.sha256 != "")
+                .order_by(QtBook.created_at, QtBook.book_id)
+            )
+            hits = []
+            for row in rows:
+                if row.book_id in excluded:
+                    continue
+                keys = {
+                    (row.title or "").strip().casefold(),
+                    (row.original_title or "").strip().casefold(),
+                }
+                if keys & wanted:
+                    hits.append(row)
+            return hits
 
     def start_download(self, book_id: str) -> QtBook:
         """decided → downloading（开始下载）。"""

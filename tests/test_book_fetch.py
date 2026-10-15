@@ -292,3 +292,32 @@ def test_fetch_tutorial_continues_after_invalid_status(repo, pdf_bytes, tmp_path
     assert by_id[stuck.book_id]["ok"] is False
     assert by_id[good.book_id]["ok"] is True
     assert repo.get_book(good.book_id).status == "downloaded"
+
+
+# ---------------- 查重双报提交面（QED-068 C 步 / 068-4） ----------------
+
+
+def test_fetch_result_carries_duplicate_buckets(repo, tmp_path, pdf_bytes, text_pdf_bytes):
+    """同标题不同内容的第二本：结果报 same_name 冲突，既有行与既有文件不动（不自动覆盖）。"""
+    first = _seed_titled_book(repo, book_id="mathanalysis-b95", title="同书名著")
+    second = _seed_titled_book(repo, book_id="mathanalysis-b96", title="同书名著")
+    first_sha = None
+
+    service = build_service(repo, [FakeProvider("fake", [make_candidate("fake", "同书名著")])],
+                             static_handler(pdf_bytes), data_root=tmp_path)
+    outcome = service.fetch(first.book_id)
+    first_sha = outcome["resource_id"].removeprefix("sha256:")
+
+    service2 = build_service(repo, [FakeProvider("fake", [make_candidate("fake", "同书名著")])],
+                              static_handler(text_pdf_bytes("Second Volume")), data_root=tmp_path)
+    outcome2 = service2.fetch(second.book_id)
+
+    assert outcome2["ok"] is True
+    buckets = outcome2["duplicates"]
+    assert [item["book_id"] for item in buckets["same_name"]] == [first.book_id]
+    assert buckets["same_content"] == []
+    assert (tmp_path / outcome["file_path"]).is_file()
+    assert (tmp_path / outcome2["file_path"]).is_file()
+    assert outcome2["file_path"] != outcome["file_path"]
+    assert repo.get_book(first.book_id).sha256 == first_sha
+    assert outcome["duplicates"] == {"same_content": [], "same_name": []}

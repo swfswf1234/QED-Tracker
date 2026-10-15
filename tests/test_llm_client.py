@@ -269,3 +269,31 @@ def test_recording_degrades_when_db_unreachable() -> None:
     client = _direct_client(lambda r: _dash_response("still-ok"), engine=BoomEngine())
     assert client.complete([{"role": "user", "content": "x"}]) == "still-ok"
     client.close()
+
+
+def test_gateway_built_client_bypasses_system_proxy(monkeypatch) -> None:
+    """系统代理劫持 loopback 回归：gateway 模式自带客户端必须 trust_env=False。
+
+    真机 2026-10-09：注册表系统代理 127.0.0.1:7890 对 8900 返 502 空正文，
+    经 httpx 默认 trust_env=True 的客户端即命中代理；direct（公网 dashscope）保持默认可继承代理。
+    """
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:7890")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    gw = LlmClient(api_select="qed-engine", gateway_url="http://127.0.0.1:8900")
+    assert gw.client._trust_env is False
+    direct = LlmClient(api_select="local", api_key="sk-1")
+    assert direct.client._trust_env is True
+    gw.close()
+    direct.close()
+
+
+def test_injected_client_keeps_caller_transport_choice() -> None:
+    """注入客户端不被覆盖：测试/MockTransport 通道仍由调用方决定。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"reply": "ok", "success": True, "error": ""})
+
+    injected = httpx.Client(transport=httpx.MockTransport(handler), trust_env=True)
+    gw = LlmClient(api_select="qed-engine", client=injected)
+    assert gw.client is injected
+    assert gw.complete([{"role": "user", "content": "hi"}]) == "ok"

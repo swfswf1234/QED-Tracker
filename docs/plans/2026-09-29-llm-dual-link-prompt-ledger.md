@@ -3,7 +3,7 @@
 状态：Draft（2026-09-29 用户改判后新建，待用户评审；评审通过后第 3、4 节的口径晋升进 `docs/design/`）
 复核口径：第 2、5 节于 2026-09-29 **按工作树实况二次复核**（同日并行会话曾落地 QED-072 W-8 步骤 4 把论文模型面删净，随即又整体撤回，见 2.4）；本文件登记实况，不登记 072 计划的应然描述。
 任务类型：Plan
-最后更新：2026-09-29
+最后更新：2026-09-30
 需求方：用户（2026-09-29 裁决：当前阶段用本地模型做优化，API 链路（含百炼）作**备用与对比**，
 两条链路都保持可用；**v1.0 及之前版本默认只使用本地模型**）
 目标项目：QED-Tracker
@@ -56,20 +56,20 @@ D-1/D-3「完全屏蔽百炼、通路唯一」与 D-7「论文两条内联 promp
 | 直连侧留痕 | `llm_client.py:205` `_record_call`（`mode="api" provider="qwen"`），仅当注入了 `engine` 时写 | 网关侧由 8900 代写（`mode=local provider=lmstudio`） |
 | 网关载荷压平 | `llm_client.py:170-171` | `system`=首条 system，`prompt`=**最后一条** user；多轮/修复上下文在网关侧只剩最后一轮 |
 | 后端选择配置 | `config.py:53` `api_select`（`QED_API_SELECT`，默认 `local`）、`:54` `llm_gateway_url`、`:48` `llm_model`、`:49` `llm_base_url`、`:50` `llm_timeout_seconds`、`:51` `llm_call_budget`、`:52` `llm_max_tokens` | 根 `.env` 现值：`QED_API_SELECT=qed-engine`、`QED_MODEL=deepseek-v4-flash-0731`；`QED_LLM_BASE_URL`/`QED_LLM_GATEWAY_URL` 未设 → 取默认（直连即指向 dashscope） |
-| 直连前置 | `providers/bailian.py:194`、`providers/book_advisor.py:158`、`main_line/advisor.py:104` | 三处同一条件式 `if not is_gateway and not configured: raise`——**网关模式免 `API_KEY`，只有直连模式要求**；这正是「备用链路」的既有闸门，改判后**保留**，DL-1 默认本地不受它约束 |
+| 直连前置 | `providers/bailian.py:132`（W-2 后行号，原 `:194`）、`providers/book_advisor.py:158`、`main_line/advisor.py:104` | 三处同一条件式 `if not is_gateway and not configured: raise`——**网关模式免 `API_KEY`，只有直连模式要求**；这正是「备用链路」的既有闸门，改判后**保留**，DL-1 默认本地不受它约束 |
 
 结论：**双链路能力在代码里从来没有被拆掉**，QED-072 的 W-4「direct 分支移除」是尚未执行的计划项，
 因此口径改判不需要回滚代码，只需要改计划与文档，并把「默认值」这件事写死。2026-09-29 的「删除落地又撤回」事件（2.4）从反面印证了这一点：被删的从来不是**通路**，而是**通路上的一只 advisor 实现**——删之即断链（`papers recommend` 当场抛错、10 处文档引用转红），而恢复只能靠回滚，配置层无路可达。
 所以 DL-2 的保护对象是 advisor 实现，不只是 `llm_client.py` 的分支。
 
-### 2.2 prompt 定义：注册表 6 条（两文件），游离面 5 个编号
+### 2.2 prompt 定义：注册表 6 条（两文件），游离面 5 个编号（W-0 时点勘察；2026-09-30 W-2 交付后实况为注册表 8 条、游离面 3 个编号，见 5.1/5.2）
 
 注册表（`register()` 拒低版本覆盖，`template_id = f"{task}/{step}@v{version}"`）当前 **6 条，分居两文件**：`prompt_lab/templates.py` 三条探索链（`:201/:323/:520`，注册 `:365-366`、`:566`）+
 `prompt_lab/advisor_templates.py`（**未进 git 索引的新文件**）三条顾问链（`:48/:98/:164`，注册 `:174-176`）。
 顾问三条是 QED-072 W-8 步骤 3 从 advisor **手抄迁入**的产物，版本号未动，因此历史留痕仍可按 `prompt_template` 比对；消费形态已是注册表驱动的 `template.messages(payload)` +
 `template.validator(payload)`（`book_advisor.py:101/:139`、`main_line/advisor.py:85`），即 072 W-8「校验工厂」的目标形态部分落地。
 
-游离面：2 条论文 prompt 仍内联在 `providers/bailian.py`、3 个 agentic 编号在编排实验层。守护测试
+游离面（W-0 时点）：2 条论文 prompt 当时仍内联在 `providers/bailian.py`（**2026-09-30 W-2 已迁入 `advisor_templates.py`**，见 7.3）、3 个 agentic 编号在编排实验层。守护测试
 `tests/test_prompt_template_ids.py:137-143` 用 5 条豁免把游离面显式化，`:168-177` 钉死注册表清单，`:180-183` 反向禁止豁免清单留失效条目。
 
 ### 2.3 与 QED-072 假设不符的三处实测事实
@@ -77,7 +77,7 @@ D-1/D-3「完全屏蔽百炼、通路唯一」与 D-7「论文两条内联 promp
 1. **`max_tokens` 对探索链不可配**：`prompt_lab/pipeline.py:69` 与 `:261` 把值钳到 `≥16384`，
    覆盖 `settings.llm_max_tokens=4096`。本地窗口若为 16384，则该下限＝整窗，任何 prompt 正文都
    挤不进；这是 QED-073 的冲突项，也是双链路对比时必须先固定的变量。
-2. **repair 复用同一 `prompt_template`**：四处修复重试（`bailian.py:186`、`book_advisor.py:151`、
+2. **repair 复用同一 `prompt_template`**：四处修复重试（`bailian.py:125`（原 `:186`）、`book_advisor.py:151`、
    `main_line/advisor.py:97`、`explore_advisor.py:119`）都用失败调用原编号，留痕上分不出首试与修复。
 3. **dry-run 在直连侧不写留痕**：`api/main.py:1421/:1460` 传 `engine=None`，而 CLI 与路由文档都
    宣称「唯一痕迹是 `qed_llm_calls`」——只有 `qed-engine` 模式成立。对比取证必须知道这一点。
@@ -136,7 +136,7 @@ D-1/D-3「完全屏蔽百炼、通路唯一」与 D-7「论文两条内联 promp
 | 成功标准 5 / W-5 命名面 | `Bailian*` 类名随「百炼退役」改名 | 命名不再由退役驱动；`Bailian*` 前缀在双链路下具误导性 → 降级为「中性命名（`PaperModelAdvisor` 等）」的可选项（Q72-c 保留但重述） |
 | W-4 | direct 分支「先禁用后删除」 | 改为「保持分支可用 + 默认值钉在本地 + 补齐网关侧截断检测（BUG-001）」；删除动作取消 |
 | W-8 步骤 4 | `bailian.py` 论文两条 prompt **不搬迁、直接删除**，`papers recommend` 留空窗（Q72-f） | 改为「**迁入注册表**」，空窗期取消；068-2/S3 的重写从「从零写」改为「在册改写」，Q72-f 随之作废。**实况：删除曾落地一次并已撤回（2.4），改判落在未删状态上，无需重建** |
-| W-8 步骤 5 | agentic 三条纳入注册表 | 不变；但纳入后要标注其**仅本地链路**属性（编排预检硬要求 `qed-engine`，`scripts/qed067_gateway_smoke.py:70-79`） |
+| W-8 步骤 5 | agentic 三条纳入注册表 | 不变；但纳入后要标注其**仅本地链路**属性（编排预检硬要求 `qed-engine`，`scripts/qed067_gateway_smoke.py:70-79`）。**2026-09-30 追加：本项前提受阻**——验收件 `test_orchestration.py` 的 BUG-002 红已进 HEAD，处置两案待裁（见 QED-072 计划交付顺序第 5 步与 Q72-g） |
 | Q72-b | 删除节奏一步删净 vs 先禁用 | 作废（不删） |
 | Q72-d | 27B 在本地链路的位置 | 不变，仍待裁 |
 | Q72-e | `task/step` 透传根侧 REQ | **优先级上升**：双链路对比要靠 `prompt_template` + `mode` 拼顺序，`task/step` 若能透传可显著简化对比脚本 |
@@ -146,7 +146,7 @@ D-1/D-3「完全屏蔽百炼、通路唯一」与 D-7「论文两条内联 promp
 
 ## 5. prompt 资产台账（全量，2026-09-29 复核）
 
-### 5.1 注册表条目（`prompt_lab/`，6 条）
+### 5.1 注册表条目（`prompt_lab/`，8 条）
 
 | 编号 | 定义位置 | 调用点 | 上游入口 | 可达链路 | 链位 |
 | --- | --- | --- | --- | --- | --- |
@@ -156,16 +156,16 @@ D-1/D-3「完全屏蔽百炼、通路唯一」与 D-7「论文两条内联 promp
 | `book-query/variants@v1` | `advisor_templates.py:47`（`:174`） | `providers/book_advisor.py:101` | `application/book_fetch.py:451`（硬编码查询用尽且 `QED_BOOK_LLM_QUERY=1`）→ `POST /api/v1/books/{id}/fetch`、`POST /api/v1/knowledge/{id}/fetch`、CLI `books fetch` / `mainline download` | 双 | 主链路（取书） |
 | `book-confirm/assess@v1` | `advisor_templates.py:97`（`:175`） | `providers/book_advisor.py:139` | `application/book_fetch.py:437`（`QED_BOOK_LLM_CONFIRM=1`；异常降级为全 `uncertain`） | 双 | 主链路 |
 | `mainline-prefill/prefill@v1` | `advisor_templates.py:163`（`:176`） | `main_line/advisor.py:85` | CLI `mainline new --course --title --author`（`cli.py:188` → `:1199`）；**无 HTTP 路由** | 双 | 主链路（教材预填） |
+| `paper-plan/plan@v1` | `advisor_templates.py:214`（校验器 `:184`、工厂 `:207`、注册 `:276`） | `providers/bailian.py:85-88` | `application/papers.py:150` ← CLI `papers recommend`（`cli.py:301`）；**8901 走不到**（`api/main.py:131` 的 `PaperService(advisor=None)`） | 双 | 论文链（检索计划） |
+| `paper-plan/assess@v1` | `advisor_templates.py:261`（校验器 `:232`、工厂 `:254`、注册 `:277`；摘要截 `[:4000]`、每批 10 篇由调用方切批） | `providers/bailian.py:110-113` | `application/papers.py:163` | 双 | 论文链（候选评分） |
 
 > 注：`advisor_templates.py` 与注册表迁移是 QED-072 W-8 步骤 2/3 已由并行会话落地的现状
 > （`book-eval/assess@v1` 与 `models.BookAssessment` 已删）。本台账按工作树实况登记，不重述其过程。
 
-### 5.2 未入册（守护豁免中，5 个编号）
+### 5.2 未入册（守护豁免中，3 个编号；原 5 个，paper-plan 两条已于 2026-09-30 W-2 升入 5.1）
 
 | 编号 | 定义位置 | 调用点 | 上游入口 | 可达链路 | 改判后处置 |
 | --- | --- | --- | --- | --- | --- |
-| `paper-plan/plan@v1` | `providers/bailian.py:29`，system 文案 `:85-86`，user 载荷 `:90-93` | `bailian.py:118` | `application/papers.py:150` ← CLI `papers recommend`（`cli.py:301`）；**8901 走不到**（`api/main.py:131` 的 `PaperService(advisor=None)`） | 双 | **迁入注册表**（原「删除」作废） |
-| `paper-plan/assess@v1` | `bailian.py:30`，system/user `:143`/`:147-150`（摘要截 `[:4000]`、每批 10 篇） | `bailian.py:175` | `application/papers.py:163` | 双 | 同上 |
 | `domain-explore/domain-agentic@v1` | `orchestration/pipeline.py:59`，`_SYSTEM_PROMPT` 内联 `:28` | 同文件 `run_domain_phase`（`:49-57` human 模板） | 仅 `scripts/qed067_gateway_smoke.py`；**无 CLI/HTTP** | **仅本地**（预检 `:70-79` 硬要求 `qed-engine`） | 入册并标注「实验链 / 仅本地」 |
 | `domain-explore/courses-agentic@v1` | `orchestration/pipeline.py:110` | `run_courses_phase`（`:100-108`） | 同上 | 仅本地 | 同上 |
 | `domain-agentic@v1` | `orchestration/pipelines/domain-exploration.yaml`（裸编号缺 task 前缀） | `orchestration/runner.py:198-202` 推导 | 同上 | 仅本地 | 入册同时修 yaml 编号（Q67-c 已记） |
@@ -174,9 +174,9 @@ D-1/D-3「完全屏蔽百炼、通路唯一」与 D-7「论文两条内联 promp
 
 | 项 | 位置 | 事实 |
 | --- | --- | --- |
-| 修复重试 prompt 手抄 4 份 | `bailian.py:182-186`、`book_advisor.py:147-151`、`main_line/advisor.py:93-97`、`explore_advisor.py:63` + `:115-119` | 同一文案「修复给定响应，使其成为符合原契约的严格 JSON。只输出 JSON。」；`原契约[:6000]` + `待修复响应[:8000]`；**复用原编号**（DL 留痕盲点）；异常类型三家不一致（`BailianError`/`ValueError`/`ExploreAdvisorError`） |
+| 修复重试 prompt 手抄 4 份 | `bailian.py:120-125`（原 `:182-186`）、`book_advisor.py:147-151`、`main_line/advisor.py:93-97`、`explore_advisor.py:63` + `:115-119` | 同一文案「修复给定响应，使其成为符合原契约的严格 JSON。只输出 JSON。」；`原契约[:6000]` + `待修复响应[:8000]`；**复用原编号**（DL 留痕盲点）；异常类型三家不一致（`BailianError`/`ValueError`/`ExploreAdvisorError`） |
 | priors 注入 | `prompt_lab/priors.py:13` `DOMAIN_PRIORS`、`:53` `PRIOR_KEYS_BY_STEP`、`:72` 注入点（`pipeline.py:95/:119/:213/:286`） | 用户先验直接进入 user turn；QED-073 本轮实测**故意不注入**以取得裸基线 |
-| 不可信文本入模上限 | `explore_advisor.py:26` `REF_TEXT_LIMIT=8000`；`bailian.py:135` `abstract[:4000]`；`orchestration/evidence.py:52` `max_tokens=4300` | 三处各自为政，无双链路差异 |
+| 不可信文本入模上限 | `explore_advisor.py:26` `REF_TEXT_LIMIT=8000`；`bailian.py:106`（原 `:135`）`abstract[:4000]`；`orchestration/evidence.py:52` `max_tokens=4300` | 三处各自为政，无双链路差异 |
 | system turn 内插业务数据 | `main_line/advisor.py:82-89`（迁移后见 `advisor_templates.py:163`） | 全仓唯一把 caller 数据拼进 **system** 的位置，注入边界最弱，双链路同样暴露 |
 | 探索链 `max_tokens` 硬下限 | `pipeline.py:69`、`:261` `max(..., 16384)` | 覆盖配置；对比实验前必须先固定 |
 
@@ -208,7 +208,7 @@ D-1/D-3「完全屏蔽百炼、通路唯一」与 D-7「论文两条内联 promp
 | --- | --- | --- | --- |
 | W-0 | 现状勘察 + QED-072 改判登记（本文件第 2、4 节；072 计划头部与 todo 镜像同步） | 本台账 + 072 改判行 + todo 双行 | **完成（2026-09-29）** |
 | W-1 | 默认口径成文：`design/paper-discovery.md`「百炼边界」改写为「模型链路边界（默认本地 + API 备用）」；`service-management.md`、`main-line-curriculum.md`、`exploration-pipeline.md`、`code-map.md` 同步；`AGENTS.md` 强制约束句按 Q74-a 裁定后改写 | 文档同步清单逐条落地 | 待 W-1 评审通过后执行 |
-| W-2 | 论文两条 prompt 迁入注册表（QED-072 W-8 步骤 4 由「删论文模型面」改为本项；删除动作已取消，无需回滚）：按 `advisor_templates.py` 既有形态在册，advisor 改注册表消费；豁免清单随之减两条（`:138-139`）、钉清单随之加两条（`:170-177`） | `advisor_templates.py` 在册 + `test_prompt_template_ids.py` 与 `test_bailian_advisor.py` 绿 | 待用户「开始执行」 |
+| W-2 | 论文两条 prompt 迁入注册表（QED-072 W-8 步骤 4 由「删论文模型面」改为本项；删除动作已取消，无需回滚）：按 `advisor_templates.py` 既有形态在册，advisor 改注册表消费；豁免清单随之减两条（现 `:137-141`）、钉清单随之加两条（现 `:168-177`） | `advisor_templates.py:214/:261` 在册 + `bailian.py` 走 `get_template` + 出站载荷前后 IDENTICAL | **完成（2026-09-30，Q74-b＝迁入保持 `@v1`、Q74-f＝本窗口执行；交付记录见 7.3）** |
 | W-3 | 对比冒烟脚本落地：`scripts/` 下人工脚本做同 payload 双跑 + 留痕回读表（默认测试不参与） | 脚本 + 一次真实双跑报告（附留痕 `id` 区间） | 待执行 |
 | W-4 | 死码与漂移清扫：5.4 四条（`Application.advisor`、`list_templates` 注释、`catalog evaluate` 提示、`tutorials@v1` 注释） | 清扫提交 + `test_documentation.py` 绿 | 待执行 |
 | W-5 | 留痕盲点改造请求：repair 编号复用与 `task/step` 透传（根侧 REQ，P-4 优先级上升） | 根仓 REQ 文本，交用户执行 | 待执行 |
@@ -219,6 +219,67 @@ D-1/D-3「完全屏蔽百炼、通路唯一」与 D-7「论文两条内联 promp
 - 门禁实况：`pytest tests -q` → **555 passed / 1 failed / 1 skipped**；唯一红项 `tests/test_orchestration.py::test_evidence_packer_trims_deterministically_and_records_budget_omissions` 属并行会话未跟踪 WIP（`src/qed_tracker/orchestration/` 与其测试文件同为 `??`），不由本计划修复。
 - `ruff check .` → 18 处全部在仓库根 `_w8_*.py` 手稿（见上方工作面提示），`src/`、`tests/` 零命中。
 - 台账复核：第 5 节引用的每个 file:line 均在 2026-09-29 工作树上重取（`bailian.py` 撤回后行号回到 HEAD 口径：`:29/:30/:118/:175/:186/:194`）。
+### 7.2 W-2 预检结论与实施设计卡（2026-09-30，Q74-b/Q74-f 已裁）
+
+四问四答（逐 file:line 实测，全部取自当前工作树）：
+
+1. **白名单从哪来**：`paper-plan/plan@v1` 的 allowed_categories 是**独立入参**而非档案字段——
+   `providers/bailian.py:76` 收三个参数，调用方 `application/papers.py:150` 传的是
+   `tuple(dict.fromkeys(profile.allowed_categories + categories))`（`:129`，档案分类 ∪ 临时 `--category`）。
+   payload 已带 `allowed_categories` 键（`bailian.py:80`），故 `_plan_validator(payload["allowed_categories"])`
+   与原闭包等价——**必须走 payload，不能改读 `profile.allowed_categories`**，否则临时分类被吞。
+2. **期望 ID 从哪来**：现在在调用方本地算（`bailian.py:152`，`{item["arxiv_id"] for item in candidate_payload}`）；
+   入册后由 `_assess_validator(payload["candidates"])` 内部推导，ID 口径不变
+   （`identifiers["arxiv"] or provider_id`，`bailian.py:130`）。
+3. **落点**：沿用 072 计划 `:278` 的建议，落 `prompt_lab/advisor_templates.py`（同包导入即注册、同一 REGISTRY）。
+   2026-09-30 复核后维持该建议：Q74-f 已把 068-S3 一并判给本窗口，两条链在同一文件里连续演进比拆文件更省；
+   代价是「顾问族」文件变大，注册表事实源仍是「一个 REGISTRY + 两个族模块」。
+4. **校验器返回 DTO**：两条 `validate` 返回 `list[PaperSearch]` / `list[PaperAssessment]`（`bailian.py:115/172`），
+   随文案一并进注册表模块，与 `advisor_templates.py` 引 `BookConfirmation` 的既有形态同构。
+
+**实施形态（Q74-b：迁入保持 `@v1`，零文本改动、版本号不动）**：`paper-plan/plan@v1` 与
+`paper-plan/assess@v1` 以固定 `system` + `build_user`（原前缀句 + `json.dumps(payload)`）+ `validate_for`
+工厂在册；`BailianPaperAdvisor.plan/_assess_batch` 改为「组 payload → `template.messages/validator` →
+`_structured(..., template_id=template.template_id)`」；类属性 `plan_template_id`/`assess_template_id` 删除
+（守护扫描面 `_PY_ID` 随之只在注册表命中）；`contract_version = "paper-selection-v1"` 原值保留，不伪造新契约；
+修复重试内联句（`bailian.py:183`）本轮不动，归 W-8 步骤 5 的骨架合一。
+
+**测试与验收**：`test_registry_inventory_is_pinned` 六条 → 八条；`UNREGISTERED_EXEMPT` 减两条（剩 agentic 三条）；
+`test_paper_plan_and_assess_carry_template_ids` 与 `test_gateway_mode_still_pass_template_id_in_payload`
+的断言**不改**（编号与出站载荷不得漂移）。等价性取证沿用步骤 3 手法：`httpx.MockTransport` 抓 `plan`/`assess`
+两个调用点迁移前后的出站 messages 与网关载荷逐字节比对，要求 `IDENTICAL`（探针落仓库 `tmp/`，ADR 0011，
+不入库）。定向门禁：`test_prompt_template_ids.py`、`test_bailian_advisor.py`、`test_paper_application.py`、
+`test_paper_selection_cli.py` 全绿 + `ruff check src tests scripts` clean；全量 `pytest tests -q` 的唯一红
+仍应为 BUG-002（编排线，本步不触碰）。
+
+**文档面（本步只做这三处）**：`code-map.md:39` 摘除「`paper-plan` 两条仍内联于 `bailian.py`（QED-074 W-2 待迁入）」、
+`:55` 行备注补注文案在注册表、`:154` 守护行描述补一句「论文两条已入册」。`design/paper-discovery.md`「百炼边界」
+整节与另三份 design 的同步属 W-1（待 Q74-a 裁决后一次做），本步不插单句以免返工。
+
+**W-2 交付后随之消解的台账口径**：5.2 表两条 paper-plan 行（`:167-168`）改判为「已入册」，未入册编号由
+5 个降为 3 个，`## 8` 节「豁免清单条目数与 5.2 行数一致（当前 5）」同步改 3。
+
+
+### 7.3 W-2 交付记录（2026-09-30，用户「开始执行」放行）
+
+- 代码：`prompt_lab/advisor_templates.py` 增 `paper-plan/plan@v1`（`:214`）与 `paper-plan/assess@v1`（`:261`）
+  及校验器工厂（`:184`/`:207`、`:232`/`:254`），**文案逐字照搬、`@v1` 版本号不动**（Q74-b 裁决）；
+  `providers/bailian.py` 的 `plan`/`_assess_batch` 改为「组 payload → `get_template(...).messages/validator` →
+  `_structured(..., template_id=template.template_id)`」，删除类属性 `plan_template_id`/`assess_template_id`
+  （文件 205 行 → 143 行），`contract_version = "paper-selection-v1"` 与修复重试内联句（`:120-125`）原样保留
+  （后者归 QED-072 W-8 步骤 5 的骨架合一）。
+- 等价性取证：一次性探针（`httpx.MockTransport`，direct + gateway 双模式 × 8 场景 = 11 个出站请求，覆盖修复重试
+  路径、12 候选双批次、`provider_id` 回退口径与注入样本）迁移前后**逐字节 IDENTICAL**，两侧 sha256 同为
+  `503f4d0dce961e214919fb65acce5d472fe82587fa3419ec39bba3948c791271`（31771 字节）。探针与基线件按 ADR 0011
+  落仓库 `tmp/`，交付后删除、不入库。
+- 守护：`test_registry_inventory_is_pinned` 六条 → 八条、`UNREGISTERED_EXEMPT` 减两条（剩 agentic 三条）；
+  中间态曾如实出现 2 红（钉清单 + 反向禁止失效豁免），同步后 8 passed。两条既有断言
+  （`test_paper_plan_and_assess_carry_template_ids`、`test_gateway_mode_still_pass_template_id_in_payload`）未改动。
+- 门禁：`ruff check src tests scripts` clean；四个定向文件（`test_prompt_template_ids.py`、`test_bailian_advisor.py`、
+  `test_paper_application.py`、`test_paper_selection_cli.py`）31 passed；全量 `pytest tests -q` **556 passed /
+  1 failed / 1 skipped**，唯一红项 `tests/test_orchestration.py::test_evidence_packer_trims_deterministically_and_records_budget_omissions`
+  即台账 BUG-002（编排线在途件，本步不触碰、不代改）。
+- 真实模型调用零次（纯文案搬迁，`qed_llm_calls` 无新行）；真实数据根零读写。
 
 ## 8. 验证与验收
 
@@ -226,7 +287,7 @@ D-1/D-3「完全屏蔽百炼、通路唯一」与 D-7「论文两条内联 promp
   回读；无留痕＝未发生。交付必须附 `id` 区间与回读 URL。
 - 默认测试零公网：W-2/W-4 的测试改动全部用 `httpx.MockTransport`；直连侧新增用例不得打真实端点。
 - 台账完整性可机器证明：第 5 节每一行都能被 `tests/test_prompt_template_ids.py` 的扫描面覆盖
-  （`src/**/*.py` + pipeline `*.yaml`），且豁免清单条目数与 5.2 行数一致（当前 5，其中论文 2 条的去向注记已指向 W-2）。
+  （`src/**/*.py` + pipeline `*.yaml`），且豁免清单条目数与 5.2 行数一致（当前 3；paper-plan 两条已于 2026-09-30 W-2 入册，注记兑现并摘除）。
 - 默认不变性验收：清空显式切换后，`.env` 与工作树默认路径必须落在 `qed-engine`；任何默认路径
   出现直连即为不合格。
 - 完成门禁：`ruff check .` + `pytest tests -q` 全绿（并行会话既有红须举证归因）；
@@ -238,11 +299,11 @@ D-1/D-3「完全屏蔽百炼、通路唯一」与 D-7「论文两条内联 promp
 | 编号 | 问题 | 选项与代价 |
 | --- | --- | --- |
 | Q74-a | `AGENTS.md`「百炼只生成检索计划…」强制约束句是否改写为「模型（本地或 API）…」 | 改写＝口径与代码一致；不改＝入口约束继续点名一个已降级的供应商 |
-| Q74-b | 论文两条 prompt 迁入注册表时的版本号：保持 `@v1`（留痕连续）还是 `@v2`（承认新形态） | 保持＝历史留痕可直接比对，但 068-2/S3 的重写点变模糊；`@v2`＝干净切代，但需同时改 068 与豁免清单表述 |
+| Q74-b | ~~论文两条 prompt 迁入注册表时的版本号：保持 `@v1` 还是 `@v2`~~ **已裁（2026-09-30 用户裁决）：迁入保持 `@v1`** | 采纳理由：与 QED-072 W-8 步骤 3 的三条同构——搬迁＝零文本改动、版本号不动，历史留痕（`qed_llm_calls` id=36/37）与新行同模板名可直接比对；`@v2` 升代留给 068-S3 的在册改写（那一步才动提示纪律与确定性清洗，且需 QED-072 W-3 预算表定稿） |
 | Q74-c | `Bailian*` 类与文件名是否改中性名（Q72-c 的重述） | 改名＝牵动 `cli.py`/`api/main.py`/测试文件名/多处文档同步面；不改＝双链路下类名与实际通路不符 |
 | Q74-d | API 备用链路的可用凭证：百炼 `qwen-plus` 额度已耗尽，现 `QED_MODEL=deepseek-v4-flash-0731` 是否即为备用面主力 | 实测＝一次真实小调用（须用户同意走云端）；不实测＝W-3 对比脚本只能在本地侧空跑 |
 | Q74-e | 探索链 `max_tokens≥16384` 硬下限在对比前如何处理 | 放开为配置项＝改动产线行为（需 QED-073 一并裁）；对比期临时旁路＝只影响冒烟脚本、少改产线 |
-| Q74-f | 并行会话工作面：W-2 由谁执行（本计划 vs 072 W-8 步骤 4 的改造版），以及仓库根 7 个 `_w8_*.py/json` 手稿的清理归属 | 本计划执行＝口径统一在「默认本地 + API 备用」，但与对方在同一批文件（`advisor_templates.py`、`test_prompt_template_ids.py`）上必然冲突；交对方＝我只出验收判据，前提是其步骤 4 语义已按 2.4 改判；手稿一律不代删（属对方 WIP） |
+| Q74-f | ~~并行会话工作面：W-2 由谁执行，以及仓库根 7 个 `_w8_*.py/json` 手稿的清理归属~~ **已裁（2026-09-30 用户裁决）：W-2 由本窗口（QED-072 W-8 的承接方）执行** | 落点沿用 W-8 步骤 3 已登记的 `prompt_lab/advisor_templates.py`（同包导入即注册）；手稿清理已消解——10 个 `_w8_*` 草稿已于 2026-09-29 随步骤 1~3 提交（`f31c00c`）前全部删除，工作树现无残留 |
 
 ## 10. 回滚
 

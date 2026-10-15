@@ -47,3 +47,21 @@ def text_pdf_bytes():
         return stream.getvalue()
 
     return _make
+
+
+@pytest.fixture(autouse=True)
+def stub_dns(monkeypatch):
+    """默认测试零公网：下载器逐跳主机校验一律走假解析器（不出网、不查真实 DNS）。
+
+    返回可变映射，用例写入 `host -> (ip, ...)` 覆盖默认解析（SSRF 用例据此把主机
+    指向内网/保留地址）。未登记的主机名一律解析为公网 IP。
+    """
+    from qed_tracker import downloader
+
+    records: dict[str, tuple[str, ...]] = {}
+    monkeypatch.setattr(
+        downloader,
+        "_resolve_host_ips",
+        lambda host: list(records.get(host, ("93.184.216.34",))),
+    )
+    return records

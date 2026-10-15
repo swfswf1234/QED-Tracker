@@ -52,11 +52,13 @@ from qed_tracker.db.knowledge_repository import (
     InvalidTransition,
     KnowledgeRepository,
 )
-from qed_tracker.db.models import BookStatus, QedDomain
+from qed_tracker.db.models import BookKind, BookStatus, QedDomain
+from qed_tracker.db.selection_repository import SelectionStoreError
 from qed_tracker.db.tasks_repository import ActiveTaskExists, TaskStore
 from qed_tracker.downloader import DownloadManager, inspect_pdf, safe_filename
 from qed_tracker.inventory import downloads_tmp_dir, raw_course_dir, staging_max_age_seconds, sweep_downloads
 from qed_tracker.models import Candidate
+from qed_tracker.paper_recipes import build_profile, recipe_defaults
 from qed_tracker.prompt_lab.pipeline import (
     CoursePipeline,
     DomainPipeline,
@@ -65,6 +67,7 @@ from qed_tracker.prompt_lab.pipeline import (
 )
 from qed_tracker.prompt_lab.templates import DEFAULT_SCOPE
 from qed_tracker.providers import ArxivProvider, create_book_providers
+from qed_tracker.providers.bailian import BailianPaperAdvisor
 from qed_tracker.providers.book_advisor import BailianBookAdvisor
 
 FRONTEND_ORIGINS = ("http://127.0.0.1:8903", "http://localhost:8903")
@@ -84,6 +87,7 @@ class Application:
         *,
         book_providers=None,
         papers_provider=None,
+        paper_advisor=None,
         downloader=None,
         advisor=None,
         knowledge_repository=None,
@@ -100,6 +104,7 @@ class Application:
             timeout=settings.timeout_seconds,
             retries=settings.retries,
             tls_verify=settings.tls_verify,
+            max_bytes=settings.max_download_bytes,
         )
         # QED-071 B 轮：资源岛退役——书侧去重/内容身份全经 qt_books（books repo 注入；
         # DB 未配置时教材下载显式报错，论文/习题不依赖 repo）。Inventory 已删除。
@@ -128,10 +133,32 @@ class Application:
         # B 轮（M4）：自建 repo 后回填资源服务——服务端教材下载去重必须走 qt_books。
         self.resources.books = self._knowledge_repository
         # REQ-032：PaperService 需要 session_factory 创建 SelectionStore
+        # QED-068 B 步（F2）：论文顾问按任务现建——与 book_fetch 的 advisor_factory 同法，
+        # 使每次探索的调用预算与审计（calls/usage/response_sha256）只归属自己那份报告。
+        paper_advisor_kwargs: dict[str, Any] | None = None
+        if settings.llm_configured:
+            paper_advisor_kwargs = {
+                "api_key": llm_api_key(),
+                "model": settings.llm_model,
+                "base_url": settings.llm_base_url,
+                "timeout": settings.llm_timeout_seconds,
+                "call_budget": settings.llm_call_budget,
+                "max_tokens": settings.llm_max_tokens,
+                "api_select": settings.api_select,
+                "gateway_url": settings.llm_gateway_url,
+                "engine": self._db_engine,
+            }
+        domain_repo = self._knowledge_repository
         self.papers = PaperService(
             papers_provider or ArxivProvider(retries=settings.retries),
             self.resources,
+            advisor=paper_advisor,
+            advisor_factory=(lambda: BailianPaperAdvisor(**paper_advisor_kwargs)) if paper_advisor_kwargs else None,
             session_factory=factory,
+            # ⑤′ 论文无默认桶：落位领域须已在 qed_domain 登记（无库时只要求显式非空）。
+            domain_exists=(
+                (lambda domain_id: domain_repo.get_domain(domain_id) is not None) if domain_repo is not None else None
+            ),
         )
         if advisor is None and settings.llm_configured:
             advisor = BailianBookAdvisor(
@@ -169,6 +196,7 @@ def create_app(
     *,
     book_providers=None,
     papers_provider=None,
+    paper_advisor=None,
     downloader=None,
     extra_handlers: dict[str, Any] | None = None,
     advisor=None,
@@ -179,6 +207,7 @@ def create_app(
         settings,
         book_providers=book_providers,
         papers_provider=papers_provider,
+        paper_advisor=paper_advisor,
         downloader=downloader,
         advisor=advisor,
         knowledge_repository=knowledge_repository,
@@ -233,6 +262,8 @@ def create_app(
             llm_query=settings.book_llm_query,
             llm_confirm=settings.book_llm_confirm,
             advisor_factory=_book_advisor,
+            # QED-068 B 步：kind=paper 书行按 arXiv ID 直取（来源实例归 Application.papers 持有并关闭）
+            paper_provider=app.papers.provider,
         )
 
     def _sweep_staging() -> None:
@@ -409,6 +440,90 @@ def create_app(
         progress(100, "完成")
         return {"course_id": course_id, "tutorials_found": len(tutorials)}
 
+    def _paper_recommend_handler(params: dict[str, Any], progress) -> dict[str, Any]:
+        """paper_recommend 后台任务：领域 + 配方 → 论文探索报告落 `qt_selections`（QED-068 B 步）。
+
+        端点已完成参数与领域校验；此处重建档案（领域行可能已更新），顾问按任务现建。
+        """
+        repo = _kn(app)
+        domain_id = str(params.get("domain_id", "")).strip()
+        recipe = str(params.get("recipe", "")).strip()
+        domain = repo.get_domain(domain_id)
+        if domain is None:
+            raise ValueError(f"领域不存在：{domain_id}")
+        progress(10, "装配探索档案")
+        profile = build_profile(
+            domain_id=domain_id,
+            name=domain.name,
+            description=domain.description or "",
+            recipe=recipe,
+            categories=tuple(str(item).strip() for item in (params.get("categories") or []) if str(item).strip()),
+        )
+        progress(30, "规划检索计划")
+        report = app.papers.recommend(
+            profile,
+            goal=str(params.get("goal", "") or ""),
+            top=int(params.get("top", 10)),
+            limit=int(params.get("limit", 10)),
+            years_limit=(None if params.get("years_limit") is None else int(params["years_limit"])),
+            domain_id=domain_id,
+            recipe=recipe,
+        )
+        progress(100, "报告已落库")
+        return {
+            "selection_id": report["selection_id"],
+            "status": report["status"],
+            "recommendations": report.get("recommendations") or [],
+            "assessment_count": len(report.get("assessments") or []),
+            "duplicates": report.get("duplicates") or {"same_content": [], "same_name": []},
+        }
+
+    def _paper_adopt_handler(params: dict[str, Any], progress) -> dict[str, Any]:
+        """paper_adopt 后台任务：逐条落位采纳 → `kind=paper` 书行（查重并联书库）。
+
+        裁决 5：采纳**不**自动下载——书行停在 candidate 态，下载由调用方显式发
+        `POST /books/{book_id}/fetch`（保持「模型不写资源事实、不自动下载」边界）。
+        """
+        repo = _kn(app)
+        selection_id = str(params.get("selection_id", "")).strip()
+        report = app.papers.get_selection(selection_id)
+        entries = {int(item["rank"]): item for item in report.get("assessments") or []}
+        legacy_downloaded = app.papers.selections.downloaded_arxiv_ids()
+        picks = params.get("picks") or []
+        adopted: list[dict[str, Any]] = []
+        for index, pick in enumerate(picks, 1):
+            rank = int(pick.get("rank", 0))
+            entry = entries.get(rank)
+            if entry is None:
+                raise ValueError(f"推荐序号不在报告中：{rank}")
+            candidate = entry.get("candidate") or {}
+            arxiv_id = str((candidate.get("identifiers") or {}).get("arxiv") or candidate.get("provider_id") or "")
+            progress(int(90 * index / max(1, len(picks))), f"采纳 {index}/{len(picks)}：{arxiv_id}")
+            if arxiv_id in legacy_downloaded:
+                hit = repo.find_paper_by_arxiv(arxiv_id)
+                adopted.append({
+                    "rank": rank, "arxiv_id": arxiv_id, "status": "duplicated",
+                    "book_id": hit.book_id if hit is not None else "",
+                    "reason": "报告已有直写下载留痕，不重复建行",
+                })
+                continue
+            year_raw = str(candidate.get("year") or "")
+            adopted.append({
+                "rank": rank,
+                **repo.adopt_paper(
+                    domain_id=str(pick.get("domain_id", "")),
+                    course_id=str(pick.get("course_id", "")),
+                    arxiv_id=arxiv_id,
+                    title=str(candidate.get("title", "")),
+                    authors=[str(item) for item in (candidate.get("authors") or [])],
+                    year=int(year_raw) if year_raw.isdigit() else None,
+                    page_url=str(candidate.get("page_url", "")),
+                    download_url=str(candidate.get("download_url", "")),
+                    language=str(candidate.get("language", "") or "en"),
+                ),
+            })
+        return {"selection_id": selection_id, "adopted": adopted}
+
     # extra_handlers 优先级高于内置 handler（测试可覆盖 domain_explore/course_explore）
     all_handlers = {
         "book_download": _book_download_handler,
@@ -416,6 +531,8 @@ def create_app(
         "domain_explore": _domain_explore_handler,
         "domain_explore_courses": _domain_explore_courses_handler,
         "course_explore": _course_explore_handler,
+        "paper_recommend": _paper_recommend_handler,
+        "paper_adopt": _paper_adopt_handler,
         **(extra_handlers or {}),
     }
     # REQ-032：TaskStore 使用 qt_tasks 数据库表
@@ -452,6 +569,7 @@ def create_app(
 
     fastapi_app = FastAPI(title="QED-Tracker", version=__version__, lifespan=lifespan)
     fastapi_app._manager = manager  # 暴露给测试
+    fastapi_app._application = app  # 暴露给测试（论文链注入断言用）
     fastapi_app.add_middleware(
         CORSMiddleware,
         allow_origins=list(FRONTEND_ORIGINS),
@@ -490,6 +608,141 @@ def create_app(
     ) -> list[dict[str, Any]]:
         candidates = app.papers.search(q, category=category, author=author, limit=limit)
         return [_candidate_dict(item) for item in candidates]
+
+    # ---------------- 论文探索服务化四端点（QED-068 B 步） ----------------
+    # 契约正本=docs/plans/2026-09-14-paper-pipeline-alignment.md「B 步设计节点」节 B-1。
+    # ⑤′：论文没有默认桶——domain_id 必填且须 qed_domain 已登记，缺失/不存在一律 422。
+
+    def _selection_summary(report: dict[str, Any]) -> dict[str, Any]:
+        model = report.get("model") if isinstance(report.get("model"), dict) else {}
+        scope = model.get("scope") if isinstance(model.get("scope"), dict) else {}
+        return {
+            "selection_id": str(report.get("selection_id", "")),
+            "domain_id": str(scope.get("domain_id") or ""),
+            "recipe": str(scope.get("recipe") or ""),
+            "status": str(report.get("status", "")),
+            "created_at": str(report.get("created_at", "")),
+            "recommendation_count": len(report.get("recommendations") or []),
+        }
+
+    def _paper_selection(selection_id: str) -> dict[str, Any]:
+        try:
+            return app.papers.get_selection(selection_id)
+        except (SelectionStoreError, ValueError) as exc:
+            raise api_error(404, "SELECTION_NOT_FOUND", f"论文选择报告不存在：{selection_id}") from exc
+
+    @fastapi_app.get("/api/v1/papers/selections")
+    def papers_selections(
+        domain_id: str = "",
+        recipe: str = "",
+        limit: int = Query(0, ge=0, le=500),
+    ) -> dict[str, Any]:
+        """报告摘要列表（created_at 倒序）；`domain_id`/`recipe` 为 AND 过滤，空值不过滤。"""
+        reports = app.papers.list_selections(domain_id=domain_id.strip(), recipe=recipe.strip())
+        if limit:
+            reports = reports[:limit]
+        return {"selections": [_selection_summary(item) for item in reports]}
+
+    @fastapi_app.get("/api/v1/papers/selections/{selection_id}")
+    def papers_selection_detail(selection_id: str) -> dict[str, Any]:
+        return _paper_selection(selection_id)
+
+    @fastapi_app.post("/api/v1/papers/recommend", status_code=202)
+    def papers_recommend(payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, str]:
+        """领域级论文探索：参数与档案可映射性在端点校验，检索/评分进后台任务。"""
+        repo = _kn(app)
+        domain_id = str(payload.get("domain_id", "")).strip()
+        if not domain_id:
+            raise api_error(422, "INVALID_PARAMS", "domain_id 必填（论文没有默认桶，须先登记领域）")
+        recipe = str(payload.get("recipe", "")).strip()
+        try:
+            defaults = recipe_defaults(recipe)
+        except ValueError as exc:
+            raise api_error(422, "INVALID_PARAMS", str(exc)) from exc
+        domain = repo.get_domain(domain_id)
+        if domain is None:
+            raise api_error(422, "INVALID_PARAMS", f"领域不存在：{domain_id}（论文没有默认桶）")
+        categories = [str(item).strip() for item in (payload.get("categories") or []) if str(item).strip()]
+        goal = str(payload.get("goal", "") or "")
+        try:
+            build_profile(
+                domain_id=domain_id, name=domain.name, description=domain.description or "",
+                recipe=recipe, categories=tuple(categories),
+            )
+            params = {
+                "domain_id": domain_id,
+                "recipe": recipe,
+                "goal": goal,
+                "categories": categories,
+                "top": int(payload.get("top", defaults["top"])),
+                "limit": int(payload.get("limit", defaults["limit"])),
+                "years_limit": (
+                    defaults["years_limit"] if payload.get("years_limit") is None
+                    else int(payload["years_limit"])
+                ),
+            }
+        except (TypeError, ValueError) as exc:
+            raise api_error(422, "INVALID_PARAMS", str(exc)) from exc
+        try:
+            record = manager.submit(
+                "paper_recommend", params,
+                dedup={"domain_id": domain_id, "recipe": recipe, "goal": goal},
+            )
+        except ActiveTaskExists as exc:
+            raise api_error(409, "TASK_ALREADY_RUNNING", str(exc)) from exc
+        return {"task_id": record.task_id}
+
+    @fastapi_app.post("/api/v1/papers/selections/{selection_id}/adopt", status_code=202)
+    def papers_adopt(selection_id: str, payload: dict[str, Any] = _EMPTY_BODY) -> dict[str, str]:
+        """逐条落位采纳：建 `kind=paper` 书行（裁决 5＝不自动链式下载）。
+
+        全部校验（报告存在、序号在 `recommendations` 内、落位领域/课程）都在 submit 之前，
+        失败不产生任务，也不产生任何盘写。
+        """
+        repo = _kn(app)
+        report = _paper_selection(selection_id)
+        picks = payload.get("picks")
+        if not isinstance(picks, list) or not picks:
+            raise api_error(422, "INVALID_PARAMS", "picks 必须是非空数组（[{rank, domain_id, course_id}]）")
+        recommended = set()
+        for rank in (report.get("recommendations") or []):
+            try:
+                recommended.add(int(rank))
+            except (TypeError, ValueError):
+                continue
+        normalized: list[dict[str, str]] = []
+        for index, pick in enumerate(picks, 1):
+            if not isinstance(pick, dict):
+                raise api_error(422, "INVALID_PARAMS", f"picks[{index}] 必须为对象")
+            try:
+                rank = int(pick.get("rank", 0))
+            except (TypeError, ValueError):
+                raise api_error(422, "INVALID_PARAMS", f"picks[{index}].rank 必须为整数") from None
+            if rank not in recommended:
+                raise api_error(422, "INVALID_PARAMS", f"picks[{index}].rank 不在推荐内：{rank}")
+            landing_domain = str(pick.get("domain_id", "")).strip()
+            if not landing_domain:
+                raise api_error(422, "INVALID_PARAMS", f"picks[{index}].domain_id 必填（论文没有默认桶）")
+            if repo.get_domain(landing_domain) is None:
+                raise api_error(422, "INVALID_PARAMS", f"落位领域不存在：{landing_domain}")
+            course_id = str(pick.get("course_id", "")).strip()
+            if course_id:
+                course = repo.get_course(course_id)
+                if course is None:
+                    raise api_error(422, "INVALID_PARAMS", f"落位课程不存在：{course_id}")
+                if course.domain_id != landing_domain:
+                    raise api_error(
+                        422, "INVALID_PARAMS", f"课程 {course_id} 不属于领域 {landing_domain}"
+                    )
+            normalized.append({"rank": rank, "domain_id": landing_domain, "course_id": course_id})
+        try:
+            record = manager.submit(
+                "paper_adopt", {"selection_id": selection_id, "picks": normalized},
+                dedup={"selection_id": selection_id},
+            )
+        except ActiveTaskExists as exc:
+            raise api_error(409, "TASK_ALREADY_RUNNING", str(exc)) from exc
+        return {"task_id": record.task_id, "selection_id": selection_id}
 
     @fastapi_app.get("/api/v1/catalogs")
     def catalogs() -> list[dict[str, str]]:
@@ -1135,6 +1388,21 @@ def create_app(
         except KeyError:
             raise api_error(404, "KNOWLEDGE_NOT_FOUND", f"教程不存在：{knowledge_id}") from None
         return {"ok": "true"}
+
+    @fastapi_app.get("/api/v1/books")
+    def books_list(kind: str = "", domain_id: str = "", course_id: str = "") -> list[dict[str, Any]]:
+        """书库枚举（QED-068 A 步）：读 qt_books，无参数=全量，kind/domain_id/course_id AND 过滤。
+
+        每行为 to_dict() 全列（含 kind 与 course_id＝消费侧分桶唯一依据）；无命中返回空数组。
+        与 GET /books/search（来源适配器搜索、不读库）不同。
+        """
+        if kind and kind not in {item.value for item in BookKind}:
+            raise api_error(422, "INVALID_PARAMS",
+                            f"kind 值域错误（{'/'.join(item.value for item in BookKind)}）：{kind}")
+        rows = _kn(app).list_books(
+            kind=kind or None, domain_id=domain_id or None, course_id=course_id or None
+        )
+        return [row.to_dict() for row in rows]
 
     @fastapi_app.post("/api/v1/books", status_code=201)
     def create_book(payload: dict[str, Any]) -> dict[str, Any]:

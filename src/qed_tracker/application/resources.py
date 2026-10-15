@@ -14,7 +14,7 @@ import os
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from qed_tracker.downloader import DownloadedFile, DownloadError, DownloadManager, safe_filename
 from qed_tracker.inventory import downloads_tmp_dir
@@ -23,6 +23,20 @@ from qed_tracker.models import Candidate, ResourceKind, ResourceRecord
 if TYPE_CHECKING:
     from qed_tracker.db.knowledge_repository import KnowledgeRepository
     from qed_tracker.db.models import QtBook
+
+
+def _identity_entry(row: QtBook) -> dict[str, Any]:
+    """qt_books 行 → 查重双报条目（两桶键集合一致的只读摘要）。"""
+    return {
+        "book_id": row.book_id,
+        "title": row.title,
+        "kind": row.kind or "",
+        "status": row.status,
+        "file_path": row.file_path or "",
+        "sha256": row.sha256 or "",
+        "size_bytes": row.size_bytes,
+        "page_count": row.page_count,
+    }
 
 
 class ResourceService:
@@ -162,6 +176,32 @@ class ResourceService:
             },
             roles=list(row.roles or []),
         )
+
+    def duplicate_check(
+        self, *, sha256: str, title: str, exclude_book_id: str = ""
+    ) -> dict[str, list[dict[str, Any]]]:
+        """查重双报（QED-068 C 步 / 068-4）：只读清单，不写行、不删文件、不改状态。
+
+        `same_content`＝SHA-256 命中他行（复用与否由登记原语按 D17/kind 决定，本方法只报）；
+        `same_name`＝标题 `casefold` 命中他行且内容身份不同。两桶处置均**不自动覆盖**，
+        冲突清单交人工裁决（契约见 docs/design/download-pipeline.md「查重双报」节）。
+        DB 未配置（`books=None`）时两桶恒空——双报不是落盘前置条件。
+        """
+        buckets: dict[str, list[dict[str, Any]]] = {"same_content": [], "same_name": []}
+        if self.books is None:
+            return buckets
+        if sha256:
+            hit = self.books.find_owned_by_sha256(sha256)
+            if hit is not None and hit.book_id != exclude_book_id:
+                buckets["same_content"].append(_identity_entry(hit))
+        folded = (title or "").strip()
+        if folded:
+            excluded = (exclude_book_id,) if exclude_book_id else ()
+            for row in self.books.find_owned_by_titles((folded,), exclude_book_ids=excluded):
+                if (row.sha256 or "") == sha256:
+                    continue
+                buckets["same_name"].append(_identity_entry(row))
+        return buckets
 
     def _build_record(
         self,

@@ -34,13 +34,17 @@ python scripts/qed_tracker_service.py stop
 qed-tracker books get "Munkres Topology"
 qed-tracker books get "Munkres Topology" --pick 1
 
-# 搜索或按 ID 下载 arXiv 论文
+# 搜索或按 ID 下载 arXiv 论文（落盘须显式 --domain，论文没有默认桶）
 qed-tracker papers search "Sobolev inequality" --category math.AP --limit 10
-qed-tracker papers get 2401.00001
+qed-tracker papers get 2401.00001 --domain math-advanced
 
-# 根据目标生成推荐报告；模型不会自动下载
-qed-tracker papers recommend "可靠的 RAG 评测方法" --profile llm-engineering --top 5
-qed-tracker papers selections download <selection-id> --pick 1
+# 领域级论文探索：生成推荐报告（经 8901）；模型不会自动下载
+qed-tracker papers recommend "可靠的 RAG 评测方法" --domain math-advanced --recipe frontier --top 5
+qed-tracker papers selections list --domain math-advanced
+# 采纳报告推荐 → 逐条落位为 kind=paper 书行（不触发下载）
+qed-tracker papers selections adopt <selection-id> --pick 1 --domain math-advanced
+# 论文下载唯一路径＝书行 fetch（五阶段链，含 arXiv ID 直取与内容校验）
+qed-tracker books fetch <book_id>
 
 # 查看与校验 DB 书目（qt_books 内容身份三列 vs 磁盘重算）
 qed-tracker inventory list

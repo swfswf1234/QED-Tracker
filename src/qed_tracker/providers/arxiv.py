@@ -74,7 +74,8 @@ class ArxivProvider:
 
     @staticmethod
     def _candidate(item) -> Candidate:
-        arxiv_id = item.entry_id.rsplit("/", 1)[-1]
+        # QED-068-3（S2）：只剥尾部版本号（v\d+$），去重/查重口径统一为无版本 ID。
+        arxiv_id = re.sub(r"v\d+$", "", item.entry_id.rsplit("/", 1)[-1])
         return Candidate(
             provider="arxiv",
             provider_id=arxiv_id,

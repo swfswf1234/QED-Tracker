@@ -3,7 +3,7 @@
 设计状态：Accepted
 确认状态：已确认
 实现状态：Implemented
-最后更新：2026-09-11
+最后更新：2026-10-15
 关联代码：`src/qed_tracker/api/main.py`、`src/qed_tracker/api/tasks.py`
 关联测试：`tests/test_api.py`、`tests/test_knowledge_api.py`、`tests/test_book_api.py`、`tests/test_knowledge_import.py`、`tests/test_prompt_lab_api.py`、`tests/test_book_fetch.py`、`tests/test_exploration_stage.py`
 关联 ADR：[ADR 0001](../adr/0001-tracker-service-architecture.md)
@@ -32,7 +32,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | ② 领域与课程 | 共享表维护（领域/课程 CRUD + 手动导入，双轨[手动]）+ 探索阶段确认端点 + 课程体系与领域详情只读 | 12 |
 | ③ 探索评估与采纳 | 探索 dry-run（双轨[自动]）+ 课程知识采纳 + 探索审阅与重探（REQ-067-B12） | 7 |
 | ④ 教程 | 教程查询/定稿迁移（draft→confirmed 两态）+ 教程级批量取书 | 4 |
-| ⑤ 书籍与渠道 | 书库化创建 + 登记导入 + 渠道留痕 + 书级自动取书（双轨[自动]） | 6 |
+| ⑤ 书籍与渠道 | 书库枚举（kind/domain_id/course_id 过滤）+ 书库化创建 + 登记导入 + 渠道留痕 + 书级自动取书（双轨[自动]） | 7 |
 
 只读查询同步返回；写操作提交后台任务（`qt_tasks` 表落盘，并发上限 2，同类型 dedup 查重）
 或执行轻量状态迁移（同步）。
@@ -55,6 +55,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | `GET /api/v1/domains/{id}` | 只读 | 同步 | - | 领域详情（已生成态优先回 domains.json） |
 | `GET /api/v1/knowledge` | 只读 | 同步 | - | 教程列表 |
 | `GET /api/v1/knowledge/{id}` | 只读 | 同步 | - | 教程详情 |
+| `GET /api/v1/books` | 只读 | 同步 | - | 书库枚举（kind/domain_id/course_id 过滤） |
 | `GET /api/v1/books/{id}/sources` | 只读 | 同步 | - | 书籍渠道列表 |
 | `POST /api/v1/domains` | 双轨[手动] | 同步 | - | 创建领域 |
 | `PATCH /api/v1/domains/{id}` | 双轨[手动] | 同步 | - | 更新领域 |
@@ -87,6 +88,10 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | `POST /api/v1/books/{id}/cancel` | 双轨[手动] | 同步 | - | 取消下载（downloading→decided，仅 downloading 可取消） |
 | `GET /api/v1/books/search` | 非主线 | 同步 | - | 教材候选搜索 |
 | `GET /api/v1/papers/search` | 非主线 | 同步 | - | 论文候选搜索 |
+| `GET /api/v1/papers/selections` | 只读 | 同步 | - | 论文选择报告列表（按 domain_id/recipe 过滤） |
+| `GET /api/v1/papers/selections/{id}` | 只读 | 同步 | - | 论文选择报告详情（评分理由唯一存放处） |
+| `POST /api/v1/papers/recommend` | 双轨[自动] | 202 异步 | Yes | 领域级论文探索（paper_recommend；recipe→arXiv 分类映射） |
+| `POST /api/v1/papers/selections/{id}/adopt` | 双轨[手动] | 202 异步 | - | 报告推荐逐条落位为 `kind=paper` 书行（paper_adopt；不触发下载） |
 | `GET /api/v1/catalogs` | 非主线 | 同步 | - | 目录列表 |
 | `GET /api/v1/catalogs/{id}` | 非主线 | 同步 | - | 目录详情 |
 | `GET /api/v1/domains` | 非主线 | 同步 | - | 领域列表（扁平） |
@@ -783,6 +788,33 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   优先级（priority）属运营维护语义，见[数据库专用表设计](database-private-tables.md)
   qt_books 节。
 
+### `GET /api/v1/books`
+
+- **描述：** 书库枚举（读 `qt_books`）：无参数=域级书库全量；可选按 `kind`/`domain_id`/
+  `course_id` 过滤（多参数 AND）。论文展示行的上游数据面（QED-068 A 步）。
+- **输入：** 查询参数：
+
+  | 字段 | 类型 | 必填 | 说明 |
+  |---|---|---|---|
+  | kind | string | 否 | `book`（教材/习题集/题解等书本，默认值）\| `paper`（发现论文，068-6b 书本化采纳）；非法值 422 |
+  | domain_id | string | 否 | 所属领域标识（精确匹配） |
+  | course_id | string | 否 | 落位课程标识（精确匹配；领域级行 `course_id=''` 不命中非空过滤） |
+
+- **输出：** 200 书行数组，每行为 `QtBook.to_dict()` 全列（**含 `kind` 与 `course_id`**——
+  消费侧分桶的唯一依据），按 `created_at` 升序；无命中返回空数组（非 404）。
+- **范例：**
+  ```json
+  [{"book_id": "math-b01", "title": "Attention Is All You Need", "kind": "paper",
+    "domain_id": "math", "course_id": "", "status": "candidate", "holding": "missing",
+    "year": 2017, "roles": [], "file_path": null, "sha256": null}]
+  ```
+- **解释：** 与 `GET /api/v1/books/search`（教材候选搜索，直连来源适配器、**不读库**）不同，
+  本端点只读 `qt_books`。上游消费面=根仓 8900 `GET /api/v1/papers/books` 纯透传
+  （根 ADR 0007：前端只连 8900）→ 8903 领域/课程「前沿/核心论文」展示行；
+  `kind=paper` 行由论文探索 `adopt` 建（068-6b，B 步），A 步落地时库内暂无 paper 行属正常。
+  教程归属仍由 `qt_knowledge` 的 refs 数组承载（`qt_books` 无 `knowledge_id` 列），
+  故 `kind=paper` 即发现论文，与教程附属资料不混列。
+
 ### `GET /api/v1/books/{book_id}/sources`
 
 - **描述：** 书籍的渠道列表。
@@ -872,8 +904,8 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
   下载[候选级预算] → staging 机器验收 → mark_owned 登记），提交后台任务。
 - **输入：** 路径参数 `book_id`；无 body。
 - **输出：** 202 `{"task_id": "...", "book_id": "..."}`；任务 result：
-  `{"ok", "book_id", "skipped", "reason"?, "file_path"?}`；404 `BOOK_NOT_FOUND`；
-  409 `BOOK_RETIRED`（retired 书不可取）/ `TASK_ALREADY_RUNNING`（同书已有活动任务）。
+  `{"ok", "book_id", "skipped", "reason"?, "file_path"?, "duplicates"?}`；404 `BOOK_NOT_FOUND`。
+  409 `BOOK_RETIRED`（retired 书不可取）/ `TASK_ALREADY_RUNNING`（同书已有活动任务）；`duplicates`＝查重双报两桶清单 `{same_content[], same_name[]}`，契约见[下载管线设计](../design/download-pipeline.md)「查重双报」节；`kind=paper` 分叉同构。
 - **范例：**
   ```json
   // 响应 202
@@ -924,6 +956,43 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 - **输出：** 200 书行全列；404 `BOOK_NOT_FOUND`；409 非法迁移（仅 `downloading` 可 cancel）。
 - **解释：** 用于解除卡死的 `downloading`，使书可重新取书；不删除已落盘文件。
 
+## ⑥ 论文探索
+
+论文链是**独立于领域书籍的主动探索触发**：一轮「检索→评分→报告→采纳→书行 fetch」。
+评分与检索计划由模型产出（落 `qt_selections`，可审阅），**模型不写资源事实、不自动下载**；
+下载只有一条路＝`POST /api/v1/books/{book_id}/fetch`（⑤组，`kind=paper` 书行走 arXiv ID 直取）。
+落位口径（QED-068 B 步，契约正本见[论文发现设计](../design/paper-discovery.md)）：
+`domain_id` 必填且须 `qed_domain` 已登记（**论文没有默认桶**）；`course_id` 非空时须属于该领域，
+只是逻辑分组，物理仍落 `raw/<domain>/_general/papers/<year>/<arxiv_id>_<sha8>.pdf`。
+
+### `GET /api/v1/papers/selections`
+
+- **描述：** 论文选择报告摘要列表（`created_at` 倒序），供「论文探索」界面与 CLI 列举历史轮次。
+- **输入：** query `domain_id`（默认空）、`recipe`（`frontier`/`core`，默认空）、`limit`（0-500，0=全量）；`domain_id`/`recipe` 为 AND 过滤，空值不过滤。
+- **输出：** 200 `{"selections": [{"selection_id", "domain_id", "recipe", "status", "created_at", "recommendation_count"}]}`；`domain_id`/`recipe` 取自报告 `model.scope`（零表结构改动）。
+- **解释：** 只回摘要不回评分明细；明细走单条详情端点，避免列表响应体膨胀。
+
+### `GET /api/v1/papers/selections/{selection_id}`
+
+- **描述：** 单份选择报告全文（含 `search_plan`/`plan_coverage`/`duplicates`/`assessments`/`recommendations`/`model` 审计）。
+- **输入：** 路径参数 `selection_id`。
+- **输出：** 200 报告原文；404 `SELECTION_NOT_FOUND`。
+- **解释：** 评分理由**只存于此报告**（裁决 3）：书行 `notes` 不承载模型判断，采纳不复制理由进 `qt_books`。`recommendations` 是**名次表**（形如 `[1,2,3,4,5]`，不是 `candidates` 下标）；`rank → 论文` 一律以 `assessments[].rank` 所携带的 `candidate` 为准（`adopt` 落位与 `duplicates` 两桶同此映射），按 `candidates[rank]` 解读会取错论文。
+
+### `POST /api/v1/papers/recommend`
+
+- **描述：** 领域级论文探索：装配档案 → 模型规划检索计划 → arXiv 检索 → 逐条评分 → 报告落 `qt_selections`。
+- **输入：** body `{"domain_id"(必填), "recipe"(必填，`frontier`/`core`), "goal", "categories"[], "top", "limit", "years_limit"}`；`top`/`limit`/`years_limit` 缺省由配方决定（`recipe_defaults`），`years_limit=0` 表示不限年。
+- **输出：** 202 `{"task_id"}` → 轮询 `GET /api/v1/tasks/{task_id}`，成功结果 `{"selection_id", "status", "recommendations", "assessment_count", "duplicates"}`（`status`＝`ranked`/`no_recommendations`/`failed`）；409 `TASK_ALREADY_RUNNING`（dedup：`domain_id`+`recipe`+`goal`）；422 `domain_id` 缺失、领域不存在、`recipe` 非法、配方无 arXiv 分类映射（须显式给 `categories`）。
+- **解释：** `recipe`→arXiv 分类映射在 `paper_recipes.py`（封闭值域）；映射不到即 422 而非静默降级，避免探索面被无关论文污染。参数校验全部在提交任务之前，失败不建任务、不盘写。
+
+### `POST /api/v1/papers/selections/{selection_id}/adopt`
+
+- **描述：** 把报告中的推荐逐条**落位**为 `kind=paper` 书行（写 `qt_books` + `qt_sources(channel=arxiv)` 内容身份）。
+- **输入：** 路径参数 `selection_id`；body `{"picks": [{"rank", "domain_id"(必填), "course_id"(可空)}]}`（非空数组，`rank` 须在报告 `recommendations` 内，名次→论文取法见详情端点的 `assessments[].rank` 映射口径）。
+- **输出：** 202 `{"task_id", "selection_id"}` → 任务结果 `{"adopted": [{"rank", "arxiv_id", "status", "book_id", "reason"}]}`，`status`＝`created`/`duplicated`；404 `SELECTION_NOT_FOUND`；409 `TASK_ALREADY_RUNNING`（dedup：`selection_id`）；422 `picks` 空/非对象、`rank` 不在推荐内、落位领域不存在、课程不存在或不属于该领域。
+- **解释：** 采纳**不**自动链式下载（裁决 5）——书行停在 `candidate` 态，由调用方显式发 `POST /books/{book_id}/fetch`；查重与书库并联（同 arXiv ID 已有书行即 `duplicated`，历史直写留痕命中亦同），不重复建行；新行 `book_id`＝领域缩写 + 域内 `-bNN`（max+1）。
+
 ## 错误码
 
 | 状态码 | 含义 |
@@ -932,7 +1001,7 @@ QED-Tracker 通过 FastAPI 提供 HTTP 服务（默认端口 8901），前缀 `/
 | 201 | 资源创建成功 |
 | 202 | 任务已接受（后台执行） |
 | 400 | 请求格式错误（INVALID_PARAMS：校验失败/文件不可读/JSON 解析失败/PDF 校验失败/路径越界） |
-| 404 | 资源不存在（DOMAIN_NOT_FOUND / COURSE_NOT_FOUND，及教程/书籍/文件/目录/任务的 plain-detail 404） |
+| 404 | 资源不存在（DOMAIN_NOT_FOUND / COURSE_NOT_FOUND / SELECTION_NOT_FOUND，及教程/书籍/文件/目录/任务的 plain-detail 404） |
 | 409 | 冲突与守卫：DOMAIN_NAME_CONFLICT / COURSE_ALREADY_EXISTS / COURSE_HAS_KNOWLEDGE / DOMAIN_NOT_EMPTY / SET_NO_CONFLICT / BOOK_ALREADY_EXISTS / BOOK_RETIRED / NO_COURSE_REF / TASK_ALREADY_RUNNING / TARGET_CONFLICT / CONTENT_IDENTITY_CONFLICT / LLM_UNAVAILABLE / INVALID_TRANSITION（非法状态迁移）/ 数据库未配置 |
 | 422 | 参数校验失败（缺必填字段、格式错误、值域错误） |
 | 502 | 上游模型调用失败（管线错误码透传：LLM_UNAVAILABLE / BUDGET_EXHAUSTED 等） |

@@ -26,6 +26,11 @@ docs/design/download-pipeline.md（九项裁决）。
   LLM 判断不写资源事实。
 - 教程级批处理：refs 聚合书集（去重）→ 排除已 owned → 默认 textbook_ref+exercise_ref
   （include_parallel 显式纳入 parallel_ref）→ 单任务顺序逐书 → 部分失败不中断。
+- 论文分叉（QED-068 B 步）：`qt_books.kind='paper'` 不走「渠道 × 书名」检索——按
+  `qt_sources(channel='arxiv')` 的 arXiv ID 经 arXiv 来源解析 PDF 直链，其余（预算下载、staging
+  机器验收、promote 落盘、五层态迁移、内容身份三列）与教材共用本编排器；成品桶强制
+  `raw/<domain>/_general/papers/<year>/`（论文没有默认桶），内容校验按「ID 解析到的即匹配」
+  口径，不跑标题相似度。
 
 并发与隔离：每次 fetch 经 factory 新建独立 BookService（providers + downloader +
 books repo）与 advisor，结束即 close（中止超时候选遗留的孤儿下载线程连接）；staging
@@ -47,6 +52,7 @@ from qed_tracker.application.books import BookService
 from qed_tracker.application.resources import ResourceService
 from qed_tracker.config import Settings
 from qed_tracker.db.knowledge_repository import KnowledgeRepository, _refs_book_ids
+from qed_tracker.db.models import BookKind
 from qed_tracker.downloader import DownloadManager, accept_pdf, verify_content
 from qed_tracker.inventory import DEFAULT_DOMAIN_ID, raw_course_dir, raw_general_dir
 from qed_tracker.matching import _language, _similarity
@@ -56,6 +62,9 @@ from qed_tracker.providers.books import create_book_providers
 ProgressCallback = Callable[[int, str], None]
 
 logger = logging.getLogger("qed_tracker.book_fetch")
+
+PAPER_SOURCE_CHANNEL = "arxiv"
+"""论文书行的内容身份渠道（QED-068 B 步）：`qt_sources(channel='arxiv')` 的 provider_id 即 arXiv ID。"""
 
 
 class BookFetchError(RuntimeError):
@@ -84,6 +93,7 @@ def build_book_service(
         timeout=settings.timeout_seconds,
         retries=settings.retries,
         tls_verify=settings.tls_verify,
+        max_bytes=settings.max_download_bytes,
     )
     return BookService(providers, ResourceService(settings.data_root, downloader, books=books))
 
@@ -168,6 +178,7 @@ class BookFetchService:
         llm_query: bool = True,
         llm_confirm: bool = True,
         advisor_factory: Callable[[], object | None] | None = None,
+        paper_provider=None,
     ):
         self.repo = repo
         self.service_factory = service_factory
@@ -180,11 +191,16 @@ class BookFetchService:
         self.llm_query = llm_query
         self.llm_confirm = llm_confirm
         self.advisor_factory = advisor_factory
+        # kind=paper 分叉用的 arXiv 来源（只解析直链，不参与书名检索）；由调用方持有并关闭。
+        self.paper_provider = paper_provider
 
     # ---------------- 书级入口 ----------------
 
     def fetch(self, book_id: str, *, progress: ProgressCallback | None = None) -> dict:
-        """书级五阶段取书：已 owned → no-op；成功 → holding=owned + file_path。"""
+        """书级五阶段取书：已 owned → no-op；成功 → holding=owned + file_path。
+
+        `kind='paper'` 的行在状态检查与自动 decide 之后转 `_fetch_paper` 直取分叉。
+        """
         book = self.repo.get_book(book_id)
         if book is None:
             raise KeyError(f"书籍不存在：{book_id}")
@@ -213,6 +229,8 @@ class BookFetchService:
         state = _RoundState(book_id=book_id)
         try:
             report(5, f"取书：{book.title}")
+            if (book.kind or "") == BookKind.PAPER.value:
+                return self._fetch_paper(service, book, report)
             # 开始下载前设置状态：decided → downloading
             self.repo.start_download(book_id)
             outcome, found_any = self._round(service, advisor, book, expectation, _hardcoded_queries(expectation), state, report)
@@ -263,6 +281,61 @@ class BookFetchService:
             service.close()
             if advisor is not None and hasattr(advisor, "close"):
                 advisor.close()
+
+    def _fetch_paper(self, service: BookService, book, report: ProgressCallback) -> dict:
+        """`kind=paper` 直取分叉（QED-068 B 步 B-6 B 案）：arXiv 内容身份 → 直链 → 同一登记链。
+
+        论文的标识是 arXiv ID，走书名多渠道检索等于拿论文标题去图书渠道碰运气；本分支只把
+        「检索+确认」两段换成「按 ID 解析直链」，预算下载、staging 机器验收、promote 落盘、
+        五层态迁移与内容身份登记全部复用书本链（用户裁决 1）。调用方状态检查与自动 decide
+        已在 `fetch()` 完成，此处只负责 decided → downloading → downloaded/failed。
+        """
+        provider = self.paper_provider
+        if provider is None:
+            raise ValueError(f"论文取书需要 arXiv 来源（paper_provider 未注入）：{book.book_id}")
+        identity = next(
+            (item for item in self.repo.list_sources(book.book_id)
+             if item.channel == PAPER_SOURCE_CHANNEL and (item.provider_id or "").strip()),
+            None,
+        )
+        if identity is None:
+            raise ValueError(f"论文书行缺少 arXiv 内容身份（qt_sources channel={PAPER_SOURCE_CHANNEL}）：{book.book_id}")
+        arxiv_id = identity.provider_id.strip()
+        report(15, f"解析 arXiv 直链：{arxiv_id}")
+        candidate = provider.get(arxiv_id)
+        if not candidate.download_url:
+            raise ValueError(f"arXiv 未给出 PDF 直链：{arxiv_id}")
+        destination = self._destination_dir(book)
+        self.repo.start_download(book.book_id)
+        report(40, f"下载尝试：arxiv - {candidate.title or arxiv_id}")
+        record, failure, _note = self._download_with_budget(
+            service, candidate, destination_dir=destination, resolved=candidate, kind=ResourceKind.PAPER,
+        )
+        if record is None:
+            self.repo.add_source(book.book_id, channel=PAPER_SOURCE_CHANNEL, provider_id=arxiv_id,
+                                 page_url=candidate.page_url, download_url=candidate.download_url,
+                                 ok=False, note=failure)
+            self.repo.fail_download(book.book_id)
+            raise BookFetchError(f"论文取书失败：{arxiv_id}（{failure}）")
+        self.repo.add_source(book.book_id, channel=PAPER_SOURCE_CHANNEL, provider_id=arxiv_id,
+                             page_url=candidate.page_url, download_url=candidate.download_url, ok=True,
+                             note=f"{record.resource_id}")
+        self.repo.mark_owned(book.book_id, file_path=record.file["relative_path"], status="downloaded")
+        identity_note = self._record_content_identity(book.book_id, record)
+        report(95, f"下载完成：{record.file['relative_path']}")
+        return {
+            "ok": True,
+            "book_id": book.book_id,
+            "skipped": False,
+            "file_path": record.file["relative_path"],
+            "resource_id": record.resource_id,
+            "identity": identity_note,
+            "attempts": [{"provider": PAPER_SOURCE_CHANNEL, "title": candidate.title,
+                          "ok": True, "note": record.resource_id}],
+            "provider_failures": [],
+            "manual_guidance": [],
+            "duplicates": self._duplicates(service, record, book),
+        }
 
     # ---------------- 教程级入口 ----------------
 
@@ -404,6 +477,7 @@ class BookFetchService:
                         "attempts": state.attempts,
                         "provider_failures": state.provider_failures,
                         "manual_guidance": state.guidance,
+                        "duplicates": self._duplicates(service, record, book),
                     }, True
         return None, found_any
 
@@ -445,6 +519,18 @@ class BookFetchService:
             )
         return verdicts
 
+    def _duplicates(self, service: BookService, record, book) -> dict:
+        """提交面查重双报（QED-068 C 步）：登记完成后的只读清单，不影响本次登记结果。
+
+        标题取书行登记标题（不是候选标题）——冲突对象是「这本书的其它副本」；两桶均不改动
+        既有行与既有文件（download-pipeline.md「查重双报」节）。
+        """
+        return service.resources.duplicate_check(
+            sha256=record.file.get("sha256") or "",
+            title=book.title or "",
+            exclude_book_id=book.book_id,
+        )
+
     def _propose_variants(self, advisor, expectation: BookExpectation) -> tuple[list[str], str]:
         """书级 LLM 检索词变体兜底（一次）；失败返回空表 + 说明（转人工指引，不阻塞）。"""
         try:
@@ -456,10 +542,14 @@ class BookFetchService:
 
     def _download_with_budget(self, service: BookService, candidate: Candidate, *,
                               destination_dir: Path,
-                              expected_titles: list[str] | None = None) -> tuple[object | None, str, str]:
+                              expected_titles: list[str] | None = None,
+                              resolved: Candidate | None = None,
+                              kind: ResourceKind = ResourceKind.BOOK) -> tuple[object | None, str, str]:
         """resolve → 预检 → 候选级预算下载 → staging 机器验收 → 内容校验 → promote 落盘登记。
 
         预算覆盖 resolve→开始稳定下载；首个 chunk 写入 .part 即释放（允许跑完）。
+        `resolved` 传入已解析直链（论文分叉：来源给出 pdf_url，不经图书渠道 resolve）；
+        `kind` 决定成品登记语义（论文=ResourceKind.PAPER）。
         返回 (record, 失败原因, 内容校验 note)；成功时失败原因为空，失败时 note 为空。
         """
         started = threading.Event()
@@ -467,12 +557,12 @@ class BookFetchService:
         tag = uuid.uuid4().hex[:8]
 
         def _work():
-            resolved = service.resolve(candidate)
-            if not resolved.download_url:
+            target = resolved if resolved is not None else service.resolve(candidate)
+            if not target.download_url:
                 raise ValueError("resolve 无直链（IA 无公开 PDF / GB 无 downloadLink）")
-            if resolved.size_bytes is not None and resolved.size_bytes < self.min_size_bytes:
-                raise ValueError(f"大小预检：resolve 声明 {resolved.size_bytes}B < 下限 {self.min_size_bytes}B")
-            return service.resources.stage_download(resolved, staging_tag=tag, on_start=started.set)
+            if target.size_bytes is not None and target.size_bytes < self.min_size_bytes:
+                raise ValueError(f"大小预检：resolve 声明 {target.size_bytes}B < 下限 {self.min_size_bytes}B")
+            return service.resources.stage_download(target, staging_tag=tag, on_start=started.set)
 
         try:
             future = executor.submit(_work)
@@ -503,7 +593,7 @@ class BookFetchService:
                 content_note = f"；内容校验警告 score={content_check.score:.2f}（标题不匹配）"
                 logger.info("内容校验警告（%s）：%s", candidate.title, content_check.message)
         record = service.resources.promote_staged(
-            staged, candidate, kind=ResourceKind.BOOK,
+            staged, candidate, kind=kind,
             destination_dir=destination_dir,
         )
         return record, "", content_note
@@ -515,12 +605,22 @@ class BookFetchService:
 
         QED-060：`domain_id` 取书籍真实领域（`QtBook.domain_id`），不得回落默认 `math`；
         为空时才用 `DEFAULT_DOMAIN_ID` 兜底。
+        QED-068 B-7/⑤′：论文强制领域通用桶 + 年层 `papers/<year>/`（与 `PaperService.download`
+        同目录），课程落位只是逻辑分组不改物理路径，且**没有**默认桶回落——领域缺失即拒绝落盘。
         """
+        domain_id = (book.domain_id or "").strip()
+        if (book.kind or "") == BookKind.PAPER.value:
+            if not domain_id:
+                raise ValueError(f"论文落盘需要领域（论文没有默认桶）：{book.book_id}")
+            return (
+                raw_general_dir(self.data_root, domain_id=domain_id)
+                / "papers" / (str(book.year) if book.year else "unknown")
+            )
+        bucket = domain_id or DEFAULT_DOMAIN_ID
         course_id = self.repo.first_course_for_book(book.book_id)
-        domain_id = (book.domain_id or "").strip() or DEFAULT_DOMAIN_ID
         if course_id:
-            return raw_course_dir(self.data_root, course_id, domain_id=domain_id)
-        return raw_general_dir(self.data_root, domain_id=domain_id)
+            return raw_course_dir(self.data_root, course_id, domain_id=bucket)
+        return raw_general_dir(self.data_root, domain_id=bucket)
 
     @staticmethod
     def _guidance(candidate: Candidate) -> dict:

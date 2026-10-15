@@ -145,7 +145,7 @@
 | W-5 | 命名与文档同步面清点：`Bailian*` → 本地命名的改名范围、`AGENTS.md` 强制约束句改写、三处 `design/` 描述、`code-map.md`、测试文件名 | 同步清单（供评审） | 待开始 |
 | W-6 | `docs/guides/` 新增本地模型能力与运维说明（用户点名：优化手段、模型能力、pipeline 设计） | 指南文档（W-0~W-3 数据齐备后写） | 待开始 |
 | W-7 | 根侧请求提交：`task/step` 透传 REQ（P-4）；registry `context` 参数与 19000 口径对齐 | 根仓 REQ 文本，交用户执行 | 待开始 |
-| W-8 | prompt 集中注册表收口（D-7 裁决）：内联 prompt 入册、`book-eval` 与论文模型面删除、骨架合一、孤儿守护测试、七处文档同步 | 注册表唯一事实源 + 守护测试绿 | **进行中（步骤 1~3 已交付 2026-09-29；步骤 4 落地后当日回退，改由 QED-074 W-2 承接「迁入注册表」，待用户「开始执行」；步骤 5~7 未开始）** |
+| W-8 | prompt 集中注册表收口（D-7 裁决）：内联 prompt 入册、`book-eval` 与论文模型面删除、骨架合一、孤儿守护测试、七处文档同步 | 注册表唯一事实源 + 守护测试绿 | **进行中（步骤 1~3 已交付 2026-09-29；步骤 4 落地后当日回退，改由 QED-074 W-2 承接并于 **2026-09-30 交付**（证据见该计划 7.3）；**步骤 5 前提受阻待裁（Q72-g：验收件 BUG-002 的红已进 HEAD）**；步骤 6~7 未开始）** |
 
 ## 验证与验收
 
@@ -239,9 +239,15 @@
 3. 迁 `book-query/variants@v1`、`book-confirm/assess@v1`、`mainline-prefill/prefill@v1` 入注册表
    ——**文案零改动、版本号不动**，`qed_llm_calls.prompt_template` 历史留痕仍可比对。
 4. ~~删 `bailian.py` 论文模型面（两条 prompt 及其 `plan`/`assess`）~~ **取消（2026-09-29 QED-074 改判）**：
-   两条 prompt 改为迁入注册表，空窗取消、Q72-f 随之作废；本步落地移交 QED-074 W-2（待「开始执行」）。
-5. 纳入 agentic 三条；只搬文案与模板编号，**不合并并行会话的未提交逻辑改动**，以其自带
+   两条 prompt 改为迁入注册表，空窗取消、Q72-f 随之作废；本步落地移交 QED-074 W-2（2026-09-30 用户裁决：Q74-b＝迁入保持 `@v1`，`@v2` 升代归 068-S3；Q74-f＝由本窗口执行）；**2026-09-30 已交付**（两条在册 `@v1`、出站载荷 IDENTICAL、豁免清单减至 3 条，证据见 QED-074 计划 7.3）。
+5. 纳入 agentic 三条；只搬文案与模板编号，~~不合并并行会话的未提交逻辑改动~~（该表述已过期，见下），以其自带
    `test_orchestration.py` 转绿为准；同期若对方在改同一文件则以对方为准、本步回退。
+   **2026-09-30 复核：本步前提受阻，待裁（Q72-g）**——两点实况变化：
+   - 验收前提当前不成立：`tests/test_orchestration.py::test_evidence_packer_trims_deterministically_and_records_budget_omissions` 已随并发会话提交 `94c95f2` **进入 HEAD 并保持红**（台账 BUG-002，2026-09-26 登记「本会话不代改」）。单跑实况 `assert ['wiki-01'] == ['wiki-01', 'mit-01']`（`tests/test_orchestration.py:244`，180 token 预算下 packer 少保一条源）；`git status` 对 `tests/test_orchestration.py` 与 `src/qed_tracker/orchestration/` 均为空，即红完全活在 HEAD，与 `prompt_lab`/`providers` 零交集（QED-074 W-2 交付前后同红）。
+   - 「对方未提交 WIP」表述已过期：`src/qed_tracker/orchestration/`（三条 agentic 编号所在 `pipeline.py` 与 `runner.py`）现已全部在册，本步不再是「合并对方未提交改动」，而是**对 HEAD 在册文件的常规改造**，同步义务回到本任务自身。
+   两种处置待用户裁：
+   - **甲（先修红再纳入）**：BUG-002 由编排线（QED-067 窗口）先定性并修复——判 packer 行为正确还是测试期望过期——本步在其转绿后执行，验收口径不变；代价是本步继续排队。
+   - **乙（解耦推进）**：本步验收改为「`tests/test_orchestration.py` 的失败集合不新增，且三条 agentic 编号入册后由其自带用例证明 messages/validator 等价」，BUG-002 留给编排线自行收口；代价是全量门禁长期带一条已知红，「完成门禁全绿」须逐项举证归因（本轮 W-2 已按此口径交付）。
 6. 文档同步面：`design/exploration-pipeline.md`（注册表口径 + 清单）、`design/paper-discovery.md`
    （模型面空窗口径）、`architecture/code-map.md`、`architecture/database-shared-tables.md:348-350`
    模板清单、`design/main-line-curriculum.md:88`、`design/download-pipeline.md:213/243/363/365`。
@@ -315,6 +321,7 @@
 | Q72-d | 27B（registry `context=8192`）在本地链路里的位置 | 不用＝少一个退路；用＝窗口反而更小，与 D-5 冲突 |
 | Q72-e | `task/step` 留痕是否仍提根侧 REQ | 不提＝顺序只能靠 `prompt_template` + `id`；提＝根侧排期成本（067 已定 A 方案，本任务沿用） |
 | Q72-f | ~~W-8 步骤 4 删论文模型面后的空窗形态~~ **已作废（2026-09-29 用户裁决回退步骤 4）**：论文模型面不删、空窗取消 | 原两选项（A 连 `BailianPaperAdvisor` 类与测试删净 / B 保留类只摘 prompt 文案）随 QED-074 W-2「迁入注册表」不再需要 |
+| Q72-g | W-8 步骤 5 的验收前提（`test_orchestration.py` 转绿）当前不成立——BUG-002 的红已随 `94c95f2` 进 HEAD，该由谁修、何时修 | 甲＝先修红再纳入（口径不变，本步继续排队）；乙＝解耦推进（本步以「失败集合不新增」为准，代价是全量门禁长期带一条已知红）。两种都不改 BUG-002 归属：修复动作属编排线，本窗口不代改 |
 
 ## 关闭与归档
 

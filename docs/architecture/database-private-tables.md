@@ -3,7 +3,7 @@
 设计状态：Accepted
 实现状态：Implemented
 确认状态：已确认
-最后更新：2026-09-24
+最后更新：2026-10-15
 需求方：QED-Engine（根仓库 REQ-026/REQ-029/REQ-030；2026-08-16 用户裁决知识层次重构）
 关联代码：`src/qed_tracker/db/models.py`、`src/qed_tracker/db/schema.py`、`src/qed_tracker/db/knowledge_repository.py`、`src/qed_tracker/db/selection_repository.py`、`src/qed_tracker/db/tasks_repository.py`
 关联测试：`tests/test_db_models.py`、`tests/test_knowledge_repository.py`、`tests/test_knowledge_api.py`、`tests/test_schema.py`、`tests/test_schema_mysql_smoke.py`（实现轮同步更新）
@@ -35,9 +35,14 @@
 2. **缺指引检索的简介**：教材/习题集简介（用于指引后续候选检索）无处存放；
 3. **缺审计字段**：无 `created_by` / `updated_by`；
 4. **不承载论文/博客**：论文只落 `raw/<domain>/_general/papers/<year>/`（B 轮后岛退役，无 JSON 事实源），MySQL 无索引
-   （**现状注记 2026-09-24 QED-071**：此句是上方旧三表模型的历史缺口描述；五层模型当前论文
-   承载面仍为资源岛 JSON + `qt_selections.downloads` 派生，`qt_books.roles` 承载类型、无
-   `kind` 列；论文进 `qt_books` 的契约（下方「接口/契约影响」）**实现未落地，D2 待裁**）；
+   （**现状注记 2026-09-24 QED-071**：此句是上方旧三表模型的历史缺口描述，缺口当时成立。
+   **2026-10-01 QED-068 A 步**：D2 已由 QED-Engine 根用户 2026-09-30 改判为**书本化采纳**，
+   `qt_books` 加 `kind`/`course_id` 两列（`qed_test` 已 ALTER；生产 `qed` 库不 ALTER，走 1.0 收尾
+   重建），契约见「论文书本化列契约」节。
+   **2026-10-15 QED-068 B 步已交付**：adopt 建 `kind=paper` 书行与
+   `qt_sources(channel=arxiv)` 内容身份已落地，论文直写下载面退役；**本条缺口对论文不再成立**。
+   同日 D 步裁决：历史直写落盘的遗留 PDF 声明只读、不补登记不搬迁（登记见
+   `docs/history/baselines/2026-09-14-paper-pipeline-alignment.md`）；
    博客（课程延展资料）完全不在模型内；
 5. **粒度错位**：qt_selections 一条=一套书，「套」与「候选/决定/下载/验证」四段进度混杂，
    多卷教材靠 vols JSON 表达，下载与验收入口在 qt_downloads 跨表。
@@ -216,6 +221,8 @@ CREATE TABLE qt_books (
 | `priority` | 补书优先级（人工运营填写）：0=P0 最高；1=P1 中等；2=P2 低等；NULL=未定；索引 |
 | `notes` | 备注：候选比较 / 来源渠道 / 渠道探索信息 / 拆合去向等 |
 | `domain_id` | 所属领域标识（冗余列；按域查询书库用）；索引 |
+| `kind` | 书目类别：`book`=教材/习题集/题解等书本（默认，存量行全部为此值）；`paper`=发现论文（论文探索 adopt 产出，QED-068 068-6b）；索引。与 `roles` 正交（契约见「论文书本化列契约」节） |
+| `course_id` | 落位课程标识：空串=领域级（归属见 `domain_id`）；非空=落到该领域下课程（论文逻辑分组）；索引。教程归属**不**用本列（仍由 `qt_knowledge` refs 承载） |
 | `created_at` / `updated_at` | 创建时间 / 最后更新时间 |
 
 ### 设计要点
@@ -308,6 +315,53 @@ ALTER TABLE qt_books
 加法列自愈（磁盘仅缺列时拒绝重建并报错，照 `qed_llm_calls` 先例）**已裁 D13：不做**
 （需新 ADR 才能翻案），只登记「加列 = 手工迁移 + 备份」纪律。
 
+### 论文书本化列契约（QED-068 A 步：`kind` / `course_id`）
+
+> **状态：`qed_test` 已执行（2026-10-01）；生产 `qed` 库未动**——上线前须先执行本节完整
+> ALTER 再发布新模型（红线顺序同 B 轮）。
+
+承接两条裁决：① 本表 2026-08-16 裁决 7「论文/博客入书籍（`kind=paper/blog`）」（此前
+实现未落地、D2 待裁）；② QED-Engine 根用户 2026-09-30 改判——推翻 QED-071 D2/D14
+「发现论文不进 `qt_books`」，改为**书本化采纳**：论文探索显式 pick（adopt）产出
+`kind=paper` 书行，下载/校验/验收复用书本五层态链（QED-068 068-6b，实施序列见
+[论文链路整合计划](../history/baselines/2026-09-14-paper-pipeline-alignment.md)「链路复审与执行序列精简」节）。
+
+**目标 DDL**：
+
+```sql
+ALTER TABLE qt_books
+  ADD COLUMN kind      VARCHAR(16) NOT NULL DEFAULT 'book'
+    COMMENT '书目类别：book=教材/习题集/题解等书本；paper=发现论文（QED-068 068-6b 书本化采纳）',
+  ADD COLUMN course_id VARCHAR(64) NOT NULL DEFAULT ''
+    COMMENT '落位课程标识：空串=领域级（归属见 domain_id）；论文 pick 逐条落位（068-6b）',
+  ADD INDEX ix_qt_books_kind (kind),
+  ADD INDEX ix_qt_books_course_id (course_id);
+-- 存量行全部为书本：kind 取默认 'book'；course_id 取默认 ''（教材归属仍由 qt_knowledge
+-- 的 refs 数组承载，本列不回填、不参与教程归属判定）。
+```
+
+**值域与判定口径**：
+
+- `kind ∈ {book, paper}`（Python 侧 `BookKind` 枚举；`blog` 为裁决 7 预留值，本轮不实现、
+  不写入）；`kind` 与 `roles` 正交——`roles` 表达教材/习题/题解角色，`kind` 表达书目类别；
+- **发现论文 = `kind=paper`**；因本表无 `knowledge_id` 列（教程归属在 refs），`kind=paper`
+  即足以判定为论文探索产物，与教程附属资料不混列（根侧 8903 展示行按此分桶）；
+- **落位**：`domain_id` 必填（发起语境=领域），`course_id` 空串=领域级沉淀、非空=落到该
+  领域下课程（逻辑分组裁决：物理文件仍落领域级 `raw/<domain>/_general/papers/`，
+  课程归属纯逻辑，不开课程级 papers 目录）；
+- 论文行内容标识=arXiv ID，落 `qt_sources.provider_id`（渠道留痕）与去重查询面，
+  本表不新增标识列（B 步查重口径=书库标题/arXiv ID 命中）。
+
+**消费面**：`GET /api/v1/books?kind=paper&domain_id=&course_id=`（见
+[API 设计文档](api.md)）→ 根仓 8900 `GET /api/v1/papers/books` 纯透传 → 8903 领域/课程
+论文展示行。**响应行必须携带 `kind` 与 `course_id`**，否则消费侧无法分桶。
+
+**红线顺序（同 B 轮，防数据丢失）**：① `mysqldump` 备份 `qt_books` 进
+`<data_root>/backups/<日期>-qed068-paper-kind/` → ② 执行本节 ALTER → ③ 才改
+`src/qed_tracker/db/models.py` → ④ 启动验证 `ensure_schema` 返回 `(created, rebuilt) == (0, 0)`。
+`ensure_schema` 对列集漂移是 DROP+CREATE 全表重建（ADR 0006），先改模型后补 DDL 会在下次
+启动清空书库。全新库由模型建表（`Base.metadata.create_all`），天然含全部列。
+
 ### 在本项目中的作用
 
 - 域级书库与补书运营的事实源：五阶段取书（检索→确认→下载→staging 机器验收→登记）的
@@ -316,7 +370,8 @@ ALTER TABLE qt_books
 - 书级取书 `POST /books/{book_id}/fetch` 与教程级取书 `POST /knowledge/{knowledge_id}/fetch`
   的操作对象；人工导入 `POST /books/{book_id}/import`、原地登记 `POST /books/{book_id}/register`
   落 holding=owned 并回填 file_path。
-- 论文/博客也进本表（roles 承载类型），快照落盘统一链路。
+- 论文/博客也进本表（`kind` 承载类别，QED-068 A 步已加列；写入面 adopt 归 B 步），
+  快照落盘统一链路。
 
 ---
 
@@ -490,7 +545,11 @@ CREATE TABLE qt_selections (
 `GET /api/v1/knowledge/{knowledge_id}` 的书籍数组（`books[]`）由 **refs 数组聚合**
 （textbook_ref/exercise_ref/parallel_ref 内 book_id 去重），每行为 `QtBook.to_dict()` 全列
 （book_id/title/original_title/part/authors/publisher/edition/year/language/roles/status/
-retire_reason/holding/file_path/priority/notes/domain_id/created_at/updated_at）：
+retire_reason/holding/file_path/priority/notes/domain_id/kind/course_id/created_at/updated_at）：
+
+- **`GET /api/v1/books`（QED-068 A 步新增）** 返回同一行契约（`to_dict()` 全列），
+  支持 `kind`/`domain_id`/`course_id` 过滤，是论文展示行的上游数据面（见
+  [API 设计文档](api.md)）；`kind`/`course_id` 为消费侧分桶的必需字段。
 
 - **无** `display_title` 列（书库化已删）——展示名由前端按 `title + part` 组装；
   **B 轮前**（当前）`sha256`/`size_bytes`/`page_count` 列不存在，文件内容指纹只落

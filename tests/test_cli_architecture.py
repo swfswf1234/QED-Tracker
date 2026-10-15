@@ -10,12 +10,19 @@ def test_cli_exposes_focused_commands():
     parser = build_parser()
     assert parser.parse_args(["books", "get", "Topology"]).books_command == "get"
     assert parser.parse_args(["papers", "get", "2401.00001"]).papers_command == "get"
-    recommend = parser.parse_args(["papers", "recommend", "RAG", "--profile", "llm-engineering", "--top", "5"])
+    recommend = parser.parse_args(
+        ["papers", "recommend", "RAG", "--domain", "math-advanced", "--recipe", "frontier", "--top", "5"]
+    )
     assert recommend.papers_command == "recommend" and recommend.top == 5
+    assert (recommend.domain, recommend.recipe) == ("math-advanced", "frontier")
     assert recommend.years_limit is None
     assert parser.parse_args(["papers", "recommend", "RAG", "--years-limit", "0"]).years_limit == 0
-    selection = parser.parse_args(["papers", "selections", "download", "sel-20260730T000000Z-12345678", "--pick", "1"])
-    assert selection.selections_command == "download" and selection.pick == [1]
+    selection = parser.parse_args(
+        ["papers", "selections", "adopt", "sel-20260730T000000Z-12345678", "--pick", "1",
+         "--domain", "math-advanced"]
+    )
+    assert selection.selections_command == "adopt" and selection.pick == [1]
+    assert selection.domain == "math-advanced" and selection.course == ""
     assert parser.parse_args(["catalog", "show", "math-qe"]).catalog_command == "show"
     assert parser.parse_args(["axiom", "push", "mathanalysis-b01", "--parse"]).book_id == "mathanalysis-b01"
 
@@ -29,6 +36,8 @@ def test_removed_cli_commands_are_not_exposed():
         ["catalog", "run", "math-qe", "--download"],
         ["inventory", "scan", "."],
         ["inventory", "list", "--kind", "book"],
+        # QED-068 B 步：论文直写落盘面退役——采纳只产 kind=paper 书行，下载唯一路径是 books fetch
+        ["papers", "selections", "download", "sel-20260730T000000Z-12345678", "--pick", "1"],
     ):
         try:
             parser.parse_args(argv)
@@ -199,7 +208,10 @@ def test_production_package_has_no_removed_runtime_dependencies():
     # 只允许本仓库声明的脚本，新增脚本需同步本守卫（防旧布局无声明残留）。
     # apply_table_comments.py 已随 v0.1 数据库重构退役（ADR 0006：注释由 ORM comment= 建表即带）。
     # qed067_gateway_smoke.py = QED-067-1 人工冒烟件（默认测试不触网，见 code-map 登记）。
+    # qed068_alter_book_kind.py = QED-068 A 步人工迁移件（qt_books 加 kind/course_id：
+    # 备份→ALTER→核验，红线顺序见 docs/architecture/database-private-tables.md；不触网）。
     assert set((root / "scripts").rglob("*.py")) == {
         root / "scripts" / "qed_tracker_service.py",
         root / "scripts" / "qed067_gateway_smoke.py",
+        root / "scripts" / "qed068_alter_book_kind.py",
     }

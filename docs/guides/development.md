@@ -1,7 +1,7 @@
 # 开发指南
 
 状态：Current
-最后更新：2026-09-11
+最后更新：2026-10-15
 
 本指南保存 QED-Tracker **怎么开发**：流程、步骤与边界。事实分工如下——
 
@@ -62,9 +62,9 @@
 | 1 进场读必读 | 读状态快照、台账与相关标准 | 交付任务、定优先级 | [project-status](../trackers/project-status.md)、[todo](../trackers/todo.md)、[standards](../standards/index.md) | `qed-intake` |
 | 2 定级 | 判变更对象与风险分类，给出方案 | **拍板定级**（未定级不实施） | 根 [AGENTS.md](../../AGENTS.md)、[todo 规则](../trackers/todo.md) | `qed-intake` |
 | 3 立项 | 写 `plans/` 计划 + todo 登记 | **评审计划** | [doc-governance](../standards/doc-governance.md) | `qed-plan` |
-| 4 实现 | 用 code-map 定位模块，先测试后实现（TDD） | 抽查/评审 | [code-map](../architecture/code-map.md)、`design/`、[testing](../standards/testing.md) | `qed-implement` |
+| 4 实现 | 用 code-map 定位模块，先测试后实现（TDD） | 抽查/评审 | [code-map](../architecture/code-map.md)、`design/`、[testing](../standards/testing.md) | `qed-implement`；改中文文案配 `cjk-safe-edit-and-verify`，私有表加列配 `qed-db-alter-redline-window`，缺陷定位配 `systematic-debugging` |
 | 5 验证 | 跑完整门禁，整理证据 | **验收** | [testing](../standards/testing.md)、[local-dev](../standards/local-dev.md) | `verification-before-completion` |
-| 6 收尾 | 计划两态判定、todo 移 `completed.md`、同步设计/架构/索引 | **确认关闭** | [doc-governance](../standards/doc-governance.md) | `qed-closeout` |
+| 6 收尾 | 计划两态判定、todo 移 `completed.md`、同步设计/架构/索引 | **确认关闭** | [doc-governance](../standards/doc-governance.md) | `qed-closeout`；声称完成前配 `verification-before-completion`，大功能或合并前配 `requesting-code-review` |
 
 **标准映射机制**：全局工具层（`~/.config/opencode/` 的默认开发 agent 提示与 `qed-*` 技能）只引用
 「概念」（任务生命周期、文档治理、测试门禁、本地环境、模块映射），实际文件由

@@ -1,7 +1,7 @@
 # 计划索引
 
 状态：Current
-最后更新：2026-09-30
+最后更新：2026-10-15
 
 本目录只保存尚未关闭的跨模块实施计划。任务状态以[待办列表](../trackers/todo.md)为准；计划完成后将关闭证据写入 completed，正文默认归档至 [历史基线](../history/index.md)（[ADR 0009](../history/adr/0009-closed-plan-archival.md)；Delete 仅限内容已完全并入固定文档且无独立查阅价值、或用户明确指示）。
 
@@ -41,7 +41,7 @@
 
 - [DeepTutor 机制调研（审阅稿）](2026-09-21-deeptutor-survey.md)（2026-09-21，QED-067 附属调研）：I 检索与下载（arXiv 工具/查询派生 fallback/提示纪律、SSRF 逐跳复检、staging+manifest-last 原子入库）+ II 知识路线与编排（双模式校验/coverage 报告、draft→critique→revise+图校验兜底、字符串注册表、skill frontmatter、MCP 白名单与 deferred）；20 条借鉴点落点对照 + 9 条不照搬清单，待用户裁决（QED-067/068/069 归属）。
 
-- [论文探索与下载链路整合](2026-09-14-paper-pipeline-alignment.md)（2026-09-14 立项，2026-09-21 详细化，QED-068）：参照 DeepTutor 调研稿的贴合本仓详细方案——068-1 arXiv 检索参数（相关度/过量抓取/年份窗口）、068-2 查询纪律与 fallback（plan@v2）、068-3 报告溯源与 coverage（schema v2）、068-5 8901 任务化、068-4 总体性优化收口（downloader 安全件/重复双报/文档收口）；本轮不实现，待评审排期。
+- [论文探索与下载链路整合](../history/baselines/2026-09-14-paper-pipeline-alignment.md)（QED-068，2026-10-15 关闭）（2026-09-14 立项，2026-09-21 详细化，QED-068）：参照 DeepTutor 调研稿的贴合本仓详细方案——068-1 arXiv 检索参数（相关度/过量抓取/年份窗口）、068-2 查询纪律与 fallback（plan@v2）、068-3 报告溯源与 coverage（schema v2）、068-5 8901 任务化、068-4 总体性优化收口（downloader 安全件/重复双报/文档收口）；A~D 四步全量交付并关闭（C 步含 C-1 逐跳复检／C-2 字节硬顶／C-3 重复双报；D 步裁决关闭＝旧 PDF 只读不回填）；结果见[完成台账](../trackers/completed.md)。**已按 ADR 0009 归档至 history/baselines/**。
 
 - [下载链路评估](2026-09-14-download-channel-evaluation.md)（2026-09-14，QED-069）：`qt_sources` 渠道表现状说明 + 数据利用简要计划（本轮不实现）。
 

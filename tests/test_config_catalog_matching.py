@@ -372,3 +372,12 @@ def test_load_settings_keeps_hash_without_preceding_space(monkeypatch, tmp_path)
     settings = load_settings()
     assert settings.db_name == "qed#x"
     assert settings.db_password == "secret#pass"
+
+
+def test_load_settings_maps_max_download_bytes(monkeypatch, tmp_path):
+    """QED-068 C 步（C-2）：字节硬顶键 QED_MAX_DOWNLOAD_BYTES 可覆盖，默认高于现库最大成品。"""
+    monkeypatch.setenv("QED_MAX_DOWNLOAD_BYTES", "4096")
+    settings = load_settings()
+    assert settings.max_download_bytes == 4096
+    monkeypatch.delenv("QED_MAX_DOWNLOAD_BYTES")
+    assert load_settings().max_download_bytes >= 512 * 1024 * 1024

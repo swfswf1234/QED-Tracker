@@ -1,7 +1,7 @@
 # 操作指南
 
 状态：Current
-最后更新：2026-09-11
+最后更新：2026-10-15
 
 本指南描述 QED-Tracker 的主流程操作：环境与本地配置 → 启动服务 → 健康检查 → 知识探索 → 下载（规划中）。命令均通过脚本或 `qed-tracker` CLI 执行；系统边界与契约见[系统总览](../architecture/system-overview.md)。
 
@@ -30,7 +30,7 @@ QED_TRACKER_PORT=8901
 QED_DATA_ROOT=D:\coding\QED-Engine\dataset
 ```
 
-其他常用键：`QED_LLM_TIMEOUT`（默认 300s，探索管线长生成依赖此值）、`QED_TRACKER_URL`（CLI 访问的 8901 地址）、`QED_PROXY`、`QED_TLS_VERIFY`（默认开启，仅可由用户显式关闭）、`QED_SOURCES`（渠道遍历顺序）。
+其他常用键：`QED_LLM_TIMEOUT`（默认 300s，探索管线长生成依赖此值）、`QED_TRACKER_URL`（CLI 访问的 8901 地址）、`QED_PROXY`、`QED_TLS_VERIFY`（默认开启，仅可由用户显式关闭）、`QED_SOURCES`（渠道遍历顺序）、`QED_MAX_DOWNLOAD_BYTES`（下载字节硬顶，默认 512 MiB）。
 
 取书链键组（`QED_BOOK_*`，语义见[下载管线设计](../design/download-pipeline.md)）：
 `QED_BOOK_CANDIDATE_BUDGET`（候选级预算秒数，默认 300）、`QED_BOOK_MIN_PAGES`（机器验收页数下限，默认 10）、

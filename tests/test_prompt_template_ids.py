@@ -69,7 +69,7 @@ def test_paper_plan_and_assess_carry_template_ids() -> None:
     profile = PaperProfile("p", "Profile", "Description", "Audience", ("G",), ("T",), ("cs.CL",), ())
     advisor.plan(profile, "RAG", ("cs.CL",))
     advisor.assess(profile, "RAG", [Candidate("arxiv", "2601.00001", "Paper", identifiers={"arxiv": "2601.00001"}, abstract="data")])
-    assert _templates_written(engine) == ["paper-plan/plan@v1", "paper-plan/assess@v1"]
+    assert _templates_written(engine) == ["paper-plan/plan@v2", "paper-plan/assess@v1"]
 
 
 def test_book_query_and_confirm_carry_template_ids() -> None:
@@ -124,7 +124,7 @@ def test_gateway_mode_still_pass_template_id_in_payload() -> None:
     )
     profile = PaperProfile("p", "Profile", "Description", "Audience", ("G",), ("T",), ("cs.CL",), ())
     advisor.plan(profile, "RAG", ("cs.CL",))
-    assert captured["body"]["prompt_template"] == "paper-plan/plan@v1"
+    assert captured["body"]["prompt_template"] == "paper-plan/plan@v2"
 
 
 # ---------------- 注册表覆盖守护（QED-072 W-8） ----------------
@@ -133,10 +133,8 @@ _SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "qed_tracker"
 _PY_ID = re.compile(r"""(?:prompt_template\s*=\s*|_template_id\s*=\s*)["']([^"'\s{}]+)["']""")
 _YAML_ID = re.compile(r"^\s*template:\s*(\S+)\s*$", re.MULTILINE)
 
-# 尚未登记进注册表的模板编号 → W-8 处置去向（步骤 2~5 逐条摘除；清单清空即收口完成）。
+# 尚未登记进注册表的模板编号 → W-8 处置去向（清单清空即收口完成）。paper-plan 两条已于 QED-074 W-2 入册（2026-09-30），本清单只剩 agentic 三条。
 UNREGISTERED_EXEMPT: dict[str, str] = {
-    "paper-plan/plan@v1": "QED-074 W-2 迁入注册表（2026-09-29 改判：D-7 的删除裁决作废，空窗取消）",
-    "paper-plan/assess@v1": "QED-074 W-2 迁入注册表（同上，在册改写 assess@v2）",
     "domain-explore/domain-agentic@v1": "W-8 步骤 5 纳入（并行会话未跟踪 WIP）",
     "domain-explore/courses-agentic@v1": "W-8 步骤 5 纳入（并行会话未跟踪 WIP）",
     "domain-agentic@v1": "W-8 步骤 5 纳入（pipeline yaml 裸编号缺 task 前缀，同 Q67-c）",
@@ -174,6 +172,8 @@ def test_registry_inventory_is_pinned() -> None:
         "domain-explore/courses@v8",
         "domain-explore/domain@v4",
         "mainline-prefill/prefill@v1",
+        "paper-plan/assess@v1",
+        "paper-plan/plan@v2",
     ]
 
 

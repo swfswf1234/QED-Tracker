@@ -324,3 +324,48 @@ def test_adopt_tutorials_book_id_uses_course_abbr(repo):
     assert results[0]["knowledge_id"] == "kt-mathanalysis-1"
     books = repo.list_books(results[0]["knowledge_id"])
     assert books[0].book_id == "mathanalysis-b01"
+
+
+# --- 查重双报标题查询面（QED-068 C 步 / 068-4） ---
+
+
+def _held(repo, book_id: str, title: str, sha256: str, *, original_title: str | None = None) -> str:
+    """建一行 owned + 已填内容身份的书（查重双报的库内既有行形态）。"""
+    repo.create_book(book_id, title=title, original_title=original_title, authors=[], language="en",
+                     domain_id="math")
+    repo.mark_owned(book_id, file_path=f"raw/math/math_analysis/{book_id}.pdf", status="downloaded")
+    repo.set_content_identity(book_id, sha256=sha256, size_bytes=4096, page_count=2)
+    return book_id
+
+
+def test_find_owned_by_titles_matches_casefold_and_original_title(repo):
+    _held(repo, "math-b11", "Calculus Vol 1", "a" * 64)
+    _held(repo, "math-b12", "calculus VOL 1 ", "b" * 64)
+    _held(repo, "math-b13", "拓扑学", "c" * 64, original_title="Calculus vol 1")
+
+    hits = repo.find_owned_by_titles(("CALCULUS vol 1",))
+
+    assert [row.book_id for row in hits] == ["math-b11", "math-b12", "math-b13"]
+    assert repo.find_owned_by_titles(("不存在的名",)) == []
+    assert repo.find_owned_by_titles(()) == []
+
+
+def test_find_owned_by_titles_requires_content_identity_and_ownership(repo):
+    """内容身份未填（已登记未下载）与未持有的行都不算冲突对象。"""
+    repo.create_book("math-b21", title="Ghost Title", authors=[], language="en", domain_id="math")
+    repo.mark_owned("math-b21", file_path="raw/math/math_analysis/b21.pdf", status="downloaded")
+    repo.create_book("math-b22", title="Ghost Title", authors=[], language="en", domain_id="math")
+    _held(repo, "math-b23", "Ghost Title", "d" * 64)
+
+    hits = repo.find_owned_by_titles(("Ghost Title",))
+
+    assert [row.book_id for row in hits] == ["math-b23"]
+
+
+def test_find_owned_by_titles_honours_exclude_book_ids(repo):
+    _held(repo, "math-b31", "Same Name", "e" * 64)
+    _held(repo, "math-b32", "same name", "f" * 64)
+
+    hits = repo.find_owned_by_titles(("SAME NAME",), exclude_book_ids=("math-b31",))
+
+    assert [row.book_id for row in hits] == ["math-b32"]

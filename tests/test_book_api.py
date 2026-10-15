@@ -220,6 +220,55 @@ def test_create_book_duplicate_409(client):
     assert resp.json()["detail"]["code"] == "BOOK_ALREADY_EXISTS"
 
 
+# ---------------- 书库枚举（GET /books，QED-068 A 步） ----------------
+
+
+def _seed_library(repo) -> None:
+    """四行样本：域级书本 / 领域级论文 / 课程级论文 / 他领域书本。"""
+    repo.create_book(f"{ABBR}-b01", title="微积分学教程", language="zh", domain_id="math")
+    repo.create_book("math-b01", title="Attention Is All You Need", language="en",
+                     domain_id="math", kind="paper")
+    repo.create_book("math-b02", title="Deep Residual Learning", language="en",
+                     domain_id="math", kind="paper", course_id=COURSE)
+    repo.create_book("cs-b01", title="CSAPP", language="zh", domain_id="cs")
+
+
+def test_list_books_rows_carry_kind_and_course(client, repo):
+    _seed_library(repo)
+    resp = client.get("/api/v1/books")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 4
+    assert all("kind" in row and "course_id" in row for row in rows)
+    by_id = {row["book_id"]: row for row in rows}
+    assert by_id[f"{ABBR}-b01"]["kind"] == "book"
+    assert by_id[f"{ABBR}-b01"]["course_id"] == ""
+    assert by_id["math-b01"]["kind"] == "paper"
+    assert by_id["math-b02"]["course_id"] == COURSE
+
+
+def test_list_books_filters_are_anded(client, repo):
+    _seed_library(repo)
+    papers = client.get("/api/v1/books", params={"kind": "paper"}).json()
+    assert {row["book_id"] for row in papers} == {"math-b01", "math-b02"}
+    books = client.get("/api/v1/books", params={"kind": "book"}).json()
+    assert {row["book_id"] for row in books} == {f"{ABBR}-b01", "cs-b01"}
+    assert [row["book_id"] for row in client.get("/api/v1/books", params={"domain_id": "cs"}).json()] == ["cs-b01"]
+    landed = client.get("/api/v1/books", params={"kind": "paper", "course_id": COURSE}).json()
+    assert [row["book_id"] for row in landed] == ["math-b02"]
+    # 空串=不过滤（与 GET /knowledge 同口径）
+    assert len(client.get("/api/v1/books", params={"kind": "", "course_id": "", "domain_id": ""}).json()) == 4
+
+
+def test_list_books_invalid_kind_422_and_no_hit_empty_array(client, repo):
+    _seed_library(repo)
+    resp = client.get("/api/v1/books", params={"kind": "blog"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "INVALID_PARAMS"
+    assert client.get("/api/v1/books", params={"domain_id": "physics"}).json() == []
+    assert client.get("/api/v1/books", params={"kind": "paper", "course_id": "09_unknown"}).json() == []
+
+
 # ---------------- 原地登记（POST /books/{id}/register） ----------------
 
 

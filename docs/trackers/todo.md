@@ -1,7 +1,7 @@
 # 待办列表
 
 状态：Current
-最后更新：2026-09-30
+最后更新：2026-10-01
 
 ## 上一期计划（全链路跑通，已收口 2026-09-11）
 
@@ -28,7 +28,6 @@ QED-014 验证最终效果，以及阶段三重复下载链路验证（QED-011�
 | ID | 类型 | 状态 | 事项 | 成功标准 | 关联计划 |
 | --- | --- | --- | --- | --- | --- |
 | QED-067 | Plan | 进行中 | 本地 LLM 对接 + LangChain 编排（v1.0 主线）：067-1 网关端到端冒烟；067-2 `langchain-core` 依赖 + `LlmChatModel` 适配层；067-3 声明式配置加载器（pipeline YAML schema/校验、`register()` 版本语义、预算守护）；067-4 领域探索示例链 mock 全链（wiki→课程→综合报告）；067-5 真实 MCP 只读工具 + 人工冒烟 + A/B 对照评审 | 067-1~5 全量交付（067-5 含真实冒烟与 A/B 对照；外部 REQ 届期未回填时降级须用户裁决，不得静默砍项）；每步真实 LLM 调用落 `qed_llm_calls` 且按 `prompt_template` 可回读 | [2026-09-14-local-llm-langchain.md](../plans/2026-09-14-local-llm-langchain.md)、[DeepTutor 调研稿](../plans/2026-09-21-deeptutor-survey.md) |
-| QED-068 | Plan | 进行中 | 论文探索与下载链路整合（子任务 068-1~5）：068-1 arXiv 检索参数（相关度排序/过量抓取/年份窗口/`--years-limit`）；068-2 查询纪律与确定性 fallback（`plan@v2` 在册改写）；068-3 报告溯源与 coverage（schema v2）；068-4 downloader 安全件（逐跳复检/字节硬顶）+ 重复双报 + 文档收口；068-5 8901 任务化 | 068-1~5 全量交付并收口（B-1~B-5 落设计文档）；默认测试零公网（`MockTransport`） | [2026-09-14-paper-pipeline-alignment.md](../plans/2026-09-14-paper-pipeline-alignment.md) |
 | QED-069 | Plan | 待开始 | 下载链路评估落地：`qt_sources` 渠道表现状细化评审 → 找得率/渠道成功率统计口径落地 → 基线首批采集回填来源评估矩阵 → REQ-020② 根侧回执 | 细化轮评审通过 + 统计口径成文落地 + 基线回填矩阵完成 + REQ-020② 回执交付 | [2026-09-14-download-channel-evaluation.md](../plans/2026-09-14-download-channel-evaluation.md) |
 | QED-072 | Plan | 进行中 | 本地链路收敛 + prompt 集中注册表收口：W-1 书籍/主线三契约本地实测；W-2 窗口边界实测；W-3 预算表重设计（≥1024 硬下限）；W-4 通路收敛改造清单（默认钉本地 + 网关截断检测）；W-5 命名与文档同步面；W-6 guides 本地模型能力说明；W-7 根侧 REQ；W-8 prompt 注册表收口 | W-1~W-8 各交付物落地（契约通过/失败表、窗口真值、新预算表、同步清单、指南说明、REQ 文本、注册表唯一事实源 + 守护测试绿）；通路口径以 QED-074 成文守则为准；完整门禁绿 | [2026-09-28-bailian-retire-local-only.md](../plans/2026-09-28-bailian-retire-local-only.md) |
 | QED-073 | Plan | 进行中 | 探索链本地化（domain/courses/tutorials 三 prompt 链 × 本地 9B）：W-1 `domain@v5` 草案评审；W-2 链 A × 链 B1 的 S-1~S-4 本地试运行与结论；W-3 据结论细化 `courses@v9`/`tutorials@v3`；W-4 模板注册 + 管线 `max_tokens` 改造 + 测试/设计同步；W-5 B 链升级 B2 裁决 | W-1~W-4 交付且 W-5 裁决完成；试运行结论回写计划并作为下一轮优化方向依据 | [2026-09-28-exploration-pipeline-local.md](../plans/2026-09-28-exploration-pipeline-local.md) |

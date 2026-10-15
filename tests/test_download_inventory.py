@@ -6,10 +6,13 @@ from qed_tracker.downloader import DownloadError, DownloadManager
 from qed_tracker.inventory import staging_max_age_seconds, sweep_downloads
 
 
-def manager_with(handler, *, retries=1) -> DownloadManager:
-    manager = DownloadManager(retries=retries)
+def manager_with(handler, *, retries=1, max_bytes: int | None = None) -> DownloadManager:
+    """假传输下载器：重定向交由 DownloadManager 手动逐跳处理，故客户端不再自动跟随。"""
+    manager = DownloadManager(retries=retries) if max_bytes is None else DownloadManager(
+        retries=retries, max_bytes=max_bytes
+    )
     manager.client.close()
-    manager.client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    manager.client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
     return manager
 
 
@@ -147,3 +150,154 @@ def test_staging_max_age_threshold_follows_formula_with_floor():
     assert staging_max_age_seconds(600.0, 4) == 6 * 3600  # 600×4×4=9600s < 下限 → 6h
     assert staging_max_age_seconds(3000.0, 4) == 3000 * 4 * 4  # 48000s > 下限 → 公式值
     assert staging_max_age_seconds(30.0, 3) > 30.0 * 3  # 严格大于单次下载最长寿命
+
+
+# ---- QED-068 C 步（068-4）：手动逐跳重定向复检 + 字节硬顶 ----
+
+
+def test_redirect_to_private_host_blocks_before_connect(tmp_path, stub_dns):
+    """SSRF 逐跳复检：302 指向解析到内网的主机 → 连接前拒绝，该主机一次请求都不发出。"""
+    stub_dns["internal.test"] = ("10.0.0.5",)
+    requested: list[str] = []
+
+    def handler(request):
+        requested.append(str(request.url))
+        return httpx.Response(302, headers={"location": "https://internal.test/a.pdf"}, request=request)
+
+    manager = manager_with(handler)
+    destination = tmp_path / "paper.pdf"
+    try:
+        with pytest.raises(DownloadError, match="非公网"):
+            manager.download("https://origin.test/a.pdf", destination)
+    finally:
+        manager.close()
+    assert requested == ["https://origin.test/a.pdf"]
+    assert not destination.exists()
+    assert not (tmp_path / "paper.pdf.part").exists()
+
+
+def test_redirect_chain_within_limit_saves_pdf(tmp_path, pdf_bytes, stub_dns):
+    """≤5 跳合法重定向逐跳放行；相对 Location 按当前 URL 拼接，末跳 200 正常落盘。"""
+    requested: list[str] = []
+
+    def handler(request):
+        requested.append(str(request.url))
+        path = request.url.path
+        if path == "/a.pdf":
+            return httpx.Response(302, headers={"location": "https://b.test/1.pdf"}, request=request)
+        if path == "/1.pdf":
+            return httpx.Response(301, headers={"location": "/2.pdf"}, request=request)
+        if path == "/2.pdf":
+            return httpx.Response(200, content=pdf_bytes, request=request)
+        raise AssertionError(f"未预期的请求：{request.url}")
+
+    manager = manager_with(handler)
+    destination = tmp_path / "paper.pdf"
+    try:
+        result = manager.download("https://a.test/a.pdf", destination)
+    finally:
+        manager.close()
+    assert result.page_count == 1
+    assert destination.read_bytes() == pdf_bytes
+    assert requested == ["https://a.test/a.pdf", "https://b.test/1.pdf", "https://b.test/2.pdf"]
+
+
+def test_redirect_chain_over_hop_limit_blocked(tmp_path, stub_dns):
+    """第 6 跳（超过 5 跳上限）拒绝：错误文案含跳数要素，半成品不落成品区。"""
+    requested: list[str] = []
+
+    def handler(request):
+        requested.append(str(request.url))
+        hop = int(request.url.path.lstrip("/"))
+        return httpx.Response(302, headers={"location": f"https://r.test/{hop + 1}"}, request=request)
+
+    manager = manager_with(handler)
+    destination = tmp_path / "paper.pdf"
+    try:
+        with pytest.raises(DownloadError, match="跳"):
+            manager.download("https://r.test/0", destination)
+    finally:
+        manager.close()
+    assert len(requested) == 6
+    assert not destination.exists()
+
+
+def test_non_http_scheme_redirect_blocked(tmp_path, stub_dns):
+    """异 scheme（file:// 等）重定向拒绝，不交给 httpx 处理。"""
+
+    def handler(request):
+        return httpx.Response(302, headers={"location": "file:///etc/passwd"}, request=request)
+
+    manager = manager_with(handler)
+    destination = tmp_path / "paper.pdf"
+    try:
+        with pytest.raises(DownloadError, match="scheme"):
+            manager.download("https://origin.test/a.pdf", destination)
+    finally:
+        manager.close()
+    assert not destination.exists()
+
+
+def test_dns_failure_blocks_download(tmp_path, monkeypatch):
+    """解析失败按 fail-closed 拒绝：不存在「解析不了就放行」的回落。"""
+    from qed_tracker import downloader
+
+    def raise_gaierror(host: str) -> list[str]:
+        raise OSError(-2, "Name or service not known")
+
+    monkeypatch.setattr(downloader, "_resolve_host_ips", raise_gaierror)
+    manager = manager_with(lambda request: httpx.Response(200, content=b"", request=request))
+    destination = tmp_path / "paper.pdf"
+    try:
+        with pytest.raises(DownloadError, match="解析失败"):
+            manager.download("https://nowhere.test/a.pdf", destination)
+    finally:
+        manager.close()
+    assert not destination.exists()
+
+
+def test_security_rejection_is_terminal_not_retried(tmp_path, stub_dns):
+    """安全拒绝是终止性失败：不进重试循环（重试只会重复连接风险面）。"""
+    stub_dns["internal.test"] = ("127.0.0.1",)
+    requested: list[str] = []
+
+    def handler(request):
+        requested.append(str(request.url))
+        return httpx.Response(302, headers={"location": "https://internal.test/a.pdf"}, request=request)
+
+    manager = manager_with(handler, retries=3)
+    destination = tmp_path / "paper.pdf"
+    try:
+        with pytest.raises(DownloadError, match="非公网"):
+            manager.download("https://origin.test/a.pdf", destination)
+    finally:
+        manager.close()
+    assert len(requested) == 1
+    assert not destination.exists()
+
+
+def test_max_bytes_aborts_and_cleans_partial(tmp_path, stub_dns):
+    """流式写盘超 max_bytes 立即中断并删 partial，成品文件永不出现。"""
+    body = b"%PDF-1.4\n" + b"x" * 4096
+
+    def handler(request):
+        return httpx.Response(200, content=body, request=request)
+
+    manager = manager_with(handler, max_bytes=1024)
+    destination = tmp_path / "big.pdf"
+    try:
+        with pytest.raises(DownloadError, match="上限"):
+            manager.download("https://example.test/big.pdf", destination)
+    finally:
+        manager.close()
+    assert not destination.exists()
+    assert not (tmp_path / "big.pdf.part").exists()
+
+
+def test_max_bytes_defaults_above_registered_book_pdfs():
+    """默认硬顶不得误伤合法成品：高于现库最大书体量级（实测 121.5 MiB → 默认 512 MiB）。"""
+    manager = DownloadManager()
+    try:
+        assert manager.max_bytes >= 512 * 1024 * 1024
+    finally:
+        manager.close()
